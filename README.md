@@ -75,8 +75,10 @@
 - **Swift Charts 消耗分布图**：将输入、输出、缓存命中等构成以环形图直观呈现，深色/浅色模式自适应。
 
 <p align="center">
-  <img src="docs/images/themes-dark.png" alt="四套界面风格对比：极简、原生、极光、霓虹，使用演示数据" width="100%" />
+  <img src="docs/images/themes-light.png" alt="四套界面风格对比（浅色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
+  <img src="docs/images/themes-dark.png" alt="四套界面风格对比（深色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
 </p>
+<p align="center"><sub>从左到右：极简 · 原生 · 极光 · 霓虹（霓虹固定深色）</sub></p>
 
 <p align="center">
   <img src="docs/images/accounts-dark.png" alt="账户额度深色界面：演示额度、重置卡和积分" width="48%" />
