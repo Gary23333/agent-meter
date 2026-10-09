@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="190 230 644 590" width="644" height="590" fill="none">
+  <title>AgentMeter mark</title>
+  <!-- single-colour mark: follows currentColor, usable as a menu bar template image -->
+  <g stroke="currentColor" stroke-linecap="round">
+    <path d="M306.94 760.06 A290 290 0 1 1 717.06 760.06" stroke-opacity="0.3" stroke-width="64"/>
+    <path d="M306.94 760.06 A290 290 0 1 1 717.06 760.06" stroke-width="64" pathLength="100" stroke-dasharray="72 100"/>
+    <path d="M377.65 689.35 A190 190 0 1 1 646.35 689.35" stroke-opacity="0.3" stroke-width="52"/>
+    <path d="M377.65 689.35 A190 190 0 1 1 646.35 689.35" stroke-width="52" pathLength="100" stroke-dasharray="46 100"/>
+  </g>
+  <path d="M512 462 C521 523 544 546 605 555 C544 564 521 587 512 648 C503 587 480 564 419 555 C480 546 503 523 512 462 Z" fill="currentColor"/>
+</svg>

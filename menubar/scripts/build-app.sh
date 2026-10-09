@@ -18,6 +18,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/AgentMeterBar"
 strip -S "$app/Contents/MacOS/AgentMeterBar"
 cp -R "$root/.runtime/build/backend/agent-meter-backend" "$app/Contents/Resources/backend"
+cp "$here/Resources/AppIcon.icns" "$app/Contents/Resources/"
 cp "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/"
 cp "$root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 # Include the licenses for the redistributed Python runtime and bootloader.
@@ -32,6 +33,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>local.agent-meter.menubar</string>
   <key>CFBundleName</key><string>Agent 用量</string>
   <key>CFBundleDisplayName</key><string>Agent 用量</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>1</string>

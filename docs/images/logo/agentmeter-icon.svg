@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>AgentMeter</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5B74FF"/>
+      <stop offset="1" stop-color="#B45CFA"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.3" r="0.75">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="inner" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#5FF2D6"/>
+      <stop offset="1" stop-color="#B8FFF0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- macOS squircle plate -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)"/>
+
+  <g fill="none" stroke-linecap="round">
+    <!-- outer ring: 5-hour window (270° gauge, opening at the bottom) -->
+    <path d="M306.94 760.06 A290 290 0 1 1 717.06 760.06" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="64"/>
+    <path d="M306.94 760.06 A290 290 0 1 1 717.06 760.06" stroke="#FFFFFF" stroke-width="64"
+          pathLength="100" stroke-dasharray="72 100"/>
+    <!-- inner ring: 7-day window -->
+    <path d="M377.65 689.35 A190 190 0 1 1 646.35 689.35" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="52"/>
+    <path d="M377.65 689.35 A190 190 0 1 1 646.35 689.35" stroke="url(#inner)" stroke-width="52"
+          pathLength="100" stroke-dasharray="46 100"/>
+  </g>
+
+  <!-- agent sparkle at the hub -->
+  <path d="M512 462 C521 523 544 546 605 555 C544 564 521 587 512 648 C503 587 480 564 419 555 C480 546 503 523 512 462 Z" fill="#FFFFFF"/>
+</svg>

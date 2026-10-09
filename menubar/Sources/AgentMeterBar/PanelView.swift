@@ -206,27 +206,24 @@ private struct HeaderLogo: View {
     @Environment(\.panelTheme) private var theme
 
     var body: some View {
-        let symbol = Image(systemName: "gauge.with.dots.needle.67percent")
         switch theme {
         case .minimal:
             EmptyView()
         case .native:
-            symbol.font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+            BrandMark(outer: Color.white, inner: Color.white, trackOpacity: 0.3)
                 .frame(width: 28, height: 28)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.accentColor))
         case .aurora:
-            ZStack {
-                Circle().fill(LinearGradient(colors: [Color(red: 0.36, green: 0.52, blue: 1), Color(red: 0.78, green: 0.36, blue: 0.98)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .shadow(color: Color(red: 0.55, green: 0.4, blue: 1).opacity(0.8), radius: 8)
-                symbol.font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-            }
-            .frame(width: 32, height: 32)
+            BrandMark(outer: Color.white, inner: Brand.mint)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 7.2, style: .continuous).fill(Brand.plate))
+                .shadow(color: Color(red: 0.55, green: 0.4, blue: 1).opacity(0.8), radius: 8)
         case .neon:
             ZStack {
                 Hexagon().fill(Color.black.opacity(0.6))
                 Hexagon().stroke(Neon.rim, lineWidth: 1.5)
-                symbol.font(.system(size: 14, weight: .bold)).foregroundStyle(Neon.cyan)
+                BrandMark(outer: Neon.magenta, inner: Neon.cyan, sparkle: Neon.cyan, trackOpacity: 0.25)
+                    .frame(width: 22, height: 22)
             }
             .frame(width: 32, height: 32)
             .shadow(color: Neon.magenta, radius: 4)
