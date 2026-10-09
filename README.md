@@ -14,9 +14,9 @@
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v3-success" alt="Schema: v3" />
-  <img src="https://img.shields.io/badge/Tests-137%20Passed-brightgreen" alt="Tests: 137 Passed" />
+  <img src="https://img.shields.io/badge/Tests-155%20Passed-brightgreen" alt="Tests: 155 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.2.0-blue" alt="Release: v0.2.0" />
+  <img src="https://img.shields.io/badge/Release-v0.3.0-blue" alt="Release: v0.3.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -152,6 +152,9 @@
 | **MiniMax Design** | MiniMax 创作工作台 | 本机安全网关 `127.0.0.1:8001` | 个人钱包、积分包失效期、月积分刷新日、年费续费倒计时 | 个人 Media Plan |
 | **即梦 (Dreamina)** | 剪映即梦创作平台 | 内嵌隐藏 Web 视图白名单捕获 / CLI | 会员等级、积分总额、多积分包到期、续费状态 | 最多 5 账号 |
 | **DeepSeek API** | DeepSeek 开放平台 | 环境变量 / 钥匙串 API Key | 货币余额（CNY/USD 独立保留） | 独立账户 |
+| **ZCode / 智谱 Coding Plan** | ZCode、GLM Coding Plan（中国区） | 内嵌网页登录捕获控制台凭据 / 钥匙串 API Key | 5 小时 / 每周额度（已用/总量）、周重置时间、MCP 月度次数 | 最多 5 账号 |
+| **火山方舟 Coding Plan** | 火山引擎方舟 | 钥匙串 AccessKey，签名调用只读 `GetCodingPlanUsage` | 5 小时 / 每周 / 每月额度与各自重置时间 | 独立账户 |
+| **小米 MiMo API** | MiMo 开放平台控制台 | 内嵌安全网页登录 / Cookie | 账户余额（现金 / 赠送）、Token Plan 本月用量 | 最多 5 账号 |
 | **CC Switch** | 本机多模型路由历史 | 本机 SQLite 数据库只读事务 | 今日/7天/30天/全部 Token、缓存命中率、估算费用 | 本机聚合 |
 
 ---
@@ -198,13 +201,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.2](https://github.com/Gary23333/agent-meter/releases/tag/v0.2) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.2.0-macos-arm64.dmg`
+1. 从 [Releases · v0.3](https://github.com/Gary23333/agent-meter/releases/tag/v0.3) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.3.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.2.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.3.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -220,7 +223,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.2.0，发布标签为 v0.2；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.3.0，发布标签为 v0.3；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |

@@ -74,7 +74,7 @@ struct BackendClient {
         // Send every known provider so a disconnect clears the backend copy;
         // several accounts go as a list in slot order ("qoder", "qoder#2"...).
         var body: [String: [[String: String]]?] = [:]
-        for (id, _) in WebProvider.apiKeyProviders { body[id] = sessions[id].map { [$0] } }
+        for p in WebProvider.apiKeyProviders { body[p.id] = sessions[p.id].map { [$0] } }
         for p in WebProvider.all where p.backendManaged {
             let list = sessions.filter { ConnectionManager.provider(ofSlot: $0.key) == p.id }
                 .sorted { ConnectionManager.order(ofSlot: $0.key) < ConnectionManager.order(ofSlot: $1.key) }

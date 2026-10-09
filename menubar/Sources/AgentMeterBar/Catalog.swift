@@ -8,7 +8,7 @@ enum Catalog {
         let tint: Color
     }
 
-    static let order = ["codex", "claude", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "minimax_design", "dreamina", "deepseek_api"]
+    static let order = ["codex", "claude", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "zcode", "volcengine", "minimax_design", "dreamina", "mimo", "deepseek_api"]
     static let metricOrder = ["quota", "reset_time", "reset_cards", "credits", "tokens", "cost",
                               "renewal_time", "renewal_countdown", "renewal_amount",
                               "credit_refresh_time", "credit_refresh_countdown"]
@@ -35,6 +35,9 @@ enum Catalog {
         case "minimax_design": return Brand(name: "MiniMax Design", symbol: "paintpalette.fill", tint: Color(red: 0.93, green: 0.30, blue: 0.55))
         case "dreamina": return Brand(name: "即梦", symbol: "sparkles", tint: Color(red: 0.55, green: 0.36, blue: 0.96))
         case "deepseek_api": return Brand(name: "DeepSeek API", symbol: "fish.fill", tint: Color(red: 0.25, green: 0.42, blue: 0.95))
+        case "zcode": return Brand(name: "ZCode", symbol: "z.square.fill", tint: Color(red: 0.16, green: 0.38, blue: 0.98))
+        case "volcengine": return Brand(name: "火山方舟 Coding Plan", symbol: "flame.fill", tint: Color(red: 0.20, green: 0.44, blue: 1.0))
+        case "mimo": return Brand(name: "MiMo API", symbol: "bolt.horizontal.fill", tint: Color(red: 1.0, green: 0.42, blue: 0.0))
         case "ccswitch": return Brand(name: "CC Switch", symbol: "arrow.triangle.swap", tint: .orange)
         default:
             if id.hasPrefix("codexbar:") {
@@ -48,7 +51,8 @@ enum Catalog {
     static func shortName(_ id: String) -> String {
         let id = ConnectionManager.provider(ofSlot: id)
         return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
-         "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek"][id]
+         "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
+         "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo"][id]
             ?? brand(id).name
     }
 
@@ -102,6 +106,18 @@ enum Catalog {
             "qoder_usage_unavailable": "Qoder 未返回用量",
             "minimax_credential_not_connected": "未填写 API Key，CC Switch 中也没有可用的 MiniMax 供应方",
             "deepseek_credential_not_connected": "未填写 API Key（在「连接网页账户 / API 密钥」里填写）",
+            "zcode_credential_not_connected": "未连接（在「连接网页账户」里登录智谱开放平台，或粘贴 Coding Plan API Key）",
+            "zcode_quota_api_error": "智谱返回错误",
+            "unsupported_zcode_quota_contract": "智谱返回格式不支持",
+            "zcode_cards_need_desktop_login": "重置卡需 ZCode 桌面登录，当前路线不读取",
+            "volcengine_credential_not_connected": "未填写火山引擎 AccessKey（在「连接网页账户 / API 密钥」里填写）",
+            "volcengine_no_coding_plan": "该账户没有 Coding Plan",
+            "volcengine_no_quota_windows": "未返回额度窗口",
+            "volcengine_api_error": "火山引擎返回错误",
+            "mimo_not_authenticated": "MiMo 控制台未登录或登录已失效",
+            "mimo_api_error": "MiMo 返回错误",
+            "mimo_token_plan_usage_unrecognized": "未识别 Token Plan 用量格式",
+            "unsupported_mimo_balance_contract": "MiMo 返回格式不支持",
             "dreamina_cli_not_available": "未找到即梦 CLI",
             "dreamina_not_authenticated": "即梦未登录",
             "design_gateway_not_ready": "MiniMax Design 未运行",
@@ -137,7 +153,7 @@ enum Catalog {
 
     static func bucketLabel(_ q: JSON) -> String {
         // Named windows that share a length (Claude's weekly model windows).
-        let named = ["seven_day_opus": "7 天 Opus", "seven_day_sonnet": "7 天 Sonnet",
+        let named = ["seven_day_opus": "7 天 Opus", "seven_day_sonnet": "7 天 Sonnet", "monthly": "每月", "mcp": "MCP 调用（月）",
                      "seven_day_oauth_apps": "7 天 OAuth 应用"]
         if let b = q["bucket"].string, let n = named[b] { return n }
         if let minutes = q["window_minutes"].double { return Fmt.window(minutes: minutes) }
@@ -177,6 +193,9 @@ enum Catalog {
         case "provider_credits", "dreamina_credits", "credits", "credit": return "积分"
         case "minimax_design_media_credits": return "媒体积分"
         case "workbuddy_credits", "trae_credits", "qoder_credits": return "积分"
+        case "zcode_credits": return "额度"
+        case "tokens": return "Token"
+        case "calls": return "次"
         case "CNY": return "元"
         case "USD": return "美元"
         case nil: return ""

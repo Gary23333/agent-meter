@@ -7,38 +7,78 @@ struct WebProvider: Identifiable {
     let id: String              // backend source id
     let loginURL: URL
     let cookieDomain: String?   // cookie-based providers
-    let capturesToken: Bool     // TRAE: Cloud-IDE-JWT from the page's own API calls
     let note: String
     /// Records the structure (never values) of the page's own JSON responses.
     var discovers = false
     /// False when the app, not the backend, uses the login (即梦).
     var backendManaged = true
+    /// Watches the page's own API calls for its Authorization header (TRAE, ZCode).
+    var tokenCapture: TokenCapture? = nil
 
     static let all: [WebProvider] = [
         WebProvider(id: "claude", loginURL: URL(string: "https://claude.ai/login")!,
-                    cookieDomain: "claude.ai", capturesToken: false,
+                    cookieDomain: "claude.ai",
                     note: "与 Claude 桌面客户端同一账户，读取 5 小时 / 7 天额度。Google 登录可能拒绝内嵌窗口，建议用邮箱验证码登录。"),
         WebProvider(id: "qoder", loginURL: URL(string: "https://qoder.com.cn/account/usage")!,
-                    cookieDomain: "qoder.com.cn", capturesToken: false,
+                    cookieDomain: "qoder.com.cn",
                     note: "中国区账户额度，登录后替代读取失败的 Qoder SDK。"),
         WebProvider(id: "workbuddy", loginURL: URL(string: "https://www.workbuddy.cn/profile/plans-usage")!,
-                    cookieDomain: "workbuddy.cn", capturesToken: false,
+                    cookieDomain: "workbuddy.cn",
                     note: "积分包剩余、冻结与套餐；登录态与本窗口的浏览器标识绑定。"),
         WebProvider(id: "trae_cn", loginURL: URL(string: "https://www.trae.cn/")!,
-                    cookieDomain: nil, capturesToken: true,
-                    note: "实验性：登录后打开用量/账户页，自动捕获 Cloud-IDE-JWT；也可手动粘贴。"),
+                    cookieDomain: nil,
+                    note: "实验性：登录后打开用量/账户页，自动捕获 Cloud-IDE-JWT；也可手动粘贴。",
+                    tokenCapture: TokenCapture(url: #"^https:\/\/api\.trae\.cn\/"#, value: #"^Cloud-IDE-JWT\s+\S+$"#,
+                                               strip: "Cloud-IDE-JWT ", pastePlaceholder: "或粘贴 Cloud-IDE-JWT（新增一个账号）",
+                                               pasteField: "token")),
+        WebProvider(id: "zcode", loginURL: URL(string: "https://bigmodel.cn/coding-plan/personal/usage")!,
+                    cookieDomain: nil,
+                    note: "实验性：登录智谱开放平台（ZCode 的 GLM Coding Plan 账户），打开「用量」页后自动捕获页面自己的查询凭据，读取 5 小时 / 每周额度与 MCP 次数。也可粘贴 Coding Plan API Key。重置卡只在 ZCode 桌面端，暂不读取。",
+                    tokenCapture: TokenCapture(url: #"^https:\/\/(open\.)?bigmodel\.cn\/api\/"#,
+                                               value: #"^(Bearer\s+)?[A-Za-z0-9._\-]{20,}$"#,
+                                               pastePlaceholder: "或粘贴 Coding Plan API Key（新增一个账号）",
+                                               pasteField: "api_key")),
         WebProvider(id: "dreamina", loginURL: URL(string: "https://jimeng.jianying.com/ai-tool/home")!,
-                    cookieDomain: "jianying.com", capturesToken: false,
+                    cookieDomain: "jianying.com",
                     note: "实验性：登录后请打开「会员 / 积分」相关页面，再点「完成连接」。本步只记录页面接口的字段结构，用来定位续费与积分更新时间。",
                     discovers: true, backendManaged: false),
+        WebProvider(id: "mimo", loginURL: URL(string: "https://platform.xiaomimimo.com/#/console/balance")!,
+                    cookieDomain: "xiaomimimo.com",
+                    note: "小米 MiMo API 开放平台：账户余额（现金 / 赠送）与 Token Plan。登录小米账号后看到余额页再点「完成连接」；API Key 无权查询余额。"),
     ]
 
     static func find(_ id: String) -> WebProvider? { all.first { $0.id == id } }
 
-    /// Sources that take an API key typed into the app instead of a web login.
-    static let apiKeyProviders: [(id: String, hint: String)] = [
-        ("deepseek_api", "DeepSeek 开放平台的 API Key（sk-…），用于查询余额。"),
-        ("minimax_code", "MiniMax Token Plan 的 API Key（国内版），优先于 CC Switch 里的供应方。"),
+    struct TokenCapture {
+        /// JS regex sources: which request URLs to watch and which header values to accept.
+        let url: String
+        let value: String
+        /// Scheme word removed before saving ("Cloud-IDE-JWT ").
+        var strip: String? = nil
+        /// Paste-in alternative shown in the connections window.
+        let pastePlaceholder: String
+        let pasteField: String
+    }
+
+    /// One secret the user types in; `field` is its backend session key.
+    struct KeyField {
+        let field: String
+        let placeholder: String
+    }
+
+    struct APIKeyProvider {
+        let id: String
+        let hint: String
+        var fields = [KeyField(field: "api_key", placeholder: "粘贴 API Key")]
+    }
+
+    /// Sources that take keys typed into the app instead of a web login.
+    static let apiKeyProviders: [APIKeyProvider] = [
+        APIKeyProvider(id: "deepseek_api", hint: "DeepSeek 开放平台的 API Key（sk-…），用于查询余额。"),
+        APIKeyProvider(id: "minimax_code", hint: "MiniMax Token Plan 的 API Key（国内版），优先于 CC Switch 里的供应方。"),
+        APIKeyProvider(id: "volcengine", hint: "火山引擎 AccessKey（访问控制 → 密钥管理），只调用查询接口 GetCodingPlanUsage，不消耗套餐额度。建议使用仅有方舟只读权限的子用户密钥。",
+                       fields: [KeyField(field: "access_key_id", placeholder: "Access Key ID（AKLT…）"),
+                                KeyField(field: "secret_access_key", placeholder: "Secret Access Key")]),
     ]
     static func isAPIKeyProvider(_ id: String) -> Bool { apiKeyProviders.contains { $0.id == id } }
 
@@ -160,6 +200,7 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
     var label: String
     let webView: WKWebView
     var capturedToken: String?
+    var capturedOrigin: String?
     @ObservationIgnored let discovery = DreaminaDiscovery()
     var status = "请在下方完成登录，然后点「完成连接」。"
     var saving = false
@@ -180,39 +221,50 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
             config.userContentController.addUserScript(WKUserScript(source: DreaminaDiscovery.script,
                                                                     injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
-        if provider.capturesToken {
+        if let capture = provider.tokenCapture {
             config.userContentController.add(self, name: "agentMeterAuth")
-            config.userContentController.addUserScript(WKUserScript(source: Self.captureScript,
+            config.userContentController.addUserScript(WKUserScript(source: Self.captureScript(capture),
                                                                     injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         web.load(URLRequest(url: provider.loginURL))
     }
 
-    /// Observes (never alters) the page's own API calls to api.trae.cn.
-    private static let captureScript = """
-    (function(){
-      const send = v => { try { window.webkit.messageHandlers.agentMeterAuth.postMessage(String(v)); } catch (e) {} };
-      const pick = (url, h) => { try {
-        if (!/^https:\\/\\/api\\.trae\\.cn\\//.test(String(url))) return;
-        let v = null;
-        if (h instanceof Headers) v = h.get('Authorization');
-        else if (Array.isArray(h)) { for (const [k, x] of h) if (String(k).toLowerCase() === 'authorization') v = x; }
-        else if (h) { for (const k in h) if (k.toLowerCase() === 'authorization') v = h[k]; }
-        if (v && /^Cloud-IDE-JWT\\s+\\S+$/i.test(v)) send(v);
-      } catch (e) {} };
-      const f = window.fetch;
-      window.fetch = function(input, init) {
-        try { pick(typeof input === 'string' ? input : input.url, (init && init.headers) || (input && input.headers)); } catch (e) {}
-        return f.apply(this, arguments);
-      };
-      const open = XMLHttpRequest.prototype.open, set = XMLHttpRequest.prototype.setRequestHeader;
-      XMLHttpRequest.prototype.open = function(m, u) { this.__amUrl = u; return open.apply(this, arguments); };
-      XMLHttpRequest.prototype.setRequestHeader = function(k, v) {
-        if (String(k).toLowerCase() === 'authorization') pick(this.__amUrl, { authorization: v });
-        return set.apply(this, arguments);
-      };
-    })();
-    """
+    /// Observes (never alters) the page's own API calls to the provider's API host.
+    private static func captureScript(_ c: WebProvider.TokenCapture) -> String {
+        """
+        (function(){
+          const URL_RE = new RegExp(\(jsString(c.url))), VALUE_RE = new RegExp(\(jsString(c.value)), 'i');
+          const send = (u, v) => { try {
+            window.webkit.messageHandlers.agentMeterAuth.postMessage({ origin: new URL(String(u), location.href).origin, value: String(v) });
+          } catch (e) {} };
+          const pick = (url, h) => { try {
+            const abs = new URL(String(url), location.href).href;
+            if (!URL_RE.test(abs)) return;
+            let v = null;
+            if (h instanceof Headers) v = h.get('Authorization');
+            else if (Array.isArray(h)) { for (const [k, x] of h) if (String(k).toLowerCase() === 'authorization') v = x; }
+            else if (h) { for (const k in h) if (k.toLowerCase() === 'authorization') v = h[k]; }
+            if (v && VALUE_RE.test(String(v).trim())) send(abs, String(v).trim());
+          } catch (e) {} };
+          const f = window.fetch;
+          window.fetch = function(input, init) {
+            try { pick(typeof input === 'string' ? input : input.url, (init && init.headers) || (input && input.headers)); } catch (e) {}
+            return f.apply(this, arguments);
+          };
+          const open = XMLHttpRequest.prototype.open, set = XMLHttpRequest.prototype.setRequestHeader;
+          XMLHttpRequest.prototype.open = function(m, u) { this.__amUrl = u; return open.apply(this, arguments); };
+          XMLHttpRequest.prototype.setRequestHeader = function(k, v) {
+            if (String(k).toLowerCase() === 'authorization') pick(this.__amUrl, { authorization: v });
+            return set.apply(this, arguments);
+          };
+        })();
+        """
+    }
+
+    private static func jsString(_ s: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: [s])
+        return String(data: data ?? Data("[\"\"]".utf8), encoding: .utf8).map { String($0.dropFirst().dropLast()) } ?? "\"\""
+    }
 
     nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == DreaminaDiscovery.handlerName {
@@ -225,12 +277,17 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
             }
             return
         }
-        guard let value = message.body as? String else { return }
-        let token = value.replacingOccurrences(of: "Cloud-IDE-JWT ", with: "", options: [.caseInsensitive, .anchored])
-            .trimmingCharacters(in: .whitespaces)
+        guard let body = message.body as? [String: Any], let value = body["value"] as? String,
+              let origin = body["origin"] as? String else { return }
         Task { @MainActor in
+            var token = value
+            if let strip = self.provider.tokenCapture?.strip {
+                token = token.replacingOccurrences(of: strip, with: "", options: [.caseInsensitive, .anchored])
+            }
+            token = token.trimmingCharacters(in: .whitespaces)
             guard !token.isEmpty, token.count < 8000 else { return }
             self.capturedToken = token
+            self.capturedOrigin = origin
             self.status = "已捕获登录凭据，可以点「完成连接」。"
         }
     }
@@ -241,12 +298,14 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
         var session = ["user_agent": WebProvider.userAgent]
         let cleanLabel = label.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40)
         if !cleanLabel.isEmpty { session["label"] = String(cleanLabel) }
-        if provider.capturesToken {
+        if provider.tokenCapture != nil {
             guard let token = capturedToken else {
                 status = "还没有捕获到凭据：登录后打开账户 / 用量页面再试，或在连接窗口手动粘贴。"
                 return false
             }
             session["token"] = token
+            // The backend accepts only its own allowlisted hosts for this.
+            if provider.id == "zcode", let origin = capturedOrigin { session["origin"] = origin }
         }
         if let domain = provider.cookieDomain {
             let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
@@ -321,7 +380,7 @@ struct WebLoginView: View {
 struct ConnectionsView: View {
     @Environment(UsageStore.self) private var store
     @State private var slots: [String: [String]] = [:]
-    @State private var pastedToken = ""
+    @State private var pastedTokens: [String: String] = [:]
     @State private var apiKeys: [String: String] = [:]
     @State private var savedKeys: Set<String> = []
 
@@ -370,17 +429,24 @@ struct ConnectionsView: View {
                 }
             }
             HStack {
-                SecureField(savedKeys.contains(p.id) ? "已保存（输入新密钥可替换）" : "粘贴 API Key",
-                            text: Binding(get: { apiKeys[p.id] ?? "" }, set: { apiKeys[p.id] = $0 }))
-                    .textFieldStyle(.roundedBorder)
+                // Several fields (an AccessKey pair) are saved together as one session.
+                ForEach(p.fields, id: \.field) { f in
+                    SecureField(savedKeys.contains(p.id) ? "已保存（输入新值可替换）" : f.placeholder,
+                                text: Binding(get: { apiKeys[p.id + "." + f.field] ?? "" }, set: { apiKeys[p.id + "." + f.field] = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                }
                 Button("保存") {
-                    let key = (apiKeys[p.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !key.isEmpty, !key.contains("\n"), key.count < 512 else { return }
-                    ConnectionManager.shared.save(p.id, ["api_key": key])
-                    apiKeys[p.id] = ""
+                    var session: [String: String] = [:]
+                    for f in p.fields {
+                        let value = (apiKeys[p.id + "." + f.field] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !value.isEmpty, !value.contains("\n"), value.count < 512 else { return }
+                        session[f.field] = value
+                    }
+                    ConnectionManager.shared.save(p.id, session)
+                    for f in p.fields { apiKeys[p.id + "." + f.field] = "" }
                     reload()
                 }
-                .disabled((apiKeys[p.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(p.fields.contains { (apiKeys[p.id + "." + $0.field] ?? "").trimmingCharacters(in: .whitespaces).isEmpty })
                 if savedKeys.contains(p.id) {
                     Button("清除", role: .destructive) { ConnectionManager.shared.disconnect(p.id); reload() }
                 }
@@ -427,20 +493,24 @@ struct ConnectionsView: View {
             Spacer()
         }
         .controlSize(.small)
-        if p.capturesToken {
+        if let capture = p.tokenCapture {
+            let pasted = Binding(get: { pastedTokens[p.id] ?? "" }, set: { pastedTokens[p.id] = $0 })
             HStack {
-                SecureField("或粘贴 Cloud-IDE-JWT（新增一个账号）", text: $pastedToken).textFieldStyle(.roundedBorder)
+                SecureField(capture.pastePlaceholder, text: pasted).textFieldStyle(.roundedBorder)
                 Button("保存") {
-                    let token = pastedToken.replacingOccurrences(of: "Cloud-IDE-JWT ", with: "", options: [.caseInsensitive, .anchored])
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !token.isEmpty, !token.contains("\n") else { return }
+                    var token = pasted.wrappedValue
+                    if let strip = capture.strip {
+                        token = token.replacingOccurrences(of: strip, with: "", options: [.caseInsensitive, .anchored])
+                    }
+                    token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !token.isEmpty, !token.contains("\n"), token.count < 8000 else { return }
                     let used = Set(list.map(ConnectionManager.order(ofSlot:)))
                     guard let n = (1...ConnectionManager.maxAccounts).first(where: { !used.contains($0) }) else { return }
-                    ConnectionManager.shared.save(n == 1 ? p.id : p.id + "#\(n)", ["token": token, "user_agent": WebProvider.userAgent])
-                    pastedToken = ""
+                    ConnectionManager.shared.save(n == 1 ? p.id : p.id + "#\(n)", [capture.pasteField: token, "user_agent": WebProvider.userAgent])
+                    pastedTokens[p.id] = ""
                     reload()
                 }
-                .disabled(pastedToken.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(pasted.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .controlSize(.small)
         }

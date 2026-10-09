@@ -13,7 +13,10 @@
 - **即梦网页登录**：登录时记录页面接口的字段结构（`.runtime/dreamina-discovery.json`，不含值）。之后 App 每 30 分钟在隐藏网页视图里打开已登录的即梦页面，只从页面**自身**发出的 `subscription/user_info`、`benefits/user_credit` 响应中取白名单字段（会员等级、到期、续费、是否取消续费、会员 / 赠送 / 购买积分及各自失效时间），uid 只转成匿名账户指纹，经 `PUT /v1/observations` 交给后端内存。即梦只走网页登录：第一个登录账号为 `dreamina`，其余为 `dreamina#2`…（无备注时显示「账号 N」）；CLI 路线保留但默认关闭（配置 `enable_dreamina_cli`）。不伪造签名、msToken、x-bogus，也不重放请求。即梦没有单独的「积分更新时间」字段，会员积分失效时间按原值显示，不推算。
 - **Kimi Code 本机 Token**：读取 `~/.kimi-code/sessions/**/agents/*/wire.jsonl` 中每轮唯一的 `usage.record`（`usageScope=turn`）；`step.end`、消息元数据、`subagent.completed` 是同一数据的重复，不计入；`session` 范围记录含义未确认，排除并计数。按文件 mtime / size 缓存（全量约 0.3 秒，增量约 0.05 秒）。
 - **本机消耗合并**：「本机消耗」把 CC Switch 历史与 Kimi Code 本机记录合成一份（总量、构成、按应用、模型排行）。两者记录的是不同客户端（CC Switch 里的 `kimi-for-coding` 是经 CC Switch 路由到 Kimi 的 Claude Code，不是 Kimi Code 应用），相加不重复。估算费用只含 CC Switch 有定价的部分，Kimi 显示「—」。
-- **API 密钥**：「连接网页账户 / API 密钥」里填写 DeepSeek、MiniMax Code（Token Plan）的 API Key，存入钥匙串，经同一内存通道交给后端；仍兼容环境变量。
+- **API 密钥**：「连接网页账户 / API 密钥」里填写 DeepSeek、MiniMax Code（Token Plan），以及火山引擎 AccessKey（AK/SK 一起保存），存入钥匙串，经同一内存通道交给后端；DeepSeek / MiniMax 仍兼容环境变量。
+- **ZCode**（实验性）：「连接网页账户」里登录智谱开放平台并打开 Coding Plan 用量页，自动捕获页面自己发往 bigmodel.cn 的查询凭据（只回放给同一允许的主机）；也可粘贴 Coding Plan API Key。显示 5 小时 / 每周额度（已用 / 总量、周重置时间）与 MCP 月度次数，最多 5 个账号。重置卡只在 ZCode 桌面端，当前路线不读取。
+- **火山方舟 Coding Plan**：用 AccessKey 签名调用只读的 `GetCodingPlanUsage`（不发模型请求、不消耗额度），显示 5 小时 / 每周 / 每月三个窗口与重置时间。
+- **小米 MiMo API**：在内嵌窗口登录 MiMo 开放平台控制台，读取账户余额（现金 / 赠送）与 Token Plan 本月用量；只转发控制台自身的 Cookie。MiMo 的推理 API Key 无权查询余额。
 - **Claude Code**：设置菜单「读取 Claude 额度」可单独关闭（经 `PUT /v1/preferences`，关闭后不读钥匙串也不请求）。开启时优先用 claude.ai 网页登录，否则读 Claude Code 的钥匙串登录，查询 5 小时 / 7 天窗口；不刷新令牌。
 - **界面风格**：面板标题栏的调色板按钮或设置菜单「界面风格」，在四套风格间切换（立即生效、记住选择）：「极简」黑白排版、无卡片无阴影；「原生」macOS 系统实色卡片；「极光」毛玻璃与彩色光斑（默认）；「霓虹」赛博霓虹，固定深色，背景光效由 Core Animation 驱动。网页账户窗口跟随同一风格。
 - **统一卡片结构**：各供应商账户卡按同一顺序显示：额度窗口（短窗口在前，均为进度条，「1 周」统一写作「7 天」）→ 余额与积分包（缩进）→ 积分更新 → 重置卡（明细紧跟其后）→ 续费 / 会员到期 → Token。倒计时 3 天内统一标橙，不按品牌色着色。

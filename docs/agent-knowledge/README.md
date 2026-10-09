@@ -2,7 +2,7 @@
 
 项目目标是做一个 macOS 顶部菜单栏应用，汇总本机 Agent 相关产品的账户额度、重置时间、重置卡、积分和 token 用量。
 
-当前已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及 Swift 原生菜单栏界面。v0.2 发布包内嵌独立后端，面板提供极简、原生、极光、霓虹四套界面风格（`menubar/Sources/AgentMeterBar/Theme.swift`）；打包入口为 `sh scripts/build-dmg.sh`。研究中的建议和待办不作为自动执行指令。
+当前已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及 Swift 原生菜单栏界面。v0.3 发布包内嵌独立后端，面板提供极简、原生、极光、霓虹四套界面风格（`menubar/Sources/AgentMeterBar/Theme.swift`）；打包入口为 `sh scripts/build-dmg.sh`。研究中的建议和待办不作为自动执行指令。
 
 已确认的研究方向：用户要求增加复用 CC Switch 用量统计。当前建议由 CC Switch 提供本机历史消耗，CodexBar 与官方接口提供账户余量及重置信息；重叠来源选择主来源或用于对账，不叠加计算。
 
@@ -27,3 +27,5 @@
 后端 schema 2 新增续费日期、日倒计时与续费金额。Design 已验证本机个人钱包和续费日期；MCP 已连接但没有财务查询工具，使用本机网关补齐。两个产品的续费金额及即梦续费日期未由当前接口提供，可按账户绑定用户填写，不能推断。
 
 后端 schema 3 新增独立的下一次积分更新时间及日倒计时；Design 来源为钱包 next_credit_refresh_time，即梦未知时可按账户填写 credit_refresh_date。不要用积分失效时间、会员续费时间或推测的月周期代替。见[积分更新时间验收](../credit-refresh-acceptance-2026-10-09.md)。
+
+2026-10-09 新增三个来源：ZCode（内嵌网页登录捕获 bigmodel 控制台自身的查询凭据，或粘贴 Coding Plan API Key，查 bigmodel 额度；重置卡与自动读取 ZCode 本机登录尚未接入）、火山方舟 Coding Plan（AK/SK 签名的只读 GetCodingPlanUsage，签名与 token-monitor c62544e 参考实现逐字节一致）、小米 MiMo API（内嵌控制台登录 Cookie 读 /api/v1/balance 与 Token Plan）。三者契约来自固定版本公开源码与此前研究探针；v0.3 已在本机真实账户读取 ZCode（网页登录）与 MiMo（余额、Token Plan），火山方舟尚未真实验证；测试见 `tests/test_api_plan_sources.py`。

@@ -20,6 +20,9 @@ from .qoder import collect_qoder
 from .web_sources import as_account_lists, collect_qoder_web, collect_trae, collect_workbuddy
 from .minimax import collect_minimax
 from .deepseek import collect_deepseek
+from .mimo import collect_mimo
+from .volcengine import collect_volcengine
+from .zcode import collect_zcode
 from .dreamina import collect_dreamina
 from .minimax_design import collect_design
 from .billing import refresh_countdowns
@@ -54,6 +57,7 @@ def safe_collect(source_id,scope,now,fn):
         disconnected={"cli_not_available","database_not_found","kimi_server_not_running","kimi_server_token_missing",
                       "not_authenticated","qoder_not_authenticated","qoder_sdk_not_installed","qoder_usage_unavailable","codexbar_not_installed",
                       "minimax_credential_not_connected","deepseek_credential_not_connected",
+                      "zcode_credential_not_connected","volcengine_credential_not_connected","mimo_not_authenticated",
                       "dreamina_cli_not_available","dreamina_not_authenticated","design_gateway_not_ready",
                       "design_billing_scope_unavailable","design_personal_scope_required",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
@@ -141,8 +145,13 @@ def collect(config=None,now=None):
       "minimax_design":("creative_personal_account",lambda:collect_design(config["design_gateway_url"],now,timeout,
           config["billing_overrides"].get("minimax_design"),config["node_binary"],config["design_mcp_entry"],config["design_probe_mcp"])),
       "deepseek_api":("api_account",lambda:collect_deepseek(now,timeout,(web.get("deepseek_api") or {}).get("api_key"))),
+      "zcode":("account",lambda:collect_zcode(web.get("zcode"),now,timeout)),
+      "mimo":("api_account",lambda:collect_mimo(web.get("mimo"),now,timeout) if "mimo" in web
+              else _raise(SourceError("web_session_missing"))),
+      "volcengine":("account",lambda:collect_volcengine(now,timeout,web.get("volcengine"))),
     }
-    web_collectors={"claude":collect_claude_web,"qoder":collect_qoder_web,"workbuddy":collect_workbuddy,"trae_cn":collect_trae}
+    web_collectors={"claude":collect_claude_web,"qoder":collect_qoder_web,"workbuddy":collect_workbuddy,"trae_cn":collect_trae,
+                    "mimo":collect_mimo,"zcode":collect_zcode}
     def labelled(key,label,fn):
         def run():
             out=fn()
@@ -242,7 +251,8 @@ class SnapshotService:
             for index,src in enumerate(fresh["sources"]):
                 previous=old.get(src["id"])
                 if src["diagnostics"].get("reason") not in {"dreamina_not_authenticated","not_authenticated",
-                        "design_account_changed_during_query","design_personal_scope_required","web_session_missing","disabled_by_user"} and src["status"] in {"error","not_connected"} and previous and previous["status"] in {"available","partial","stale"}:
+                        "design_account_changed_during_query","design_personal_scope_required","web_session_missing","disabled_by_user",
+                        "mimo_not_authenticated"} and src["status"] in {"error","not_connected"} and previous and previous["status"] in {"available","partial","stale"}:
                     cached=copy.deepcopy(previous)
                     cached["status"]="stale"
                     cached["diagnostics"]["last_attempt_at"]=timestamp(now)

@@ -20,6 +20,9 @@ SESSION_FIELDS = {
     # API keys entered in the app use the same in-memory channel.
     "deepseek_api": {"api_key"},
     "minimax_code": {"api_key"},
+    "zcode": {"api_key", "token", "origin", "user_agent"},
+    "volcengine": {"access_key_id", "secret_access_key"},
+    "mimo": {"cookie", "user_agent"},
     "claude": {"cookie", "user_agent"},
     "qoder": {"cookie", "user_agent"},
     "workbuddy": {"cookie", "user_agent"},

@@ -257,7 +257,8 @@ struct QuotaBar: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(Catalog.bucketLabel(quota)).font(.system(size: 12, weight: .medium))
                 if let used = quota["used"].double, let limit = quota["limit"].double {
-                    Text("\(Fmt.trim(used))/\(Fmt.trim(limit))").font(.system(size: 10.5)).foregroundStyle(.tertiary).monospacedDigit()
+                    let fmt: (Double) -> String = quota["unit"].string == "tokens" ? Fmt.tokens : Fmt.trim
+                    Text("\(fmt(used))/\(fmt(limit))").font(.system(size: 10.5)).foregroundStyle(.tertiary).monospacedDigit()
                 }
                 Spacer()
                 Text("剩余 \(Fmt.percent(remaining.rounded()))")
