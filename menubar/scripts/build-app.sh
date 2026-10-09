@@ -19,6 +19,7 @@ cp "$bin" "$app/Contents/MacOS/AgentMeterBar"
 strip -S "$app/Contents/MacOS/AgentMeterBar"
 cp -R "$root/.runtime/build/backend/agent-meter-backend" "$app/Contents/Resources/backend"
 cp "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/"
+cp "$root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 # Include the licenses for the redistributed Python runtime and bootloader.
 "${PYTHON:-python3}" "$root/scripts/copy-runtime-licenses.py" "$app/Contents/Resources/Licenses"
 

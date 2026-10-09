@@ -9,6 +9,7 @@
 - 应用数据保存在 `~/Library/Application Support/AgentMeter/.runtime/`，网页登录/API 凭据使用钥匙串。
 - 源码按后端、前端、构建脚本、测试、文档、示例和发布产物组织。缓存、真实账户快照及截图不上传。
 - DMG 和 SHA256SUMS 作为 GitHub Release 资产提供；二进制不进入 Git 历史。
+- 项目采用 MIT 协议；README 演示截图使用虚构数据。真实账户证据不公开。
 
 ## 验证
 
