@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Local read-only agent usage collectors and verification API"
 requires-python = ">=3.9"
 dependencies = []
+license = {file = "LICENSE"}
 
 [project.scripts]
 agent-meter = "agent_meter.cli:main"

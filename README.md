@@ -1,7 +1,7 @@
 # AgentMeter · Agent 用量
 
 <p align="center">
-  v0.1 · macOS 14+ · Apple Silicon
+  <img src="docs/images/accounts-light.png" alt="AgentMeter 账户额度浅色界面，使用演示数据" width="420" />
 </p>
 
 <p align="center">
@@ -17,7 +17,10 @@
   <img src="https://img.shields.io/badge/Tests-137%20Passed-brightgreen" alt="Tests: 137 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
   <img src="https://img.shields.io/badge/Release-v0.1.0-blue" alt="Release: v0.1.0" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
+
+> 下方截图由 App 离线预览生成，所有账户、余额和用量均为虚构演示数据，不代表真实账户或全部来源的接入情况。
 
 ---
 
@@ -68,8 +71,25 @@
 - **Swift Charts 消耗分布图**：将输入、输出、缓存命中等构成以环形图直观呈现。
 
 <p align="center">
-  真实账户截图仅本机保留，不随源码上传。
+  <img src="docs/images/accounts-dark.png" alt="账户额度深色界面：演示额度、重置卡和积分" width="48%" />
+  <img src="docs/images/usage-dark.png" alt="本机消耗深色界面：演示 Token、费用和模型排行" width="48%" />
 </p>
+
+<details>
+<summary>查看更多截图：本机消耗、应用覆盖与菜单栏行情</summary>
+
+<p align="center">
+  <img src="docs/images/usage-light.png" alt="本机消耗浅色界面，使用演示数据" width="48%" />
+  <img src="docs/images/apps-light.png" alt="应用覆盖界面，使用演示数据" width="48%" />
+</p>
+
+<p align="center">
+  <img src="docs/images/ticker-light.png" alt="菜单栏行情条，使用演示数据" width="100%" />
+</p>
+
+截图生成方式见 [截图说明](docs/images/README.md)。
+
+</details>
 
 ### 4. 👥 多账号隔离支持（Multi-Account）
 - 每个网页登录来源支持最多 **5 个独立账号**（如「主号」、「小号」、「工作号」）；
@@ -95,7 +115,7 @@
 > 1. **100% 只读保障 (Strictly Read-Only)**：核心逻辑绝不包含任何买入、兑换重置卡、更改套餐、发送模型 Prompt 的操作。
 > 2. **凭据零泄露 (Zero Credential Leakage)**：
 >    - 网页 Session 与 API Key 仅保存在 macOS 系统的钥匙串（Keychain）中；
->    - 传输给本机后端时仅通过 loopback 内存通道（`PUT /v1/web-sessions`），**绝不写入快照文件、绝不输出到日志、绝不上报任何外部服务器**；
+>    - 传输给本机后端时仅通过 loopback 内存通道（`PUT /v1/web-sessions`），不写入快照文件或日志；查询时仅发送给对应服务的官方端点；
 >    - 快照与对外接口中，账号标识一律经过 SHA-256 散列并截断（`account_key`），绝不泄漏原始用户 ID。
 > 3. **数据诚实性 (Honest Metrics)**：
 >    - **未提供 ≠ 0**：接口未返回的字段明确标为 `not_provided`，严禁脑补为 0；
@@ -269,8 +289,8 @@ python3 -m agent_meter verify --output .runtime/verification.json
 
 ## 📄 开源许可与第三方致谢
 
-- 当前仓库为私有项目，尚未单独声明项目开源许可证。
-- 适配规则与来源接口实现参考了开源社区优秀的先驱项目（CodexBar, UsageBar-tauri, token-monitor, usageBar, TraeUseToken 等），均已在固定 Commit 上完成合规核验，详见 [第三方开源声明](THIRD_PARTY_NOTICES.md)。
+- 本项目采用 [MIT 开源协议](LICENSE)，Copyright (c) 2026 Gary23333。
+- CC Switch 衍生适配保留上游 MIT 版权声明；发布包中的 CPython 和 PyInstaller 使用各自协议。详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 ---
 
