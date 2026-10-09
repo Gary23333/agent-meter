@@ -170,11 +170,55 @@ class VolcengineTests(unittest.TestCase):
     def test_collect_posts_signed_empty_body(self):
         payload = {"Result": {"QuotaUsage": [{"Level": "session", "Percent": 0}]}}
         with mock.patch.object(volcengine, "get_json", return_value=payload) as get:
-            out = volcengine.collect_volcengine(NOW, session={"access_key_id": "AKLTx", "secret_access_key": "sk"})
+            out = volcengine.collect_volcengine({"access_key_id": "AKLTx", "secret_access_key": "sk"}, NOW)
         self.assertEqual(get.call_args.kwargs["body"], b"")
         self.assertIn("HMAC-SHA256", get.call_args.kwargs["headers"]["Authorization"])
         self.assertNotIn("'sk'", repr(out))
         self.assertEqual(out["metrics"]["quota"]["value"][0]["remaining_percent"], 100)
+
+
+    def test_unknown_values_do_not_fail_the_card(self):
+        rows, _, _ = volcengine.normalize_usage({"Result": {"QuotaUsage": [
+            {"Level": "session", "Percent": "8.5", "ResetTimestamp": -1},
+            {"Level": "weekly", "Percent": -1, "ResetTimestamp": 0},
+            {"Level": "monthly", "Percent": 2, "ResetTimestamp": "1792000000"}]}})
+        self.assertEqual([(r["bucket"], r["used_percent"]) for r in rows], [("session", 8.5), ("monthly", 2)])
+        self.assertIsNone(rows[0]["resets_at"])
+        self.assertEqual(rows[1]["resets_at"]["epoch_seconds"], 1792000000)
+
+    def test_unparseable_console_answer_keeps_value_free_shape(self):
+        with mock.patch.object(volcengine, "get_json", return_value={"Result": {"QuotaUsage": "x", "Secret": "v"}}):
+            out = volcengine.collect_volcengine({"cookie": "csrfToken=abcdefgh"}, NOW)
+        self.assertEqual(out["status"], "error")
+        self.assertEqual(out["diagnostics"]["usage_shape"], {"Result": {"QuotaUsage": "str", "Secret": "str"}})
+        self.assertNotIn("'v'", repr(out["diagnostics"]))
+
+    def test_ark_api_key_in_access_key_field_is_explained(self):
+        out = safe_collect("volcengine", "account", NOW, lambda: volcengine.collect_volcengine(
+            {"access_key_id": "6f1c2d3e-ark-api-key", "secret_access_key": "x"}, NOW))
+        self.assertEqual((out["status"], out["diagnostics"]["reason"]), ("not_connected", "volcengine_ark_key_not_supported"))
+
+    def test_console_session_replays_only_the_allowlisted_action(self):
+        payload = {"Result": {"QuotaUsage": [{"Level": "weekly", "Percent": 10}]}}
+        session = {"cookie": "csrfToken=abc123xyz; session=s", "user_agent": "UA",
+                   "usage_url": "https://console.volcengine.com/api/top/ark/cn-beijing/2024-01-01/GetCodingPlanUsage"}
+        with mock.patch.object(volcengine, "get_json", return_value=payload) as get:
+            out = volcengine.collect_volcengine(session, NOW)
+        url, kw = get.call_args.args[0], get.call_args.kwargs
+        self.assertEqual(url, session["usage_url"])
+        self.assertEqual(kw["headers"]["x-csrf-token"], "abc123xyz")  # falls back to the csrfToken cookie
+        self.assertEqual(kw["body"], {})
+        self.assertEqual(out["diagnostics"]["transport"], "volcengine_console_session")
+        for bad in ("https://evil.example/api/top/ark/cn-beijing/2024-01-01/GetCodingPlanUsage",
+                    "https://console.volcengine.com/api/top/iam/cn-beijing/2024-01-01/DeleteUser"):
+            with self.assertRaises(SourceError):
+                volcengine.collect_volcengine(dict(session, usage_url=bad), NOW)
+
+    def test_expired_console_login_is_not_connected(self):
+        with mock.patch.object(volcengine, "get_json", side_effect=SourceError("redirect_rejected")):
+            out = safe_collect("volcengine", "account", NOW, lambda: volcengine.collect_volcengine(
+                {"cookie": "csrfToken=abcdefgh"}, NOW))
+        self.assertEqual((out["status"], out["diagnostics"]["reason"]), ("not_connected", "volcengine_not_authenticated"))
 
 
 class WiringTests(unittest.TestCase):

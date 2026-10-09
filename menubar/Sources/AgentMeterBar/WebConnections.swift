@@ -12,8 +12,12 @@ struct WebProvider: Identifiable {
     var discovers = false
     /// False when the app, not the backend, uses the login (即梦).
     var backendManaged = true
-    /// Watches the page's own API calls for its Authorization header (TRAE, ZCode).
+    /// Watches the page's own API calls for one request header (TRAE, ZCode, 火山).
     var tokenCapture: TokenCapture? = nil
+    /// Keys typed in instead of logging in; each save adds an account.
+    var manual: ManualEntry? = nil
+    /// Where to get those keys, shown as a link.
+    var keyHelp: (title: String, url: URL)? = nil
 
     static let all: [WebProvider] = [
         WebProvider(id: "claude", loginURL: URL(string: "https://claude.ai/login")!,
@@ -29,15 +33,25 @@ struct WebProvider: Identifiable {
                     cookieDomain: nil,
                     note: "实验性：登录后打开用量/账户页，自动捕获 Cloud-IDE-JWT；也可手动粘贴。",
                     tokenCapture: TokenCapture(url: #"^https:\/\/api\.trae\.cn\/"#, value: #"^Cloud-IDE-JWT\s+\S+$"#,
-                                               strip: "Cloud-IDE-JWT ", pastePlaceholder: "或粘贴 Cloud-IDE-JWT（新增一个账号）",
-                                               pasteField: "token")),
+                                               strip: "Cloud-IDE-JWT "),
+                    manual: ManualEntry(fields: [KeyField(field: "token", placeholder: "或粘贴 Cloud-IDE-JWT（新增一个账号）")],
+                                        strip: "Cloud-IDE-JWT ")),
         WebProvider(id: "zcode", loginURL: URL(string: "https://bigmodel.cn/coding-plan/personal/usage")!,
                     cookieDomain: nil,
                     note: "实验性：登录智谱开放平台（ZCode 的 GLM Coding Plan 账户），打开「用量」页后自动捕获页面自己的查询凭据，读取 5 小时 / 每周额度与 MCP 次数。也可粘贴 Coding Plan API Key。重置卡只在 ZCode 桌面端，暂不读取。",
                     tokenCapture: TokenCapture(url: #"^https:\/\/(open\.)?bigmodel\.cn\/api\/"#,
-                                               value: #"^(Bearer\s+)?[A-Za-z0-9._\-]{20,}$"#,
-                                               pastePlaceholder: "或粘贴 Coding Plan API Key（新增一个账号）",
-                                               pasteField: "api_key")),
+                                               value: #"^(Bearer\s+)?[A-Za-z0-9._\-]{20,}$"#, urlField: "origin"),
+                    manual: ManualEntry(fields: [KeyField(field: "api_key", placeholder: "或粘贴 Coding Plan API Key（新增一个账号）")])),
+        WebProvider(id: "volcengine", loginURL: URL(string: "https://console.volcengine.com/ark/region:cn-beijing/subscription/coding-plan")!,
+                    cookieDomain: "volcengine.com",
+                    note: "推荐：登录火山引擎控制台并停在 Coding Plan 订阅页，看到用量后点「完成连接」，App 记下页面自己的用量查询，不需要任何密钥。也可填写 AccessKey（访问控制 → API 访问密钥）。方舟控制台里的 API Key 只能调用模型，无法查询用量。",
+                    tokenCapture: TokenCapture(url: #"^https:\/\/console\.volcengine\.com\/api\/top\/ark\/[^\/?#]+\/[^\/?#]+\/GetCodingPlanUsage"#,
+                                               value: #"^[A-Za-z0-9_\-:.]{8,200}$"#, header: "x-csrf-token",
+                                               field: "csrf_token", urlField: "usage_url", required: false),
+                    manual: ManualEntry(fields: [KeyField(field: "access_key_id", placeholder: "Access Key ID（AKLT…）", mustStartWith: "AK",
+                                                          wrongPrefixHint: "这是方舟 API Key，不能查询用量。请填访问控制里的 AccessKey ID（以 AK 开头），或直接点「登录…」。"),
+                                                 KeyField(field: "secret_access_key", placeholder: "Secret Access Key")]),
+                    keyHelp: ("打开 AccessKey 管理页", URL(string: "https://console.volcengine.com/iam/keymanage")!)),
         WebProvider(id: "dreamina", loginURL: URL(string: "https://jimeng.jianying.com/ai-tool/home")!,
                     cookieDomain: "jianying.com",
                     note: "实验性：登录后请打开「会员 / 积分」相关页面，再点「完成连接」。本步只记录页面接口的字段结构，用来定位续费与积分更新时间。",
@@ -53,17 +67,28 @@ struct WebProvider: Identifiable {
         /// JS regex sources: which request URLs to watch and which header values to accept.
         let url: String
         let value: String
+        var header = "Authorization"
         /// Scheme word removed before saving ("Cloud-IDE-JWT ").
         var strip: String? = nil
-        /// Paste-in alternative shown in the connections window.
-        let pastePlaceholder: String
-        let pasteField: String
+        /// Session key for the captured value.
+        var field = "token"
+        /// Also save the request: "origin" keeps its origin, any other key its full URL.
+        var urlField: String? = nil
+        /// False when the cookie alone can still work (火山 falls back to its csrf cookie).
+        var required = true
+    }
+
+    struct ManualEntry {
+        let fields: [KeyField]
+        var strip: String? = nil
     }
 
     /// One secret the user types in; `field` is its backend session key.
     struct KeyField {
         let field: String
         let placeholder: String
+        var mustStartWith: String? = nil
+        var wrongPrefixHint: String? = nil
     }
 
     struct APIKeyProvider {
@@ -76,9 +101,6 @@ struct WebProvider: Identifiable {
     static let apiKeyProviders: [APIKeyProvider] = [
         APIKeyProvider(id: "deepseek_api", hint: "DeepSeek 开放平台的 API Key（sk-…），用于查询余额。"),
         APIKeyProvider(id: "minimax_code", hint: "MiniMax Token Plan 的 API Key（国内版），优先于 CC Switch 里的供应方。"),
-        APIKeyProvider(id: "volcengine", hint: "火山引擎 AccessKey（访问控制 → 密钥管理），只调用查询接口 GetCodingPlanUsage，不消耗套餐额度。建议使用仅有方舟只读权限的子用户密钥。",
-                       fields: [KeyField(field: "access_key_id", placeholder: "Access Key ID（AKLT…）"),
-                                KeyField(field: "secret_access_key", placeholder: "Secret Access Key")]),
     ]
     static func isAPIKeyProvider(_ id: String) -> Bool { apiKeyProviders.contains { $0.id == id } }
 
@@ -201,6 +223,7 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
     let webView: WKWebView
     var capturedToken: String?
     var capturedOrigin: String?
+    var capturedURL: String?
     @ObservationIgnored let discovery = DreaminaDiscovery()
     var status = "请在下方完成登录，然后点「完成连接」。"
     var saving = false
@@ -234,16 +257,18 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
         """
         (function(){
           const URL_RE = new RegExp(\(jsString(c.url))), VALUE_RE = new RegExp(\(jsString(c.value)), 'i');
+          const HEADER = \(jsString(c.header.lowercased()));
           const send = (u, v) => { try {
-            window.webkit.messageHandlers.agentMeterAuth.postMessage({ origin: new URL(String(u), location.href).origin, value: String(v) });
+            const parsed = new URL(String(u), location.href);
+            window.webkit.messageHandlers.agentMeterAuth.postMessage({ origin: parsed.origin, url: parsed.href, value: String(v) });
           } catch (e) {} };
           const pick = (url, h) => { try {
             const abs = new URL(String(url), location.href).href;
             if (!URL_RE.test(abs)) return;
             let v = null;
-            if (h instanceof Headers) v = h.get('Authorization');
-            else if (Array.isArray(h)) { for (const [k, x] of h) if (String(k).toLowerCase() === 'authorization') v = x; }
-            else if (h) { for (const k in h) if (k.toLowerCase() === 'authorization') v = h[k]; }
+            if (h instanceof Headers) v = h.get(HEADER);
+            else if (Array.isArray(h)) { for (const [k, x] of h) if (String(k).toLowerCase() === HEADER) v = x; }
+            else if (h) { for (const k in h) if (k.toLowerCase() === HEADER) v = h[k]; }
             if (v && VALUE_RE.test(String(v).trim())) send(abs, String(v).trim());
           } catch (e) {} };
           const f = window.fetch;
@@ -254,7 +279,7 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
           const open = XMLHttpRequest.prototype.open, set = XMLHttpRequest.prototype.setRequestHeader;
           XMLHttpRequest.prototype.open = function(m, u) { this.__amUrl = u; return open.apply(this, arguments); };
           XMLHttpRequest.prototype.setRequestHeader = function(k, v) {
-            if (String(k).toLowerCase() === 'authorization') pick(this.__amUrl, { authorization: v });
+            if (String(k).toLowerCase() === HEADER) pick(this.__amUrl, { [HEADER]: v });
             return set.apply(this, arguments);
           };
         })();
@@ -278,7 +303,7 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
             return
         }
         guard let body = message.body as? [String: Any], let value = body["value"] as? String,
-              let origin = body["origin"] as? String else { return }
+              let origin = body["origin"] as? String, let url = body["url"] as? String else { return }
         Task { @MainActor in
             var token = value
             if let strip = self.provider.tokenCapture?.strip {
@@ -288,6 +313,7 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
             guard !token.isEmpty, token.count < 8000 else { return }
             self.capturedToken = token
             self.capturedOrigin = origin
+            self.capturedURL = url
             self.status = "已捕获登录凭据，可以点「完成连接」。"
         }
     }
@@ -298,14 +324,15 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
         var session = ["user_agent": WebProvider.userAgent]
         let cleanLabel = label.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40)
         if !cleanLabel.isEmpty { session["label"] = String(cleanLabel) }
-        if provider.tokenCapture != nil {
-            guard let token = capturedToken else {
+        if let capture = provider.tokenCapture {
+            if let token = capturedToken {
+                session[capture.field] = token
+                // The backend accepts only its own allowlisted hosts / actions for this.
+                if let key = capture.urlField { session[key] = key == "origin" ? capturedOrigin : capturedURL }
+            } else if capture.required {
                 status = "还没有捕获到凭据：登录后打开账户 / 用量页面再试，或在连接窗口手动粘贴。"
                 return false
             }
-            session["token"] = token
-            // The backend accepts only its own allowlisted hosts for this.
-            if provider.id == "zcode", let origin = capturedOrigin { session["origin"] = origin }
         }
         if let domain = provider.cookieDomain {
             let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
@@ -381,6 +408,7 @@ struct ConnectionsView: View {
     @Environment(UsageStore.self) private var store
     @State private var slots: [String: [String]] = [:]
     @State private var pastedTokens: [String: String] = [:]
+    @State private var manualError: [String: String] = [:]
     @State private var apiKeys: [String: String] = [:]
     @State private var savedKeys: Set<String> = []
 
@@ -493,26 +521,47 @@ struct ConnectionsView: View {
             Spacer()
         }
         .controlSize(.small)
-        if let capture = p.tokenCapture {
-            let pasted = Binding(get: { pastedTokens[p.id] ?? "" }, set: { pastedTokens[p.id] = $0 })
+        if let manual = p.manual {
             HStack {
-                SecureField(capture.pastePlaceholder, text: pasted).textFieldStyle(.roundedBorder)
-                Button("保存") {
-                    var token = pasted.wrappedValue
-                    if let strip = capture.strip {
-                        token = token.replacingOccurrences(of: strip, with: "", options: [.caseInsensitive, .anchored])
-                    }
-                    token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !token.isEmpty, !token.contains("\n"), token.count < 8000 else { return }
-                    let used = Set(list.map(ConnectionManager.order(ofSlot:)))
-                    guard let n = (1...ConnectionManager.maxAccounts).first(where: { !used.contains($0) }) else { return }
-                    ConnectionManager.shared.save(n == 1 ? p.id : p.id + "#\(n)", [capture.pasteField: token, "user_agent": WebProvider.userAgent])
-                    pastedTokens[p.id] = ""
-                    reload()
+                ForEach(manual.fields, id: \.field) { f in
+                    SecureField(f.placeholder, text: Binding(get: { pastedTokens[p.id + "." + f.field] ?? "" },
+                                                             set: { pastedTokens[p.id + "." + f.field] = $0; manualError[p.id] = nil }))
+                        .textFieldStyle(.roundedBorder)
                 }
-                .disabled(pasted.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("保存") { saveManual(p, manual, list: list) }
+                    .disabled(manual.fields.contains { (pastedTokens[p.id + "." + $0.field] ?? "").trimmingCharacters(in: .whitespaces).isEmpty })
             }
             .controlSize(.small)
+            if let error = manualError[p.id] {
+                Text(error).font(.system(size: 10.5)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
         }
+        if let help = p.keyHelp {
+            Button(help.title) { NSWorkspace.shared.open(help.url) }
+                .buttonStyle(.link).font(.system(size: 11))
+        }
+    }
+
+    /// Typed keys become one more account of this provider.
+    private func saveManual(_ p: WebProvider, _ manual: WebProvider.ManualEntry, list: [String]) {
+        var session = ["user_agent": WebProvider.userAgent]
+        for f in manual.fields {
+            var value = pastedTokens[p.id + "." + f.field] ?? ""
+            if let strip = manual.strip {
+                value = value.replacingOccurrences(of: strip, with: "", options: [.caseInsensitive, .anchored])
+            }
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, !value.contains("\n"), value.count < 8000 else { return }
+            if let prefix = f.mustStartWith, !value.uppercased().hasPrefix(prefix) {
+                manualError[p.id] = f.wrongPrefixHint
+                return
+            }
+            session[f.field] = value
+        }
+        let used = Set(list.map(ConnectionManager.order(ofSlot:)))
+        guard let n = (1...ConnectionManager.maxAccounts).first(where: { !used.contains($0) }) else { return }
+        ConnectionManager.shared.save(n == 1 ? p.id : p.id + "#\(n)", session)
+        for f in manual.fields { pastedTokens[p.id + "." + f.field] = "" }
+        reload()
     }
 }

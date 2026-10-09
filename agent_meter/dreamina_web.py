@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 
 from .billing import countdown, renewal_date
-from .model import DISPLAY_ZONE, SourceError, decimal_string, metric, source, timestamp
+from .model import failed_source, DISPLAY_ZONE, SourceError, decimal_string, metric, source, timestamp
 
 MAX_OBSERVATIONS = 5
 MAX_AGE_SECONDS = 6 * 3600
@@ -51,14 +51,23 @@ def validate_observations(payload):
         raise ValueError("invalid observation list")
     clean = []
     for item in items:
-        if not isinstance(item, dict) or set(item) - {"account_key", "label", "observed_at", "credit", "subscription"}:
+        if not isinstance(item, dict) or set(item) - {"account_key", "label", "observed_at", "credit", "subscription", "failed"}:
             raise ValueError("unknown observation field")
+        if item.get("failed") is not None and item["failed"] is not True:
+            raise ValueError("invalid flag")
         key = item.get("account_key")
         if key is not None and (not isinstance(key, str) or not ACCOUNT_KEY.match(key)):
             raise ValueError("invalid account key")
         out = {"account_key": key, "label": _text(item.get("label")), "observed_at": _epoch(item.get("observed_at"))}
         if out["observed_at"] is None:
             raise ValueError("observed_at required")
+        if item.get("failed"):
+            # The page gave no data for this login (expired session or timeout).
+            if item.get("credit") is not None or item.get("subscription") is not None:
+                raise ValueError("failed observation with data")
+            out["failed"] = True
+            clean.append(out)
+            continue
         credit = item.get("credit")
         if credit is not None:
             if not isinstance(credit, dict) or set(credit) - {"gift", "purchase", "vip", "details"}:
@@ -132,14 +141,63 @@ def apply_observation(src, obs, now):
 
 
 def merge_dreamina(sources, observations, now):
-    """Same account as the CLI → enrich it; any other account → its own source."""
+    """Observations arrive one per 即梦 login, in login order, and keep that
+    order as ids ("dreamina", "dreamina#2"…) — the app maps cards back to
+    logins by it. The first login enriches the CLI source when it is the same
+    account; a login whose page gave no data keeps its place as not connected."""
     items = (observations or {}).get("dreamina") or []
     if not items:
         return sources
     sources = list(sources)
     index = next((i for i, s in enumerate(sources) if s["id"] == "dreamina"), None)
+    cli = sources[index] if index is not None else None
+    # A working CLI source for another account keeps "dreamina"; web logins then start at #2.
+    shift = int(cli is not None and cli["status"] not in {"error", "not_connected"}
+                and cli.get("account_key") is not None and cli.get("account_key") != items[0].get("account_key"))
+    for n, obs in enumerate(items):
+        position = n + shift
+        sid = "dreamina" if position == 0 else "dreamina#" + str(position + 1)
+        label = obs.get("label") or (None if position == 0 else "账号 " + str(position + 1))
+        if obs.get("failed"):
+            out = failed_source(sid, "creative_account", now, "dreamina_web_no_data", "not_connected")
+        elif position == 0 and index is not None and sources[index]["status"] not in {"error", "not_connected"} \
+                and sources[index].get("account_key") in (None, obs["account_key"]):
+            out = apply_observation(sources[index], obs, now)
+        else:
+            out = source(sid, "creative_account", now)
+            out["account_key"] = obs["account_key"]
+            out = apply_observation(out, obs, now)
+        if label:
+            out["account_label"] = label
+        if position == 0 and index is not None:
+            # A working CLI source for a different account stays; the web login is then account 1 only if it read data.
+            if obs.get("failed") and sources[index]["status"] not in {"error", "not_connected"}:
+                continue
+            sources[index] = out
+        else:
+            sources.append(out)
+    return sources
+    sources = list(sources)
+    index = next((i for i, s in enumerate(sources) if s["id"] == "dreamina"), None)
     extra = 2
-    for obs in items:
+    for position, obs in enumerate(items):
+        if obs.get("failed"):
+            # Keep the account's place: ids follow login order ("dreamina", "dreamina#2"…),
+            # which is how the app maps a card back to its login.
+            sid = "dreamina" if position == 0 else "dreamina#" + str(extra)
+            failed = failed_source(sid, "creative_account", now, "dreamina_web_no_data", "not_connected")
+            failed["account_label"] = obs.get("label") or ("账号 " + str(position + 1) if position else None)
+            if failed["account_label"] is None:
+                del failed["account_label"]
+            if position == 0 and index is not None:
+                if sources[index]["status"] in {"error", "not_connected"}:
+                    sources[index] = failed
+            elif position == 0:
+                sources.append(failed)
+            else:
+                sources.append(failed)
+                extra += 1
+            continue
         cli = sources[index] if index is not None else None
         if cli is not None and (cli.get("account_key") is None or cli.get("account_key") == obs["account_key"]) \
                 and cli["diagnostics"].get("web_observed_at") is None:

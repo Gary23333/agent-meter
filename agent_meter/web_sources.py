@@ -21,7 +21,7 @@ SESSION_FIELDS = {
     "deepseek_api": {"api_key"},
     "minimax_code": {"api_key"},
     "zcode": {"api_key", "token", "origin", "user_agent"},
-    "volcengine": {"access_key_id", "secret_access_key"},
+    "volcengine": {"access_key_id", "secret_access_key", "cookie", "csrf_token", "usage_url", "user_agent"},
     "mimo": {"cookie", "user_agent"},
     "claude": {"cookie", "user_agent"},
     "qoder": {"cookie", "user_agent"},

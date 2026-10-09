@@ -58,6 +58,7 @@ def safe_collect(source_id,scope,now,fn):
                       "not_authenticated","qoder_not_authenticated","qoder_sdk_not_installed","qoder_usage_unavailable","codexbar_not_installed",
                       "minimax_credential_not_connected","deepseek_credential_not_connected",
                       "zcode_credential_not_connected","volcengine_credential_not_connected","mimo_not_authenticated",
+                      "volcengine_not_authenticated","volcengine_ark_key_not_supported",
                       "dreamina_cli_not_available","dreamina_not_authenticated","design_gateway_not_ready",
                       "design_billing_scope_unavailable","design_personal_scope_required",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
@@ -148,10 +149,10 @@ def collect(config=None,now=None):
       "zcode":("account",lambda:collect_zcode(web.get("zcode"),now,timeout)),
       "mimo":("api_account",lambda:collect_mimo(web.get("mimo"),now,timeout) if "mimo" in web
               else _raise(SourceError("web_session_missing"))),
-      "volcengine":("account",lambda:collect_volcengine(now,timeout,web.get("volcengine"))),
+      "volcengine":("account",lambda:collect_volcengine(web.get("volcengine"),now,timeout)),
     }
     web_collectors={"claude":collect_claude_web,"qoder":collect_qoder_web,"workbuddy":collect_workbuddy,"trae_cn":collect_trae,
-                    "mimo":collect_mimo,"zcode":collect_zcode}
+                    "mimo":collect_mimo,"zcode":collect_zcode,"volcengine":collect_volcengine}
     def labelled(key,label,fn):
         def run():
             out=fn()
@@ -252,7 +253,7 @@ class SnapshotService:
                 previous=old.get(src["id"])
                 if src["diagnostics"].get("reason") not in {"dreamina_not_authenticated","not_authenticated",
                         "design_account_changed_during_query","design_personal_scope_required","web_session_missing","disabled_by_user",
-                        "mimo_not_authenticated"} and src["status"] in {"error","not_connected"} and previous and previous["status"] in {"available","partial","stale"}:
+                        "mimo_not_authenticated","volcengine_not_authenticated","volcengine_ark_key_not_supported"} and src["status"] in {"error","not_connected"} and previous and previous["status"] in {"available","partial","stale"}:
                     cached=copy.deepcopy(previous)
                     cached["status"]="stale"
                     cached["diagnostics"]["last_attempt_at"]=timestamp(now)

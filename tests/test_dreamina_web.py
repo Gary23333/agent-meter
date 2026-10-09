@@ -27,6 +27,26 @@ class DreaminaWebTests(unittest.TestCase):
         clean = validate_observations({"dreamina": obs})
         return merge_dreamina(sources if sources is not None else [CLI], clean, NOW)
 
+    def test_failed_first_login_keeps_its_place(self):
+        # Web-only setup (CLI off): account 1's page gave nothing, account 2 read fine.
+        off = failed_source("dreamina", "creative_account", NOW, "web_session_missing", "not_connected")
+        other = "b" * 24
+        out = self.merged([{"observed_at": NOW, "failed": True}, observation(account_key=other, label="小号")], [off])
+        self.assertEqual([(s["id"], s["status"], s.get("account_label")) for s in out],
+                         [("dreamina", "not_connected", None), ("dreamina#2", "available", "小号")])
+        self.assertEqual(out[0]["diagnostics"]["reason"], "dreamina_web_no_data")
+
+    def test_failed_observation_cannot_carry_data(self):
+        with self.assertRaises(ValueError):
+            validate_observations({"dreamina": [observation(failed=True)]})
+        with self.assertRaises(ValueError):
+            validate_observations({"dreamina": [{"observed_at": NOW, "failed": False}]})
+
+    def test_two_web_logins_two_cards(self):
+        off = failed_source("dreamina", "creative_account", NOW, "web_session_missing", "not_connected")
+        out = self.merged([observation(), observation(account_key="c" * 24)], [off])
+        self.assertEqual([s["id"] for s in out], ["dreamina", "dreamina#2"])
+
     def test_same_account_enriches_cli_source(self):
         out = self.merged([observation()])
         self.assertEqual(len(out), 1)

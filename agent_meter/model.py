@@ -103,3 +103,14 @@ def account_key(provider, identity):
     if not isinstance(identity, str) or not identity:
         return None
     return hashlib.sha256((provider + ":" + identity).encode()).hexdigest()[:24]
+
+
+def shape(value, depth=0):
+    """Field names and types only (never values), to diagnose a changed contract."""
+    if depth > 4:
+        return "…"
+    if isinstance(value, dict):
+        return {k: shape(v, depth + 1) for k, v in list(value.items())[:30]}
+    if isinstance(value, list):
+        return [len(value)] + ([shape(value[0], depth + 1)] if value else [])
+    return type(value).__name__

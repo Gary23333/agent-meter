@@ -11,7 +11,7 @@ are refused by the transport instead of followed.
 import re
 from datetime import datetime
 
-from .model import DISPLAY_ZONE, SourceError, account_key, decimal_string, metric, number, source, timestamp
+from .model import DISPLAY_ZONE, SourceError, account_key, decimal_string, metric, number, shape, source, timestamp
 from .transport import get_json
 
 ORIGIN = "https://platform.xiaomimimo.com"
@@ -126,17 +126,6 @@ def _month_quota(u, ends):
         return None
     return {"bucket": "monthTotal", "used_percent": pct, "remaining_percent": 100 - pct,
             "used": used, "limit": limit, "unit": "tokens", "resets_at": ends}
-
-
-def shape(value, depth=0):
-    """Field names and types only (never values), to diagnose a changed contract."""
-    if depth > 4:
-        return "…"
-    if isinstance(value, dict):
-        return {k: shape(v, depth + 1) for k, v in list(value.items())[:30]}
-    if isinstance(value, list):
-        return [len(value)] + ([shape(value[0], depth + 1)] if value else [])
-    return type(value).__name__
 
 
 def normalize_plan(detail, usage):

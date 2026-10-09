@@ -350,29 +350,46 @@ struct AppsView: View {
 }
 
 
-/// Cockpit row: one mini neon gauge per quota window; click opens the app.
+/// Cockpit row: one gauge per account, its quota windows as concentric rings
+/// (5 小时 outside, 7 天 inside); click opens the app.
 struct CockpitStrip: View {
     let snapshot: Snapshot
     let now: Date
     @Environment(\.panelTheme) private var theme
 
-    private struct Gauge: Identifiable {
-        let id: String
-        let source: String
+    private struct Window {
         let label: String
         let remaining: Double
         let reset: Date?
     }
 
+    private struct Gauge: Identifiable {
+        let id: String
+        let source: String
+        let name: String
+        let windows: [Window]
+    }
+
     private var gauges: [Gauge] {
-        snapshot.accountSources.flatMap { s in
-            let rows = Catalog.sortedQuotas((s.metric("quota")?.value.rows ?? []).filter { $0["remaining_percent"].double != nil })
-            return rows.enumerated().map { i, q in
-                Gauge(id: "\(s.id)-\(i)", source: s.baseID,
-                      label: rows.count > 1 ? s.shortName + " " + Catalog.bucketLabel(q).replacingOccurrences(of: " ", with: "")
-                                            : s.shortName,
-                      remaining: q["remaining_percent"].double ?? 0, reset: q["resets_at"].date)
-            }
+        snapshot.accountSources.compactMap { s in
+            // Time windows only: call counts like ZCode's monthly MCP bucket stay on the card.
+            let rows = Catalog.sortedQuotas((s.metric("quota")?.value.rows ?? [])
+                .filter { $0["remaining_percent"].double != nil && $0["bucket"].string != "mcp" })
+            guard !rows.isEmpty else { return nil }
+            return Gauge(id: s.id, source: s.baseID, name: s.shortName,
+                         windows: rows.map { Window(label: Self.shortWindow($0), remaining: $0["remaining_percent"].double ?? 0,
+                                                    reset: $0["resets_at"].date) })
+        }
+    }
+
+    /// "5h" / "7d" / "月" — just enough to tell the rings apart.
+    private static func shortWindow(_ q: JSON) -> String {
+        switch Catalog.windowMinutes(q) {
+        case 300: return "5h"
+        case 1440: return "1d"
+        case 10080: return "7d"
+        case 43200: return "月"
+        default: return Catalog.bucketLabel(q).replacingOccurrences(of: " ", with: "")
         }
     }
 
@@ -384,22 +401,10 @@ struct CockpitStrip: View {
                     ForEach(list) { g in
                         Button {
                             if let t = AppLauncher.targets(for: g.source, in: snapshot).first { AppLauncher.open(t) }
-                        } label: {
-                            VStack(spacing: 4) {
-                                ZStack(alignment: .bottomTrailing) {
-                                    Ring(remaining: g.remaining, size: 46, lineWidth: 4.5, caption: nil)
-                                    if let icon = AppLauncher.icon(for: g.source, in: snapshot) {
-                                        Image(nsImage: icon).resizable().frame(width: 15, height: 15).offset(x: 3, y: 3)
-                                    }
-                                }
-                                Text(g.label).font(.system(size: 9.5, weight: .semibold, design: theme == .neon ? .monospaced : .default)).lineLimit(1)
-                                Text(g.reset.map { Fmt.shortCountdown(to: $0, now: now, past: "待刷新") } ?? "—")
-                                    .font(.system(size: 9)).foregroundStyle(.secondary).monospacedDigit()
-                            }
-                            .frame(minWidth: 52)
-                        }
+                        } label: { gaugeView(g) }
                         .buttonStyle(.plain)
-                        .help("打开 " + Catalog.brand(g.source).name)
+                        .help(g.windows.map { "\($0.label) 剩余 \(Fmt.percent($0.remaining.rounded()))" }.joined(separator: "，")
+                              + " · 打开 " + Catalog.brand(g.source).name)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -408,5 +413,39 @@ struct CockpitStrip: View {
             .scrollIndicators(.never)
             .padding(.bottom, 8)
         }
+    }
+
+    private func gaugeView(_ g: Gauge) -> some View {
+        VStack(spacing: 3) {
+            ZStack(alignment: .bottomTrailing) {
+                if g.windows.count == 1 {
+                    Ring(remaining: g.windows[0].remaining, size: 46, lineWidth: 4.5, caption: nil)
+                } else {
+                    StackedRing(remaining: g.windows.map(\.remaining), size: g.windows.count > 2 ? 56 : 50,
+                                lineWidth: g.windows.count > 2 ? 3.5 : 4)
+                }
+                if let icon = AppLauncher.icon(for: g.source, in: snapshot) {
+                    Image(nsImage: icon).resizable().frame(width: 15, height: 15).offset(x: 3, y: 3)
+                }
+            }
+            Text(g.name).font(.system(size: 9.5, weight: .semibold, design: theme == .neon ? .monospaced : .default)).lineLimit(1)
+            if g.windows.count > 1 {
+                // Each ring's value, outer first, in its own health colour.
+                HStack(spacing: 4) {
+                    ForEach(g.windows.indices, id: \.self) { i in
+                        let w = g.windows[i]
+                        (Text(w.label).foregroundStyle(.secondary)
+                         + Text(" \(Int(w.remaining.rounded()))").foregroundStyle(theme.health(w.remaining)))
+                    }
+                }
+                .font(.system(size: 8.5, weight: .medium, design: theme.numberDesign))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+            }
+            Text(g.windows.first?.reset.map { Fmt.shortCountdown(to: $0, now: now, past: "待刷新") } ?? "—")
+                .font(.system(size: 9)).foregroundStyle(.secondary).monospacedDigit()
+        }
+        .frame(minWidth: 52)
     }
 }

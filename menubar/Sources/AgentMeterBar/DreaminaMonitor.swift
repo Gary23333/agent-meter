@@ -21,19 +21,19 @@ final class DreaminaMonitor: NSObject, WKScriptMessageHandler {
     private(set) var lastRun: Date?
     private var running = false
 
-    /// One observation per saved 即梦 login, in slot order; nil while a run
-    /// is already in progress (the caller must not push an empty list then).
+    /// One entry per saved 即梦 login, in slot order, so each account keeps its
+    /// own card; a login whose page gave no data is sent as `failed`. Nil while
+    /// a run is already in progress (the caller must not push an empty list then).
     func observe(_ sessions: [(slot: String, session: [String: String])]) async -> [[String: Any]]? {
         guard !running else { return nil }
         running = true
         defer { running = false; lastRun = Date() }
         var out: [[String: Any]] = []
         for (_, session) in sessions {
-            guard let cookie = session["cookie"] else { continue }
-            if var obs = await run(cookieHeader: cookie) {
-                if let label = session["label"] { obs["label"] = String(label.prefix(40)) }
-                out.append(obs)
-            }
+            var obs: [String: Any] = ["observed_at": Int(Date().timeIntervalSince1970), "failed": true]
+            if let cookie = session["cookie"], let read = await run(cookieHeader: cookie) { obs = read }
+            if let label = session["label"], !label.isEmpty { obs["label"] = String(label.prefix(40)) }
+            out.append(obs)
         }
         return out
     }

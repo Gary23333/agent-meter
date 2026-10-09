@@ -241,6 +241,8 @@ struct Ring: View {
     var size: CGFloat = 58
     var lineWidth: CGFloat = 6
     var caption: String? = "剩余"
+    /// False for the inner rings of a StackedRing, which draws one centre label.
+    var showsValue = true
     @State private var shown = 0.0
     @Environment(\.panelTheme) private var theme
 
@@ -271,7 +273,7 @@ struct Ring: View {
             case .neon:
                 neonRing(tint: tint, accent: accent, progress: progress)
             }
-            VStack(spacing: -1) {
+            if showsValue { VStack(spacing: -1) {
                 (Text(Fmt.trim(remaining.rounded())).font(theme.number(size * 0.29))
                  + Text("%").font(.system(size: size * 0.17, weight: theme == .minimal ? .light : .bold, design: theme.numberDesign)))
                     .monospacedDigit()
@@ -282,7 +284,7 @@ struct Ring: View {
                 if let caption {
                     Text(caption).font(.system(size: max(8, size * 0.15), design: theme.numberDesign)).foregroundStyle(.secondary)
                 }
-            }
+            } }
         }
         .frame(width: size, height: size)
         .onAppear {
@@ -310,6 +312,38 @@ struct Ring: View {
             .stroke(Neon.rim, lineWidth: 0.6)
             .padding(-lineWidth * 0.9)
             .opacity(0.7)
+    }
+}
+
+/// Several windows of one account as concentric rings (outer = shortest
+/// window), so 5 小时 and 7 天 share one gauge. The centre shows the outer ring.
+struct StackedRing: View {
+    let remaining: [Double]
+    var size: CGFloat = 54
+    var lineWidth: CGFloat = 4
+    @Environment(\.panelTheme) private var theme
+
+    var body: some View {
+        let step = lineWidth + (theme == .neon ? 3 : 2)
+        let rings = Array(remaining.prefix(3))
+        let hole = size - 2 * step * CGFloat(rings.count - 1) - 2 * lineWidth
+        ZStack {
+            ForEach(rings.indices, id: \.self) { i in
+                Ring(remaining: rings[i], size: size - 2 * step * CGFloat(i), lineWidth: lineWidth,
+                     caption: nil, showsValue: false)
+            }
+            if let first = rings.first {
+                let tint = theme.health(first)
+                (Text(Fmt.trim(first.rounded())).font(theme.number(hole * 0.42))
+                 + Text("%").font(.system(size: hole * 0.24, weight: theme == .minimal ? .light : .bold, design: theme.numberDesign)))
+                    .monospacedDigit()
+                    .foregroundStyle(theme == .minimal ? AnyShapeStyle(Color.primary) : AnyShapeStyle(tint))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .frame(maxWidth: hole - 2)
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 
