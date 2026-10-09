@@ -56,8 +56,11 @@ def collect_qoder(app, node, runtime_dir, now, timeout=20):
         sdk=materialize_qoder_sdk(archive,root)
         env = dict(os.environ, AGENT_METER_QODER_SDK=str(sdk), AGENT_METER_QODER_WORKER=str(worker))
         if not node:env["ELECTRON_RUN_AS_NODE"]="1"
-        process = subprocess.Popen([node or str(executable),str(Path(__file__).parent/"helpers/qoder_usage.mjs")],
-                env=env,cwd=temp,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
+        try:
+            process = subprocess.Popen([node or str(executable),str(Path(__file__).parent/"helpers/qoder_usage.mjs")],
+                    env=env,cwd=temp,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
+        except OSError:
+            raise SourceError("cli_not_available") from None
         try:
             output, _ = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:

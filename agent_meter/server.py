@@ -65,14 +65,20 @@ def make_server(service,token,port=8769):
                 self.send_json(400,{"error":"unsupported_query"});return
             if route.path=="/v1/health":
                 self.send_json(200,{"status":"ok","schema_version":SCHEMA_VERSION});return
+            if route.path=="/v1/prices":
+                from .prices import load_prices
+                table=load_prices(service.config["runtime_dir"])
+                self.send_json(200,{"currency":table.currency,
+                                    "models":{p:dict(zip(("input","cache_read","cache_write","output"),v)) for p,v in table.models.items()},
+                                    "converted_patterns":sorted(table.converted)})
+                return
             if route.path not in {"/v1/snapshot","/v1/coverage","/v1/sources"}:
                 self.send_json(404,{"error":"not_found"});return
             try:
                 data=service.get()
                 if route.path=="/v1/snapshot":self.send_json(200,data)
                 elif route.path=="/v1/coverage":self.send_json(200,{"summary":data["coverage_summary"],"coverage":data["coverage"]})
-                elif route.path=="/v1/sources":self.send_json(200,{"sources":data["sources"]})
-                else:self.send_json(404,{"error":"not_found"})
+                else:self.send_json(200,{"sources":data["sources"]})
             except Exception:
                 self.send_json(500,{"error":"collection_failed"})
 
@@ -87,7 +93,7 @@ def make_server(service,token,port=8769):
         def do_PUT(self):
             # Website logins from the menu bar app: kept in memory, never echoed.
             if not self.authorized():return
-            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences"}:self.send_json(404,{"error":"not_found"});return
+            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences","/v1/prices"}:self.send_json(404,{"error":"not_found"});return
             if self.headers.get("Transfer-Encoding") or not (self.headers.get("Content-Type","").split(";")[0].strip()=="application/json"):
                 self.send_json(400,{"error":"json_body_required"});self.close_connection=True;return
             try:length=int(self.headers.get("Content-Length",""))
@@ -103,6 +109,22 @@ def make_server(service,token,port=8769):
                     self.send_json(400,{"error":"invalid_preferences"});return
                 service.set_preferences({"disabled_sources":sorted(set(off))})
                 self.send_json(200,{"disabled_sources":sorted(set(off))});return
+            if self.path=="/v1/prices":
+                try:
+                    from .prices import PRICE_KEYS, save_prices
+                    from .model import SourceError
+                    if not isinstance(body,dict) or set(body)-{"currency","models"} \
+                            or body.get("currency") not in {"USD","CNY"} or not isinstance(body.get("models"),dict):
+                        raise ValueError()
+                    for pattern,row in body["models"].items():
+                        if not isinstance(pattern,str) or not 0<len(pattern)<=120 or not isinstance(row,dict) \
+                                or set(row)-set(PRICE_KEYS) or len(body["models"])>300:
+                            raise ValueError()
+                    saved=save_prices(service.config["runtime_dir"],body["currency"],body["models"])
+                    service.set_prices(body["currency"],body["models"])
+                    self.send_json(200,saved);return
+                except (ValueError, SourceError):
+                    self.send_json(400,{"error":"invalid_prices"});return
             if self.path=="/v1/observations":
                 try:observations=validate_observations(body)
                 except ValueError:

@@ -87,7 +87,10 @@ def collect_kimi(home, binary, now, timeout=15, url=None, start_server=False, cw
     token_path = Path(home)/".kimi-code/server.token"
     if not token_path.is_file():
         raise SourceError("kimi_server_token_missing")
-    token = token_path.read_text().strip()
+    try:
+        token = token_path.read_text().strip()
+    except OSError:
+        raise SourceError("kimi_server_token_invalid") from None
     if not token or "\n" in token:
         raise SourceError("kimi_server_token_invalid")
     urls = [url] if url else instance_urls(home)
@@ -106,8 +109,12 @@ def collect_kimi(home, binary, now, timeout=15, url=None, start_server=False, cw
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-    process = subprocess.Popen([binary, "web", "--port", str(port), "--no-open"], cwd=cwd,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    # A CLI uninstalled since config time must still map to a fixed code.
+    try:
+        process = subprocess.Popen([binary, "web", "--port", str(port), "--no-open"], cwd=cwd,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        raise SourceError("cli_not_available") from None
     try:
         deadline = time.monotonic()+timeout
         endpoint = "http://127.0.0.1:"+str(port)

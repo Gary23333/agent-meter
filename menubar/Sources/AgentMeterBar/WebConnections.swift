@@ -89,6 +89,7 @@ struct WebProvider: Identifiable {
         let placeholder: String
         var mustStartWith: String? = nil
         var wrongPrefixHint: String? = nil
+        var optional = false
     }
 
     struct APIKeyProvider {
@@ -99,7 +100,9 @@ struct WebProvider: Identifiable {
 
     /// Sources that take keys typed into the app instead of a web login.
     static let apiKeyProviders: [APIKeyProvider] = [
-        APIKeyProvider(id: "deepseek_api", hint: "DeepSeek 开放平台的 API Key（sk-…），用于查询余额。"),
+        APIKeyProvider(id: "deepseek_api", hint: "DeepSeek 开放平台的 API Key（sk-…），用于查询余额。",
+                       fields: [KeyField(field: "api_key", placeholder: "粘贴 API Key"),
+                                KeyField(field: "user_token", placeholder: "网页 userToken（可选，近 30 天用量展示）", optional: true)]),
         APIKeyProvider(id: "minimax_code", hint: "MiniMax Token Plan 的 API Key（国内版），优先于 CC Switch 里的供应方。"),
     ]
     static func isAPIKeyProvider(_ id: String) -> Bool { apiKeyProviders.contains { $0.id == id } }
@@ -164,6 +167,9 @@ final class ConnectionManager {
         UsageStore.shared.cacheSession(slot, session)
         UsageStore.shared.syncSessionsAndRefresh()
     }
+
+    /// The stored session fields of one slot (Keychain read).
+    func session(for slot: String) -> [String: String]? { SessionKeychain.load(slot) }
 
     func disconnect(_ slot: String) {
         SessionKeychain.delete(slot)
@@ -464,17 +470,24 @@ struct ConnectionsView: View {
                         .textFieldStyle(.roundedBorder)
                 }
                 Button("保存") {
+                    var previous = ConnectionManager.shared.session(for: p.id) ?? [:]
                     var session: [String: String] = [:]
                     for f in p.fields {
                         let value = (apiKeys[p.id + "." + f.field] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !value.isEmpty, !value.contains("\n"), value.count < 512 else { return }
+                        if value.isEmpty {
+                            // Optional fields keep their stored value when left blank.
+                            if f.optional, let kept = previous[f.field] { session[f.field] = kept; continue }
+                            if f.optional { continue }
+                            return
+                        }
+                        guard !value.contains("\n"), value.count < 512 else { return }
                         session[f.field] = value
                     }
                     ConnectionManager.shared.save(p.id, session)
                     for f in p.fields { apiKeys[p.id + "." + f.field] = "" }
                     reload()
                 }
-                .disabled(p.fields.contains { (apiKeys[p.id + "." + $0.field] ?? "").trimmingCharacters(in: .whitespaces).isEmpty })
+                .disabled(p.fields.contains { !$0.optional && (apiKeys[p.id + "." + $0.field] ?? "").trimmingCharacters(in: .whitespaces).isEmpty })
                 if savedKeys.contains(p.id) {
                     Button("清除", role: .destructive) { ConnectionManager.shared.disconnect(p.id); reload() }
                 }

@@ -50,7 +50,7 @@ struct Source: Identifiable {
         return m
     }
 
-    var isLocalHistory: Bool { scope == "local_imported_history" }
+    var isLocalHistory: Bool { scope == "local_imported_history" || scope == "local_session_history" }
     var hasAccountData: Bool {
         ["quota", "reset_cards", "credits", "renewal_time", "credit_refresh_time"].contains { metric($0) != nil }
     }

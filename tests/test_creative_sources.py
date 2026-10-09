@@ -84,6 +84,11 @@ class DesignTests(unittest.TestCase):
         d=copy.deepcopy(WALLET);d['wallets'][0]['sub_credits'][0]['end_time']=True
         with self.assertRaises(SourceError):normalize_design(d,NOW)
 
+    def test_credit_expiry_out_of_range_maps_to_design_code(self):
+        d=copy.deepcopy(WALLET);d['wallets'][0]['sub_credits'][0]['end_time']='99999999999999999'
+        with self.assertRaises(SourceError) as ctx:normalize_design(d,NOW)
+        self.assertEqual(ctx.exception.code,'invalid_design_credit_expiry')
+
     def test_op_wallet_not_summed_with_legacy_wallet(self):
         d=copy.deepcopy(WALLET);d['wallets'].append({'source':0,'total_credit':'99999999'})
         self.assertEqual(normalize_design(d,NOW)['metrics']['credits']['value']['balance'],'211021')

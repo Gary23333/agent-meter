@@ -49,7 +49,7 @@ def normalize_design(payload,now,identity=None):
             if isinstance(end,bool) or not isinstance(end,(str,int)) or not str(end).isdigit():
                 raise SourceError('invalid_design_credit_expiry')
             try:end=timestamp(int(end),unit='milliseconds')
-            except (ValueError,TypeError):raise SourceError('invalid_design_credit_expiry') from None
+            except (ValueError,TypeError,SourceError):raise SourceError('invalid_design_credit_expiry') from None
         else:end=None
         sub.append({'type':integer(row.get('credit_type')),'balance':decimal_string(row.get('credit')),'expires_at':end})
     out['metrics']['credits']=metric({'balance':decimal_string(w.get('total_credit')),

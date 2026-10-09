@@ -20,6 +20,12 @@ class SDKTests(unittest.TestCase):
             a=materialize_qoder_sdk(archive,root/'runtime')
             self.assertEqual(a.read_bytes(),body)
             self.assertEqual(materialize_qoder_sdk(archive,root/'runtime'),a)
+            # A crashed run leaves an incomplete cache; the next run must
+            # replace it instead of failing the rename onto the leftover.
+            cache=a.parents[4]
+            (cache/'.complete').unlink()
+            a.unlink()
+            self.assertEqual(materialize_qoder_sdk(archive,root/'runtime').read_bytes(),body)
 
     def test_invalid_header_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:

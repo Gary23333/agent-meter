@@ -13,6 +13,7 @@ from agent_meter.model import SourceError
 from agent_meter.server import load_or_create_token, make_server
 from agent_meter.web_sources import (collect_qoder_web, collect_trae, collect_workbuddy, normalize_qoder_web,
                                      normalize_trae, normalize_workbuddy, validate_sessions)
+from agent_meter.dreamina_web import validate_observations
 from tests.test_service import sample
 
 NOW = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc).timestamp()
@@ -104,7 +105,7 @@ class RequestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = {"runtime_dir": tmp, "app_roots": [], "web_sessions": {"qoder": {"cookie": "PRIVATE_COOKIE"}},
                       "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "minimax_code", "dreamina",
-                                           "minimax_design", "deepseek_api", "workbuddy", "trae_cn"]}
+                                           "minimax_design", "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]}
             with patch("agent_meter.collector.collect_qoder") as sdk, \
                     patch("agent_meter.web_sources.get_json", return_value=QODER):
                 snap = collect(config, now=NOW)
@@ -119,8 +120,10 @@ class MultiAccountTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = {"runtime_dir": tmp, "app_roots": [],
                       "web_sessions": {"workbuddy": [{"cookie": "A", "label": "主号"}, {"cookie": "B", "label": "小号"}]},
+                      # Keep the test off this machine's real WorkBuddy logs.
+                      "workbuddy_projects_dir": tmp + "/no-projects",
                       "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina",
-                                           "minimax_design", "deepseek_api", "trae_cn"]}
+                                           "minimax_design", "deepseek_api", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]}
             other = json.loads(json.dumps(WORKBUDDY))
             other["data"]["Packages"] = [{"CapacityUnit": "credits", "CycleTotalCapacity": "50", "CycleRemainCapacity": "5"}]
             def fake(url, body, timeout, headers):
@@ -140,7 +143,7 @@ class MultiAccountTests(unittest.TestCase):
             config = {"runtime_dir": tmp, "app_roots": [],
                       "web_sessions": {"trae_cn": [{"token": "ok"}, {"token": "expired", "label": "旧号"}]},
                       "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina",
-                                           "minimax_design", "deepseek_api", "workbuddy"]}
+                                           "minimax_design", "deepseek_api", "workbuddy", "zcode", "opencode", "gemini", "antigravity"]}
             def fake(url, body, timeout, headers):
                 if headers["Authorization"].endswith("expired"):
                     raise SourceError("not_authenticated")
@@ -156,7 +159,7 @@ class DreaminaWebOnlyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = {"runtime_dir": tmp, "app_roots": [], "dreamina_binary": "/fake/dreamina",
                       "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code",
-                                           "minimax_design", "deepseek_api", "workbuddy", "trae_cn"]}
+                                           "minimax_design", "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]}
             with patch("agent_meter.collector.collect_dreamina") as cli:
                 snap = collect(config, now=NOW)
             cli.assert_not_called()
@@ -167,7 +170,7 @@ class DreaminaWebOnlyTests(unittest.TestCase):
 
 class AppSettingsTests(unittest.TestCase):
     ALL = ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
-           "deepseek_api", "workbuddy", "trae_cn"]
+           "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]
 
     def test_app_api_key_reaches_deepseek(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -185,12 +188,48 @@ class AppSettingsTests(unittest.TestCase):
     def test_user_switch_skips_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = {"runtime_dir": tmp, "app_roots": [], "preferences": {"disabled_sources": ["claude"]},
+                      # Keep the test off this machine's real Claude Code logs.
+                      "claude_projects_dir": tmp + "/no-projects",
                       "disabled_sources": [x for x in self.ALL if x != "claude"]}
             with patch("agent_meter.collector.collect_claude") as claude:
                 snap = collect(config, now=NOW)
             claude.assert_not_called()
             src = next(s for s in snap["sources"] if s["id"] == "claude")
             self.assertEqual((src["status"], src["diagnostics"]["reason"]), ("not_connected", "disabled_by_user"))
+
+    def test_user_switch_covers_extra_accounts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"runtime_dir": tmp, "app_roots": [],
+                      "web_sessions": {"workbuddy": [{"cookie": "A"}, {"cookie": "B"}]},
+                      "preferences": {"disabled_sources": ["workbuddy"]},
+                      "disabled_sources": [x for x in self.ALL if x != "workbuddy"]}
+            with patch("agent_meter.web_sources.post_json") as post:
+                snap = collect(config, now=NOW)
+            post.assert_not_called()
+            ids = {s["id"]: s["diagnostics"].get("reason") for s in snap["sources"] if s["id"].startswith("workbuddy")}
+            self.assertEqual(ids, {"workbuddy": "disabled_by_user", "workbuddy#2": "disabled_by_user"})
+
+    def test_user_switch_skips_kimi_local_token_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"runtime_dir": tmp, "app_roots": [], "preferences": {"disabled_sources": ["kimi"]},
+                      "disabled_sources": [x for x in self.ALL if x != "kimi"]}
+            with patch("agent_meter.collector.collect_kimi_tokens") as tokens:
+                snap = collect(config, now=NOW)
+            tokens.assert_not_called()
+            kimi = next(s for s in snap["sources"] if s["id"] == "kimi")
+            self.assertEqual(kimi["metrics"]["tokens"]["reason"], "disabled_by_user")
+
+    def test_user_switch_skips_dreamina_observations(self):
+        observation = {"account_key": "a" * 24, "observed_at": int(NOW) - 60,
+                       "credit": {"gift": 10, "purchase": 0, "vip": 5, "details": []}}
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"runtime_dir": tmp, "app_roots": [],
+                      "observations": validate_observations({"dreamina": [observation]}),
+                      "preferences": {"disabled_sources": ["dreamina"]},
+                      "disabled_sources": [x for x in self.ALL if x != "dreamina"]}
+            snap = collect(config, now=NOW)
+            self.assertFalse(any(s["id"].startswith("dreamina") and s["metrics"]["credits"]["value"] is not None
+                                 for s in snap["sources"]))
 
 
 class EndpointTests(unittest.TestCase):

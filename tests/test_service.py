@@ -43,6 +43,37 @@ class ServiceTests(unittest.TestCase):
         for t in threads:t.join()
         self.assertEqual(self.calls,1)
 
+    def test_config_setters_do_not_wait_for_a_slow_collection(self):
+        release=threading.Event()
+        def slow(config,now):
+            release.wait(10)
+            return sample(now)
+        s=SnapshotService({'runtime_dir':self.tmp.name,'cache_ttl_seconds':120},slow,lambda:self.now)
+        done=[]
+        reader=threading.Thread(target=lambda:done.append(s.get()))
+        reader.start();time.sleep(.05)
+        started=time.monotonic()
+        s.set_web_sessions({'claude':[{'cookie':'x'}]})
+        elapsed=time.monotonic()-started
+        release.set();reader.join(10)
+        self.assertEqual(done[0]['schema_version'],3)
+        self.assertLess(elapsed,2)
+
+    def test_invalidation_survives_an_in_flight_collection(self):
+        gate=threading.Event();seen=[]
+        def slow(config,now):
+            initial=config.get('web_sessions')   # read at entry, like the real collect()
+            gate.wait(10)
+            seen.append(initial)
+            return sample(now)
+        s=SnapshotService({'runtime_dir':self.tmp.name,'cache_ttl_seconds':120},slow,lambda:self.now)
+        reader=threading.Thread(target=s.get);reader.start();time.sleep(.05)
+        s.set_web_sessions({'claude':[{'cookie':'NEW'}]})
+        gate.set();reader.join(10)
+        self.assertEqual(seen,[None])          # the running collect kept the old config
+        s.get()                                 # within TTL, but invalidated by the setter
+        self.assertEqual(seen,[None,{'claude':[{'cookie':'NEW'}]}])
+
     def test_failed_refresh_retains_previous_measurement_as_stale(self):
         def fetch(config,now):
             if now==1000:return sample(now)
@@ -54,6 +85,26 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(out['sources'][0]['metrics']['quota']['status'],'stale')
         self.assertEqual(out['coverage'][0]['fields']['quota']['status'],'stale')
         self.assertEqual(out['coverage_summary']['available_fields'],0)
+
+    def test_stale_recovery_keeps_fresh_local_tokens(self):
+        def fetch(config,now):
+            out=sample(now)
+            if now!=1000:
+                failed=failed_source('kimi','account',now,'connection_failed')
+                failed['metrics']['tokens']=metric({'periods':{'all':{'totals':{'requests':5}}}})
+                out['sources']=[out['sources'][0],failed]
+            else:
+                kimi=source('kimi','account',now)
+                kimi['metrics']['quota']=metric([{'bucket':'limit5h','used_percent':10}])
+                kimi['metrics']['tokens']=metric({'periods':{'all':{'totals':{'requests':4}}}})
+                out['sources']=[out['sources'][0],kimi]
+            return out
+        s=self.service(fetch);s.get();self.now=1200
+        kimi=[x for x in s.get()['sources'] if x['id']=='kimi'][0]
+        self.assertEqual(kimi['status'],'stale')                       # account part rolled back
+        self.assertEqual(kimi['metrics']['quota']['status'],'stale')
+        self.assertEqual(kimi['metrics']['tokens']['status'],'available')   # local history stays fresh
+        self.assertEqual(kimi['metrics']['tokens']['value']['periods']['all']['totals']['requests'],5)
 
     def test_atomic_snapshot_permissions(self):
         self.service().get()

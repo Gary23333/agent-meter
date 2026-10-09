@@ -104,6 +104,7 @@ struct PanelView: View {
             Divider()
             Button("连接网页账户 / API 密钥…") { ConnectionManager.shared.showConnections() }
             Button("调整卡片顺序…") { SourceOrderWindow.show() }
+            Button("API 价格表（本机估算）…") { PricesWindow.show() }
             Toggle("读取 Claude 额度", isOn: Binding(get: { store.claudeEnabled }, set: { store.claudeEnabled = $0 }))
             Divider()
             Toggle("额度与到期提醒", isOn: Binding(get: { store.notificationsEnabled }, set: { store.notificationsEnabled = $0 }))

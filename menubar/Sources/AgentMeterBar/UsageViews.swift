@@ -14,7 +14,7 @@ enum Period: String, CaseIterable, Identifiable {
     }
 }
 
-/// Local token history from CC Switch: what was consumed, by which app and model.
+/// Local token history across every ledger: what was consumed, by which app and model.
 struct UsageView: View {
     let snapshot: Snapshot
     let now: Date
@@ -27,9 +27,8 @@ struct UsageView: View {
             PillTabs(items: Period.allCases, title: { $0.label },
                      selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
 
-            if let history = snapshot.history, let data = history.metric("tokens")?.value["periods"][period.rawValue], !data.isNull {
-                PeriodSummary(data: LocalUsage.merged(ccswitch: data, snapshot: snapshot, period: period),
-                              history: history, snapshot: snapshot, now: now)
+            if let data = LocalUsage.merged(snapshot: snapshot, period: period) {
+                PeriodSummary(data: data, history: snapshot.history, snapshot: snapshot, now: now)
             } else {
                 Card {
                     Label(Catalog.reason(snapshot.history?.reason ?? "database_not_found"), systemImage: "tray")
@@ -49,7 +48,7 @@ private struct Segment: Identifiable {
 
 private struct PeriodSummary: View {
     let data: JSON
-    let history: Source
+    let history: Source?
     let snapshot: Snapshot
     let now: Date
     @Environment(\.panelTheme) private var theme
@@ -102,6 +101,9 @@ private struct PeriodSummary: View {
                         .themeGlow(Neon.lime.opacity(0.6), radius: 4, theme: theme == .neon ? .neon : .minimal)
                         .contentTransition(.numericText())
                     Text(unpricedNote).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                    if let note = localCostNote {
+                        Text(note).font(.system(size: 10.5)).foregroundStyle(.teal).lineLimit(1)
+                    }
                 }
             }
             .help("按 API 价格估算，不是订阅账单")
@@ -113,6 +115,16 @@ private struct PeriodSummary: View {
         var parts = [n > 0 ? "API 等价 · \(n) 次无定价" : "API 等价估算"]
         if data["includes_kimi"].bool == true { parts.append("不含 Kimi") }
         return parts.joined(separator: " · ")
+    }
+
+    /// Price-table estimate line under the CC Switch USD estimate.
+    private var localCostNote: String? {
+        let costs = data["local_cost"].object
+        guard !costs.isEmpty else { return nil }
+        let parts = costs.sorted { $0.key < $1.key }.map { unit, value in
+            Fmt.amount(value.double ?? 0, unit: unit)
+        }
+        return "价格表估算 " + parts.joined(separator: " + ")
     }
 
     /// Donut of input / output / cache, cache hit rate in the middle.
@@ -223,9 +235,16 @@ private struct PeriodSummary: View {
         }
     }
 
+    /// Which local ledgers were summed in, for the footnote.
+    private var sourceNote: String {
+        let extra = data["includes_local"].array.compactMap { $0.string }
+        guard !extra.isEmpty else { return "数据来自 CC Switch 本机记录" }
+        return "数据来自 CC Switch 与 " + extra.map { Catalog.brand($0).name }.joined(separator: "、") + " 本机记录"
+    }
+
     private var footnote: some View {
-        var parts = [data["includes_kimi"].bool == true ? "数据来自 CC Switch 与 Kimi Code 本机记录" : "数据来自 CC Switch 本机记录"]
-        if let imported = history.lastImport { parts.append("最近导入 " + Fmt.ago(imported, now: now)) }
+        var parts = [sourceNote]
+        if let imported = history?.lastImport { parts.append("最近导入 " + Fmt.ago(imported, now: now)) }
         if data["period_status"].string == "partial" { parts.append("部分日期仅有日汇总") }
         return Text(parts.joined(separator: " · "))
             .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -234,26 +253,55 @@ private struct PeriodSummary: View {
 }
 
 
-/// One local-usage view: CC Switch history plus Kimi Code's own session logs.
-/// They record different clients (CC Switch's "kimi-for-coding" rows are
-/// Claude Code routed to Kimi, not the Kimi Code app), so the sum has no overlap.
+/// One local-usage view summing every local token ledger: CC Switch's imports
+/// plus the direct readers (Kimi Code, ZCode, OpenCode, WorkBuddy, and the
+/// Codex / Claude Code / Gemini / MiniMax Code session logs). They record
+/// different clients — or, for the CLIs CC Switch also imports, only the days
+/// it never imported — so the sum has no double counting, and the tab works
+/// on machines without CC Switch at all.
 enum LocalUsage {
-    static func merged(ccswitch data: JSON, snapshot: Snapshot, period: Period) -> JSON {
-        guard let kimi = snapshot.sources.first(where: { $0.id == "kimi" })?.metric("tokens")?.value["periods"][period.rawValue],
-              !kimi.isNull else { return data }
-        let a = data["totals"], b = kimi["totals"]
-        func sum(_ key: String) -> Double { (a[key].double ?? 0) + (b[key].double ?? 0) }
-        var totals = a.object
-        for key in ["requests", "fresh_input", "output", "cache_read", "cache_write", "total_tokens"] {
-            totals[key] = .number(sum(key))
+    static func merged(snapshot: Snapshot, period: Period) -> JSON? {
+        var base: JSON?
+        var totals: [String: JSON] = ["requests": .number(0), "fresh_input": .number(0), "output": .number(0),
+                                      "cache_read": .number(0), "cache_write": .number(0), "total_tokens": .number(0)]
+        var groups: [JSON] = []
+        var included: [String] = []
+        var extraRequests = 0.0
+        for source in snapshot.sources {
+            guard let value = source.metric("tokens")?.value["periods"][period.rawValue], !value.isNull else { continue }
+            if source.id.hasPrefix("codexbar:") { continue }
+            if source.id == "ccswitch" { base = value }
+            let t = value["totals"]
+            for key in totals.keys {
+                totals[key] = .number((totals[key]?.double ?? 0) + (t[key].double ?? 0))
+            }
+            groups += value["groups"].array
+            if source.id != "ccswitch" {
+                included.append(source.baseID)
+                extraRequests += t["requests"].double ?? 0
+            }
         }
-        let base = sum("fresh_input") + sum("cache_read") + sum("cache_write")
-        totals["cache_hit_rate"] = base > 0 ? .number(sum("cache_read") / base) : .null
-        totals["unpriced_extra_requests"] = .number(b["requests"].double ?? 0)
-        var out = data.object
-        out["totals"] = .object(totals)
-        out["groups"] = .array(data["groups"].array + kimi["groups"].array)
-        out["includes_kimi"] = .bool(true)
+        guard base != nil || !included.isEmpty else { return nil }
+        // Local price-table estimates, summed per currency (CC Switch's own
+        // USD estimate stays separate in estimated_cost_usd).
+        var localCosts: [String: Double] = [:]
+        for source in snapshot.sources {
+            guard let cost = source.metric("cost")?.value, cost["basis"].string == "local_price_table" else { continue }
+            guard let unit = cost["unit"].string, let amount = cost["periods"][period.rawValue]["amount"].double else { continue }
+            localCosts[unit, default: 0] += amount
+        }
+        let fresh = totals["fresh_input"]?.double ?? 0
+        let read = totals["cache_read"]?.double ?? 0
+        let write = totals["cache_write"]?.double ?? 0
+        totals["cache_hit_rate"] = fresh + read + write > 0 ? .number(read / (fresh + read + write)) : .null
+        totals["unpriced_extra_requests"] = .number(extraRequests)
+        var out: [String: JSON] = ["totals": .object(totals), "groups": .array(groups),
+                                   "includes_kimi": .bool(included.contains("kimi")),
+                                   "includes_local": .array(included.map { .string($0) })]
+        out["local_cost"] = .object(localCosts.mapValues { .number($0) })
+        if let periodStatus = base?["period_status"], !periodStatus.isNull {
+            out["period_status"] = periodStatus
+        }
         return .object(out)
     }
 }

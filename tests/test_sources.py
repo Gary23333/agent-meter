@@ -1,6 +1,9 @@
 import copy
 import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from agent_meter.codex import normalize_limits, normalize_usage, collect_codex
 from agent_meter.codexbar import normalize_codexbar
@@ -134,6 +137,16 @@ class SourceTests(unittest.TestCase):
     def test_kimi_zero_limit_percentage_unknown(self):
         p={'code':0,'data':{'kind':'ok','summary':{'used':0,'limit':0,'window':{'duration':1,'unit':'week'}},'limits':[]}}
         self.assertIsNone(normalize_kimi(p,NOW)['metrics']['quota']['value'][0]['used_percent'])
+
+    def test_kimi_helper_launch_failure_is_cli_not_available(self):
+        from agent_meter.kimi import collect_kimi
+        with tempfile.TemporaryDirectory() as home:
+            Path(home,'.kimi-code').mkdir()
+            Path(home,'.kimi-code/server.token').write_text('t'*40)
+            with patch('agent_meter.kimi.subprocess.Popen',side_effect=OSError('gone')):
+                with self.assertRaises(SourceError) as ctx:
+                    collect_kimi(home,'/gone/kimi',NOW,start_server=True)
+        self.assertEqual(ctx.exception.code,'cli_not_available')
 
     def test_negative_wallet_is_not_erased_or_clamped(self):
         p={'code':0,'data':{'kind':'ok','quota':{'usages':{},'extraUsage':{'balanceCents':-125,'currency':'CNY'}}}}

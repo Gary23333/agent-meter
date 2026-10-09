@@ -39,6 +39,9 @@ enum Catalog {
         case "volcengine": return Brand(name: "火山方舟 Coding Plan", symbol: "flame.fill", tint: Color(red: 0.20, green: 0.44, blue: 1.0))
         case "mimo": return Brand(name: "MiMo API", symbol: "bolt.horizontal.fill", tint: Color(red: 1.0, green: 0.42, blue: 0.0))
         case "ccswitch": return Brand(name: "CC Switch", symbol: "arrow.triangle.swap", tint: .orange)
+        case "opencode": return Brand(name: "OpenCode", symbol: "terminal.fill", tint: Color(red: 0.45, green: 0.40, blue: 0.90))
+        case "gemini": return Brand(name: "Gemini CLI", symbol: "diamond.fill", tint: Color(red: 0.26, green: 0.52, blue: 0.96))
+        case "antigravity": return Brand(name: "Antigravity", symbol: "paperplane.fill", tint: Color(red: 0.30, green: 0.47, blue: 0.95))
         default:
             if id.hasPrefix("codexbar:") {
                 let inner = brand(String(id.dropFirst("codexbar:".count)))
@@ -52,7 +55,8 @@ enum Catalog {
         let id = ConnectionManager.provider(ofSlot: id)
         return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
          "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
-         "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo"][id]
+         "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo",
+         "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity"][id]
             ?? brand(id).name
     }
 
@@ -63,6 +67,7 @@ enum Catalog {
         case "creative_account": return "创作账户"
         case "creative_personal_account": return "个人创作账户"
         case "local_imported_history": return "本机历史"
+        case "local_session_history": return "本机记录"
         default: return scope
         }
     }
@@ -148,6 +153,20 @@ enum Catalog {
             "unsupported_qoder_web_contract": "Qoder 返回格式不支持",
             "http_429": "请求过于频繁，稍后再试",
             "disabled_in_config": "已在配置中禁用",
+            "zcode_db_not_found": "未找到 ZCode 用量数据库（本机未安装 ZCode）",
+            "unsupported_zcode_usage_schema": "ZCode 数据库结构不兼容",
+            "zcode_db_read_failed": "ZCode 数据库读取失败",
+            "opencode_db_not_found": "未找到 OpenCode 数据库（本机未安装 OpenCode）",
+            "unsupported_opencode_schema": "OpenCode 数据库结构不兼容",
+            "opencode_db_read_failed": "OpenCode 数据库读取失败",
+            "workbuddy_projects_not_found": "未找到 WorkBuddy 本地会话记录",
+            "codex_sessions_not_found": "未找到 Codex 会话记录（本机未安装 Codex CLI）",
+            "claude_projects_not_found": "未找到 Claude Code 会话记录（本机未安装 Claude Code）",
+            "gemini_chats_not_found": "未找到 Gemini CLI 会话记录",
+            "mcode_db_not_found": "未找到 MiniMax Code 运行数据库",
+            "mcode_db_read_failed": "MiniMax Code 数据库读取失败",
+            "unsupported_mcode_schema": "MiniMax Code 数据库结构不兼容",
+            "agy_conversations_not_found": "未找到 Antigravity CLI 会话记录",
             "adapter_not_implemented": "尚无适配器",
             "unexpected_source_error": "未知错误",
         ]
@@ -208,7 +227,8 @@ enum Catalog {
 
     static func appLabel(_ app: String) -> String {
         ["claude": "Claude", "codex": "Codex", "kimi": "Kimi Code", "gemini": "Gemini", "opencode": "OpenCode",
-         "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi"][app] ?? app
+         "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi", "zcode": "ZCode", "workbuddy": "WorkBuddy",
+         "antigravity": "Antigravity"][app] ?? app
     }
 
     static func appTint(_ app: String) -> Color {
@@ -216,7 +236,10 @@ enum Catalog {
         case "claude": return Color(red: 0.85, green: 0.47, blue: 0.34)
         case "codex": return brand("codex").tint
         case "gemini": return .blue
-        case "opencode": return .gray
+        case "opencode": return brand("opencode").tint
+        case "zcode": return brand("zcode").tint
+        case "workbuddy": return brand("workbuddy").tint
+        case "antigravity": return brand("antigravity").tint
         case "mcode": return brand("minimax_code").tint
         case "kimi": return brand("kimi").tint
         default: return .purple

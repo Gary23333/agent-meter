@@ -15,7 +15,7 @@ def main():
     parser.add_argument("--reference",type=Path,help="Optional sanitized Codex native reference JSON for reconciliation")
     parser.add_argument("--port",type=int,default=8769)
     parser.add_argument("--start-kimi-server",action="store_true",help="Allow a temporary no-prompt Kimi helper")
-    parser.add_argument("--disable",action="append",default=[],choices=["ccswitch","codex","claude","kimi","qoder","codexbar","minimax_code","deepseek_api","dreamina","minimax_design","workbuddy","trae_cn"])
+    parser.add_argument("--disable",action="append",default=[],choices=["ccswitch","codex","claude","kimi","qoder","codexbar","minimax_code","deepseek_api","dreamina","minimax_design","workbuddy","trae_cn","zcode","opencode","gemini","antigravity"])
     parser.add_argument("--local-only",action="store_true",help="Collect local CC Switch history, skip account network helpers")
     args=parser.parse_args()
     config=default_config()

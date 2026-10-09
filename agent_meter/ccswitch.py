@@ -77,6 +77,30 @@ def period_bounds(now, period, zone=DISPLAY_ZONE):
     return end - days * 86400, end
 
 
+def app_imported_days(path, zone, app):
+    """Local days CC Switch recorded for an app (any data source, folded).
+
+    CC Switch stays primary for those days, so direct readers of the same
+    CLI's local logs must skip them or the two would add up. Returns
+    (days, state) with state in {checked, ccswitch_absent, ccswitch_read_failed}.
+    """
+    path = Path(path).expanduser()
+    if not path.is_file():
+        return set(), "ccswitch_absent"
+    apps = {"claude": ("claude", "claude-desktop")}.get(app, (app,))
+    marks = ",".join("?" * len(apps))
+    try:
+        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
+        try:
+            conn.execute("PRAGMA query_only=ON")
+            rows = conn.execute("SELECT created_at FROM proxy_request_logs WHERE app_type IN (" + marks + ")", apps).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return set(), "ccswitch_read_failed"
+    return {datetime.fromtimestamp(r[0], zone).date().isoformat() for r in rows}, "checked"
+
+
 def rollup_bounds(start, end, zone=DISPLAY_ZONE):
     # Mirrors v4.0.5: only fully covered local days, with its 23:59 rule.
     lo = hi = None

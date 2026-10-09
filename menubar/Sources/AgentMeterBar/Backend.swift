@@ -107,6 +107,26 @@ struct BackendClient {
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
     }
 
+    /// Local price table (GET/PUT /v1/prices).
+    func getPrices() async throws -> JSON {
+        let r = try request("v1/prices", timeout: 10)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return json
+    }
+
+    func putPrices(currency: String, models: [String: [String: Double]]) async throws -> JSON {
+        var r = try request("v1/prices", method: "PUT", timeout: 10)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: ["currency": currency, "models": models])
+        let (_, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else { throw BackendError.http(http.statusCode, nil) }
+        return .null
+    }
+
     func snapshot(force: Bool) async throws -> Snapshot {
         let r = try request(force ? "v1/refresh" : "v1/snapshot", method: force ? "POST" : "GET", timeout: 120)
         let data: Data, resp: URLResponse

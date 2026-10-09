@@ -206,6 +206,13 @@ struct AccountCard: View {
         if let t = source.metric("tokens")?.value["lifetime_tokens"].double, t > 0 {
             rows.append(InfoRow(symbol: "number", title: "账户累计 Token", value: Fmt.tokens(t)))
         }
+        // DeepSeek console usage: display-only, never part of local consumption.
+        if let usage = source.metric("cost")?.value, usage["basis"].string == "platform_web_usage" {
+            rows.append(InfoRow(symbol: "chart.bar.doc.horizontal", title: "近 30 天消耗",
+                                value: Fmt.amount(usage["total_amount"].double ?? 0, unit: usage["currency"].string),
+                                detail: Fmt.tokens(usage["total_tokens"].double ?? 0) + " · 网页端，不计入本机消耗",
+                                valueTint: brand.tint))
+        }
         // Local session history (Kimi Code): today / 30 days / all.
         if let periods = source.metric("tokens")?.value["periods"], !periods.isNull {
             let today = periods["today"]["totals"], month = periods["30d"]["totals"], all = periods["all"]["totals"]

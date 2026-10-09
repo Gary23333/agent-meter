@@ -65,5 +65,11 @@ def materialize_qoder_sdk(archive,runtime_dir):
                 write(entry,relative)
         (target/'.complete').write_text('installed-code-cache-only\n')
         try:os.rename(target,cache)
-        except FileExistsError:pass
+        # Rename onto an existing dir raises EEXIST/ENOTEMPTY: fine when the
+        # winner finished; garbage when a crashed run left it incomplete.
+        except OSError:
+            if (cache/'.complete').is_file() and sdk.is_file():return sdk
+            shutil.rmtree(cache,ignore_errors=True)
+            try:os.rename(target,cache)
+            except OSError:pass
     return sdk

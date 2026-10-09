@@ -75,6 +75,8 @@ final class UsageStore {
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     @ObservationIgnored private let backend = BackendProcess()
+    /// Read-only accessor for windows that talk to the backend directly.
+    var backendClient: BackendClient? { client }
     @ObservationIgnored private var client: BackendClient?
     @ObservationIgnored private var loops: [Task<Void, Never>] = []
     @ObservationIgnored private var fetchTask: Task<Void, Never>?

@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/Schema-v3-success" alt="Schema: v3" />
   <img src="https://img.shields.io/badge/Tests-163%20Passed-brightgreen" alt="Tests: 163 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.3.1-blue" alt="Release: v0.3.1" />
+  <img src="https://img.shields.io/badge/Release-v0.4.0-blue" alt="Release: v0.4.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -201,8 +201,8 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.3.1](https://github.com/Gary23333/agent-meter/releases/tag/v0.3.1) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.3.1-macos-arm64.dmg`
+1. 从 [Releases · v0.4.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.4.0) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.4.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
@@ -223,7 +223,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.3.1，发布标签为 v0.3.1；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.4.0，发布标签为 v0.4.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
