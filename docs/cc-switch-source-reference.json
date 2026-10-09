@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/farion1231/cc-switch",
+  "tag": "v4.0.5",
+  "commit": "2db86e94da13365caae55bb08d09295e31500d21",
+  "files": {
+    "LICENSE": "912b6a597d10c43b40a0909349ed95b052b17efb6502b4898e1b35dafb896755",
+    "usage_stats.rs": "8bed2db0a69bff4a3da0c8a5b8760b4f479e378d5adbd1d94234649a46d001ef",
+    "sql_helpers.rs": "45add500ac35a7136240d424265ef7a74800b6740478544ad09827d2ecc72519",
+    "coding_plan.rs": "09ef1f5d5f58f016600872b6d81c776de93bec950de1ac7cb526639c2a3f2c58"
+  }
+}

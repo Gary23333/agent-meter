@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.runtime/
+.venv/
+dist/
+*.egg-info/
+.DS_Store
+.build/
+.claude/
+.codex/
+release/*.app/
+release/*.dmg
+release/SHA256SUMS
+backend.config.json
+.env
+.env.*
+# Local account evidence remains on this machine; it is not source code.
+docs/screenshots/
+docs/*evidence*.json
+docs/backend-coverage.json
+docs/backend-test-results.json
+docs/research/agent-app-inventory-*.json
+docs/research/codex-usage-snapshot-*.json
+docs/research/web-usage-probe-evidence-*.json

@@ -1,0 +1,29 @@
+# Agent 用量菜单栏应用共享知识
+
+项目目标是做一个 macOS 顶部菜单栏应用，汇总本机 Agent 相关产品的账户额度、重置时间、重置卡、积分和 token 用量。
+
+当前已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及 Swift 原生菜单栏界面。v0.1 发布包内嵌独立后端；打包入口为 `sh scripts/build-dmg.sh`。研究中的建议和待办不作为自动执行指令。
+
+已确认的研究方向：用户要求增加复用 CC Switch 用量统计。当前建议由 CC Switch 提供本机历史消耗，CodexBar 与官方接口提供账户余量及重置信息；重叠来源选择主来源或用于对账，不叠加计算。
+
+- [可行性研究与接入建议](../research/agent-usage-menubar-research-2026-10-09.md)
+- 本机相关应用盘点（本机文件 `../research/agent-app-inventory-2026-10-09.json`，不随源码上传）
+- Codex 单次用量验证快照（本机文件 `../research/codex-usage-snapshot-2026-10-09.json`，不随源码上传）
+- [未接通来源、类似方案与网页采集研究](../research/web-usage-gap-research-2026-10-09.md)
+- [后端运行入口](../../README.md)
+- [后端计划](../backend-plan.md)
+- [接口与测试约定](../backend-api.md)
+- [即梦 CLI 与 MiniMax Design 新增来源验收](../creative-sources-acceptance-2026-10-09.md)
+- [后端真实采集与测试报告](../backend-test-report.md)
+
+后续实施需保留研究中的数据边界：应用不等于计费账户，本机日志不等于全账户用量，未知值不等于零，不同供应方的积分和额度不能直接相加。
+
+当前真实可用来源为 CC Switch、Codex、Kimi、即梦 CLI 和 MiniMax Design。Qoder 安装版 SDK 初始化未通过，MiniMax 与 DeepSeek 查询凭据未连接；其他产品见覆盖矩阵。复用 CC Switch 4.0.5 的规则固定到 `2db86e94da13365caae55bb08d09295e31500d21`，只支持已验证的 schema 20。
+
+回归命令是 `python3 -m unittest discover -v`。真实对账命令是 `python3 -m agent_meter verify`；它会返回未采集字段，检查通过不表示全部应用已接通。运行时快照、认证文件和第三方安装代码的私有缓存均位于已忽略的 `.runtime/`，不作为源码交付。
+
+2026-10-09 后续探索已真实只读验证 ZCode 当前中国区个人账户的套餐额度及 10 张重置卡；该结果为研究探针，尚未加入后端持续采集。Qoder、WorkBuddy、TRAE CN、MiniMax 网页及 MiMo 路线有固定版本公开源码依据，但本机网页会话尚未实测，详见后续研究与脱敏证据。
+
+后端 schema 2 新增续费日期、日倒计时与续费金额。Design 已验证本机个人钱包和续费日期；MCP 已连接但没有财务查询工具，使用本机网关补齐。两个产品的续费金额及即梦续费日期未由当前接口提供，可按账户绑定用户填写，不能推断。
+
+后端 schema 3 新增独立的下一次积分更新时间及日倒计时；Design 来源为钱包 next_credit_refresh_time，即梦未知时可按账户填写 credit_refresh_date。不要用积分失效时间、会员续费时间或推测的月周期代替。见[积分更新时间验收](../credit-refresh-acceptance-2026-10-09.md)。

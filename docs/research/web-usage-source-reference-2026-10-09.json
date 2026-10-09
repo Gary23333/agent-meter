@@ -1,0 +1,54 @@
+{
+  "research_date": "2026-10-09",
+  "scope": "Public source inspection; not execution or live account verification of those projects",
+  "repositories": [
+    {
+      "repo": "ChanningYuan/usageBar",
+      "sha": "858715610fda819db3407cd29bc1694b879afd0e",
+      "license": "MIT",
+      "truncated": false,
+      "url": "https://github.com/ChanningYuan/usageBar/tree/858715610fda819db3407cd29bc1694b879afd0e",
+      "license_url": "https://github.com/ChanningYuan/usageBar/blob/858715610fda819db3407cd29bc1694b879afd0e/LICENSE"
+    },
+    {
+      "repo": "rayelzz/UsageBar-tauri",
+      "sha": "2605fd5f782c5044743e1d2fad681935844bebb3",
+      "license": "MIT",
+      "truncated": false,
+      "url": "https://github.com/rayelzz/UsageBar-tauri/tree/2605fd5f782c5044743e1d2fad681935844bebb3",
+      "license_url": "https://github.com/rayelzz/UsageBar-tauri/blob/2605fd5f782c5044743e1d2fad681935844bebb3/LICENSE"
+    },
+    {
+      "repo": "QuotaBar/QuotaBar",
+      "sha": "5665157743733f2afacdcf9dacefa52ad91c5d0e",
+      "license": "MIT",
+      "truncated": false,
+      "url": "https://github.com/QuotaBar/QuotaBar/tree/5665157743733f2afacdcf9dacefa52ad91c5d0e",
+      "license_url": "https://github.com/QuotaBar/QuotaBar/blob/5665157743733f2afacdcf9dacefa52ad91c5d0e/LICENSE"
+    },
+    {
+      "repo": "Javis603/token-monitor",
+      "sha": "c62544e7ffae8dfa863c92a4e81571ad381110f0",
+      "license": "MIT",
+      "truncated": false,
+      "url": "https://github.com/Javis603/token-monitor/tree/c62544e7ffae8dfa863c92a4e81571ad381110f0",
+      "license_url": "https://github.com/Javis603/token-monitor/blob/c62544e7ffae8dfa863c92a4e81571ad381110f0/LICENSE"
+    },
+    {
+      "repo": "firerlAGI/TraeUseToken",
+      "sha": "6cac5c6cb044e3f4c3e18a2dadf50a36c7c002e4",
+      "license": "MIT",
+      "truncated": false,
+      "url": "https://github.com/firerlAGI/TraeUseToken/tree/6cac5c6cb044e3f4c3e18a2dadf50a36c7c002e4",
+      "license_url": "https://github.com/firerlAGI/TraeUseToken/blob/6cac5c6cb044e3f4c3e18a2dadf50a36c7c002e4/LICENSE"
+    },
+    {
+      "repo": "steipete/CodexBar",
+      "sha": "b0aa7fe0add90b06e3614328715d827f1c898a0f",
+      "license": "MIT",
+      "truncated": false,
+      "url": "https://github.com/steipete/CodexBar/tree/b0aa7fe0add90b06e3614328715d827f1c898a0f",
+      "license_url": "https://github.com/steipete/CodexBar/blob/b0aa7fe0add90b06e3614328715d827f1c898a0f/LICENSE"
+    }
+  ]
+}

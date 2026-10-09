@@ -1,0 +1,19 @@
+{
+  "design_gateway_url": "http://127.0.0.1:8001",
+  "design_probe_mcp": true,
+  "billing_overrides": {
+    "dreamina": {
+      "account_key": "REPLACE_WITH_ACCOUNT_KEY_FROM_SNAPSHOT",
+      "renewal_date": "2026-11-09",
+      "credit_refresh_date": "2026-11-01",
+      "timezone": "Asia/Shanghai",
+      "amount": "99.90",
+      "currency": "CNY"
+    },
+    "minimax_design": {
+      "account_key": "REPLACE_WITH_ACCOUNT_KEY_FROM_SNAPSHOT",
+      "amount": "99.90",
+      "currency": "CNY"
+    }
+  }
+}
