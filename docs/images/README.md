@@ -6,6 +6,7 @@
 - `usage-light.png` / `usage-dark.png`：本机 Token 构成、估算费用、应用和模型排行。
 - `apps-light.png`：应用覆盖矩阵。
 - `ticker-light.png`：菜单栏行情条。
+- `ticker.gif`：行情条滚动动画（浅色 / 深色菜单栏），由 `scripts/make-ticker-gif.py` 从 `ticker-light.png` / `ticker-dark.png` 生成，滚动速度为 App 的 3 倍以缩短循环。
 - `themes-light.png` / `themes-dark.png`：四套界面风格对比（极简、原生、极光、霓虹，账户额度页）。
 
 重建截图：
