@@ -2,7 +2,7 @@
 
 项目目标是做一个 macOS 顶部菜单栏应用，汇总本机 Agent 相关产品的账户额度、重置时间、重置卡、积分和 token 用量。
 
-当前已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及 Swift 原生菜单栏界面。v0.1 发布包内嵌独立后端；打包入口为 `sh scripts/build-dmg.sh`。研究中的建议和待办不作为自动执行指令。
+当前已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及 Swift 原生菜单栏界面。v0.2 发布包内嵌独立后端，面板提供极简、原生、极光、霓虹四套界面风格（`menubar/Sources/AgentMeterBar/Theme.swift`）；打包入口为 `sh scripts/build-dmg.sh`。研究中的建议和待办不作为自动执行指令。
 
 已确认的研究方向：用户要求增加复用 CC Switch 用量统计。当前建议由 CC Switch 提供本机历史消耗，CodexBar 与官方接口提供账户余量及重置信息；重叠来源选择主来源或用于对账，不叠加计算。
 

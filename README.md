@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/Schema-v3-success" alt="Schema: v3" />
   <img src="https://img.shields.io/badge/Tests-137%20Passed-brightgreen" alt="Tests: 137 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.1.0-blue" alt="Release: v0.1.0" />
+  <img src="https://img.shields.io/badge/Release-v0.2.0-blue" alt="Release: v0.2.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -46,9 +46,9 @@
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ 点击弹出
 ┌───────────────────────────────────▼────────────────────────────────────┐
-│ ✦ 极光毛玻璃面板 (AgentMeterBar)                                       │
+│ ✦ 四套界面风格面板：极简 · 原生 · 极光 · 霓虹 (AgentMeterBar)          │
 │ ├─ 顶部驾驶舱：核心平台迷你仪表一字排开，一键直达应用                   │
-│ ├─ 账户额度：环形剩余率、重置倒计时、逐张重置卡到期、积分钱包、续费提醒 │
+│ ├─ 账户额度：各供应商统一卡片——额度窗口、积分钱包、重置卡、续费提醒    │
 │ ├─ 本机消耗：CC Switch 历史 + Kimi Code 真实会话 Token 双流去重合并     │
 │ └─ 应用覆盖：已检测 24+ Agent 应用的原生状态矩阵                       │
 └────────────────────────────────────────────────────────────────────────┘
@@ -65,10 +65,18 @@
 - **订阅周期提醒**：3 天内自动续费扣款提醒、7 天内会员到期（未开启自动续费）提醒；
 - **防打扰机制**：同一事件仅提醒一次，点击通知即可直接定位打开面板。
 
-### 3. 🎨 原生 macOS 极致视觉（SwiftUI + AppKit）
-- **极光流光底色与毛玻璃卡片**：各品牌原生品牌色描边与微光渲染，支持 macOS 深色/浅色模式自适应；
-- **入场动效与环形仪表**：动态环形刻度圈、渐变进度条、Codex 近 30 个活跃日 Token 走势折线图；
-- **Swift Charts 消耗分布图**：将输入、输出、缓存命中等构成以环形图直观呈现。
+### 3. 🎨 四套界面风格，一键切换（SwiftUI + AppKit）
+- **从极简到绚丽**：面板标题栏的调色板按钮或设置菜单「界面风格」随时切换，立即生效并记住选择：
+  - **极简**：黑白排版，无卡片、无阴影，只在额度紧张时出现颜色；
+  - **原生**：macOS 系统实色卡片与系统色，干净克制；
+  - **极光**（默认）：流光底色、毛玻璃卡片与品牌色微光；
+  - **霓虹**：赛博深色、彩虹描边与 HUD 角标、分段 LED 进度条，背景光效由 Core Animation 驱动，打开面板几乎不增加 CPU；
+- **统一的供应商卡片**：各来源按同一顺序展示「额度窗口 → 积分钱包 → 积分更新 → 重置卡 → 续费 → Token」，额度窗口从短到长排列，倒计时按紧急程度而非品牌色着色；
+- **Swift Charts 消耗分布图**：将输入、输出、缓存命中等构成以环形图直观呈现，深色/浅色模式自适应。
+
+<p align="center">
+  <img src="docs/images/themes-dark.png" alt="四套界面风格对比：极简、原生、极光、霓虹，使用演示数据" width="100%" />
+</p>
 
 <p align="center">
   <img src="docs/images/accounts-dark.png" alt="账户额度深色界面：演示额度、重置卡和积分" width="48%" />
@@ -148,7 +156,7 @@
 flowchart TD
     subgraph macOS UI ["macOS 原生前端 (SwiftUI / AppKit)"]
         MB["菜单栏股票行情 (Ticker)"]
-        PN["极光毛玻璃面板 (PanelView)"]
+        PN["四风格面板 (PanelView)"]
         KC["macOS 钥匙串 (Keychain)"]
         WV["即梦隐藏 Web 监听 (WKWebView)"]
     end
@@ -184,13 +192,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.1](https://github.com/Gary23333/agent-meter/releases/tag/v0.1) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.1.0-macos-arm64.dmg`
+1. 从 [Releases · v0.2](https://github.com/Gary23333/agent-meter/releases/tag/v0.2) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.2.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布验证](docs/release-v0.1.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.2.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -206,7 +214,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.1.0，发布标签为 v0.1；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.2.0，发布标签为 v0.2；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |

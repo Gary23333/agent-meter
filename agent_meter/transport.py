@@ -91,7 +91,7 @@ class CodexRPC:
         self.reader = threading.Thread(target=self._read, daemon=True)
         self.reader.start()
         try:
-            self.call("initialize", {"clientInfo": {"name": "agent_meter", "version": "0.1.0"},
+            self.call("initialize", {"clientInfo": {"name": "agent_meter", "version": "0.2.0"},
                                      "capabilities": {"experimentalApi": True, "explicitGatewayOauth": True}})
             self._write({"method": "initialized"})
             return self
