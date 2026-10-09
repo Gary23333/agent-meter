@@ -25,13 +25,13 @@ struct PanelView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 10)
 
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
+            ThemeDivider()
             content
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
+            ThemeDivider()
             footer
         }
         .frame(width: 420)
-        .background(AuroraBackground())
+        .themedRoot(store.theme)
         .onAppear { store.panelOpened() }
     }
 
@@ -39,19 +39,14 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            ZStack {
-                Circle().fill(LinearGradient(colors: [Color(red: 0.36, green: 0.52, blue: 1), Color(red: 0.78, green: 0.36, blue: 0.98)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .shadow(color: Color(red: 0.55, green: 0.4, blue: 1).opacity(0.8), radius: 8)
-                Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-            }
-            .frame(width: 32, height: 32)
+            HeaderLogo()
             VStack(alignment: .leading, spacing: 1) {
-                Text("Agent 用量").font(.system(size: 15, weight: .heavy, design: .rounded))
-                    .foregroundStyle(LinearGradient(colors: [.primary, Color(red: 0.6, green: 0.5, blue: 1)], startPoint: .leading, endPoint: .trailing))
-                Text(statusLine).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                HeaderTitle()
+                Text(statusLine).font(.system(size: 10.5, design: store.theme == .neon ? .monospaced : .default))
+                    .foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
+            themeMenu
             IconButton(symbol: "arrow.clockwise", help: "强制刷新（重新读取所有来源）", spinning: store.isBusy) {
                 store.refresh()
             }
@@ -74,8 +69,32 @@ struct PanelView: View {
         return "采集于 \(Fmt.timeSeconds(t)) · \(Fmt.ago(t, now: store.now))" + (s.servedFromCache ? " · 缓存" : "")
     }
 
+    /// Quick switcher between the four styles, plainest first.
+    private var themeMenu: some View {
+        Menu {
+            Picker("界面风格", selection: Binding(get: { store.theme }, set: { t in withAnimation(.easeInOut(duration: 0.25)) { store.theme = t } })) {
+                ForEach(PanelTheme.allCases) { t in
+                    Label("\(t.label) · \(t.blurb)", systemImage: t.symbol).tag(t)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: "paintpalette")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 26)
+                .foregroundStyle(store.theme == .neon ? AnyShapeStyle(Neon.magenta) : AnyShapeStyle(.secondary))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("切换界面风格：极简 · 原生 · 极光 · 霓虹")
+    }
+
     private var settingsMenu: some View {
         Menu {
+            Picker("界面风格", selection: Binding(get: { store.theme }, set: { store.theme = $0 })) {
+                ForEach(PanelTheme.allCases) { Text($0.label).tag($0) }
+            }
             Picker("菜单栏显示", selection: Binding(get: { store.menuBarMode }, set: { store.menuBarMode = $0 })) {
                 ForEach(MenuBarMode.allCases) { Text($0.label).tag($0) }
             }
@@ -181,6 +200,78 @@ struct PanelView: View {
     }
 }
 
+/// App mark next to the title; grows louder with the theme.
+private struct HeaderLogo: View {
+    @Environment(\.panelTheme) private var theme
+
+    var body: some View {
+        let symbol = Image(systemName: "gauge.with.dots.needle.67percent")
+        switch theme {
+        case .minimal:
+            EmptyView()
+        case .native:
+            symbol.font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.accentColor))
+        case .aurora:
+            ZStack {
+                Circle().fill(LinearGradient(colors: [Color(red: 0.36, green: 0.52, blue: 1), Color(red: 0.78, green: 0.36, blue: 0.98)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .shadow(color: Color(red: 0.55, green: 0.4, blue: 1).opacity(0.8), radius: 8)
+                symbol.font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+            }
+            .frame(width: 32, height: 32)
+        case .neon:
+            ZStack {
+                Hexagon().fill(Color.black.opacity(0.6))
+                Hexagon().stroke(Neon.rim, lineWidth: 1.5)
+                symbol.font(.system(size: 14, weight: .bold)).foregroundStyle(Neon.cyan)
+            }
+            .frame(width: 32, height: 32)
+            .shadow(color: Neon.magenta, radius: 4)
+            .shadow(color: Neon.cyan.opacity(0.7), radius: 12)
+        }
+    }
+}
+
+private struct HeaderTitle: View {
+    @Environment(\.panelTheme) private var theme
+
+    var body: some View {
+        switch theme {
+        case .minimal:
+            Text("Agent 用量").font(.system(size: 14, weight: .medium)).kerning(0.5)
+        case .native:
+            Text("Agent 用量").font(.system(size: 14, weight: .semibold))
+        case .aurora:
+            Text("Agent 用量").font(.system(size: 15, weight: .heavy, design: .rounded))
+                .foregroundStyle(LinearGradient(colors: [.primary, Color(red: 0.6, green: 0.5, blue: 1)], startPoint: .leading, endPoint: .trailing))
+        case .neon:
+            // Chromatic aberration: magenta and cyan ghosts behind the white title.
+            let title = Text("AGENT//用量").font(.system(size: 15, weight: .heavy, design: .monospaced)).kerning(1)
+            ZStack {
+                title.foregroundStyle(Neon.magenta).offset(x: -1.2, y: 0.4).opacity(0.9)
+                title.foregroundStyle(Neon.cyan).offset(x: 1.2, y: -0.4).opacity(0.9)
+                title.foregroundStyle(.white)
+            }
+            .shadow(color: Neon.magenta.opacity(0.8), radius: 6)
+        }
+    }
+}
+
+private struct Hexagon: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        for i in 0..<6 {
+            let a = Double(i) * .pi / 3 - .pi / 2
+            let pt = CGPoint(x: r.midX + r.width / 2 * cos(a), y: r.midY + r.height / 2 * sin(a))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
 struct ErrorBanner: View {
     let message: String
     var body: some View {
@@ -263,6 +354,7 @@ struct AppsView: View {
 struct CockpitStrip: View {
     let snapshot: Snapshot
     let now: Date
+    @Environment(\.panelTheme) private var theme
 
     private struct Gauge: Identifiable {
         let id: String
@@ -274,7 +366,7 @@ struct CockpitStrip: View {
 
     private var gauges: [Gauge] {
         snapshot.accountSources.flatMap { s in
-            let rows = (s.metric("quota")?.value.rows ?? []).filter { $0["remaining_percent"].double != nil }
+            let rows = Catalog.sortedQuotas((s.metric("quota")?.value.rows ?? []).filter { $0["remaining_percent"].double != nil })
             return rows.enumerated().map { i, q in
                 Gauge(id: "\(s.id)-\(i)", source: s.baseID,
                       label: rows.count > 1 ? s.shortName + " " + Catalog.bucketLabel(q).replacingOccurrences(of: " ", with: "")
@@ -300,7 +392,7 @@ struct CockpitStrip: View {
                                         Image(nsImage: icon).resizable().frame(width: 15, height: 15).offset(x: 3, y: 3)
                                     }
                                 }
-                                Text(g.label).font(.system(size: 9.5, weight: .semibold)).lineLimit(1)
+                                Text(g.label).font(.system(size: 9.5, weight: .semibold, design: theme == .neon ? .monospaced : .default)).lineLimit(1)
                                 Text(g.reset.map { Fmt.shortCountdown(to: $0, now: now, past: "待刷新") } ?? "—")
                                     .font(.system(size: 9)).foregroundStyle(.secondary).monospacedDigit()
                             }

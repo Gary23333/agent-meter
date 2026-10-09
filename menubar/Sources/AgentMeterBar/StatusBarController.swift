@@ -133,6 +133,8 @@ final class StatusBarController: NSObject {
     }
 
     private func render() {
+        // Neon is always dark, including the popover frame and arrow.
+        popover.appearance = store.theme.forcedScheme == .dark ? NSAppearance(named: .darkAqua) : nil
         let items = store.tickerItems()
         let width = store.tickerWidth.points
         let useMarquee = store.menuBarMode == .ticker && !items.isEmpty

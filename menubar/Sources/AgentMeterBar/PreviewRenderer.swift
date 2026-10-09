@@ -54,11 +54,16 @@ enum PreviewRenderer {
             }
         }
 
-        var jobs: [(Tab, NSAppearance.Name)] = []
-        for tab in Tab.allCases { for a in [NSAppearance.Name.aqua, .darkAqua] { jobs.append((tab, a)) } }
+        // Every theme; aurora keeps the original file names, others get a prefix.
+        var jobs: [(PanelTheme, Tab, NSAppearance.Name)] = []
+        for theme in PanelTheme.allCases {
+            for tab in Tab.allCases { for a in [NSAppearance.Name.aqua, .darkAqua] { jobs.append((theme, tab, a)) } }
+        }
+        let savedTheme = store.theme
         func next() {
-            guard !jobs.isEmpty else { exit(0) }
-            let (tab, appearance) = jobs.removeFirst()
+            guard !jobs.isEmpty else { store.theme = savedTheme; exit(0) }
+            let (theme, tab, appearance) = jobs.removeFirst()
+            store.theme = theme
             UserDefaults.standard.set(tab.rawValue, forKey: "panelTab")
             let host = NSHostingView(rootView: PanelView().environment(store)
                 .background(Color(nsColor: .windowBackgroundColor)))
@@ -73,7 +78,7 @@ enum PreviewRenderer {
                 host.layoutSubtreeIfNeeded()
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
-                    let name = "\(tab.rawValue)-\(appearance == .darkAqua ? "dark" : "light").png"
+                    let name = (theme == .aurora ? "" : theme.rawValue + "-") + "\(tab.rawValue)-\(appearance == .darkAqua ? "dark" : "light").png"
                     try? rep.representation(using: .png, properties: [:])?
                         .write(to: URL(fileURLWithPath: outDir).appendingPathComponent(name))
                 }

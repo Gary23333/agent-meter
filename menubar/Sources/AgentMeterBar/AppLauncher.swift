@@ -61,6 +61,7 @@ struct OpenAppButton: View {
     let snapshot: Snapshot?
     var compact = false
     @State private var hovering = false
+    @Environment(\.panelTheme) private var theme
 
     var body: some View {
         let targets = AppLauncher.targets(for: sourceID, in: snapshot)
@@ -74,20 +75,32 @@ struct OpenAppButton: View {
     }
 
     private func label(web: Bool, multiple: Bool) -> some View {
-        let tint = Catalog.brand(sourceID).tint
-        return HStack(spacing: 3) {
+        let tint = theme == .neon ? Neon.cyan : theme.tint(Catalog.brand(sourceID).tint)
+        let base = HStack(spacing: 3) {
             Image(systemName: web ? "safari" : "arrow.up.forward.app")
                 .font(.system(size: 10, weight: .bold))
             if !compact { Text("打开").font(.system(size: 10.5, weight: .semibold)) }
             if multiple { Image(systemName: "chevron.down").font(.system(size: 7, weight: .heavy)) }
         }
-        .foregroundStyle(hovering ? .white : tint)
         .padding(.horizontal, compact ? 6 : 8)
         .padding(.vertical, 4)
-        .background(Capsule().fill(hovering ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.14))))
-        .overlay(Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 0.6))
-        .shadow(color: tint.opacity(hovering ? 0.5 : 0), radius: 6)
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
+        return Group {
+            switch theme {
+            case .minimal:
+                // Text link: underline on hover instead of a filled capsule.
+                base.foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(hovering ? 0.6 : 0)).frame(height: 0.5).padding(.horizontal, 6) }
+            case .native:
+                base.foregroundStyle(hovering ? .white : tint)
+                    .background(Capsule().fill(hovering ? tint : tint.opacity(0.12)))
+            case .aurora, .neon:
+                base.foregroundStyle(hovering ? (theme == .neon ? .black : .white) : tint)
+                    .background(Capsule().fill(hovering ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.14))))
+                    .overlay(Capsule().strokeBorder(tint.opacity(theme == .neon ? 0.8 : 0.35), lineWidth: theme == .neon ? 1 : 0.6))
+                    .themeGlow(tint.opacity(hovering ? 0.5 : (theme == .neon ? 0.3 : 0)), radius: 6, theme: theme)
+            }
+        }
     }
 }
 

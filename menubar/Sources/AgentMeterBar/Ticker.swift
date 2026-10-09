@@ -26,7 +26,7 @@ extension Snapshot {
         for s in accountSources {
             let brand = Catalog.brand(s.id)
             let short = s.shortName
-            let quotas = s.metric("quota")?.value.rows.filter { $0["remaining_percent"].double != nil } ?? []
+            let quotas = Catalog.sortedQuotas(s.metric("quota")?.value.rows.filter { $0["remaining_percent"].double != nil } ?? [])
             for (i, q) in quotas.enumerated() {
                 let r = q["remaining_percent"].double ?? 0
                 let reset = q["resets_at"].date

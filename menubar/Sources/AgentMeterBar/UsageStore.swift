@@ -52,6 +52,9 @@ final class UsageStore {
     var menuBarMode: MenuBarMode {
         didSet { UserDefaults.standard.set(menuBarMode.rawValue, forKey: "menuBarMode") }
     }
+    var theme: PanelTheme {
+        didSet { UserDefaults.standard.set(theme.rawValue, forKey: "panelTheme") }
+    }
     var tickerWidth: TickerWidth {
         didSet { UserDefaults.standard.set(tickerWidth.rawValue, forKey: "tickerWidth") }
     }
@@ -88,6 +91,7 @@ final class UsageStore {
         let d = UserDefaults.standard
         menuBarMode = MenuBarMode(rawValue: d.string(forKey: "menuBarMode") ?? "") ?? .ticker
         tickerWidth = TickerWidth(rawValue: d.string(forKey: "tickerWidth") ?? "") ?? .medium
+        theme = PanelTheme(rawValue: d.string(forKey: "panelTheme") ?? "") ?? .aurora
         notificationsEnabled = d.object(forKey: "notificationsEnabled") as? Bool ?? true
         claudeEnabled = d.object(forKey: "claudeEnabled") as? Bool ?? true
         lowQuotaThreshold = d.object(forKey: "lowQuotaThreshold") as? Double ?? 20

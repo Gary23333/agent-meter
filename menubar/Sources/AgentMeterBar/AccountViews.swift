@@ -60,15 +60,19 @@ struct AccountCard: View {
     let source: Source
     let snapshot: Snapshot
     let now: Date
+    @Environment(\.panelTheme) private var theme
 
     private var brand: Catalog.Brand { Catalog.brand(source.id) }
-    private var quotas: [JSON] { source.metric("quota")?.value.rows.filter { $0["remaining_percent"].double != nil } ?? [] }
+    /// Brand colour as the current theme shows it.
+    private var tint: Color { theme.tint(brand.tint) }
+    private var quotas: [JSON] { Catalog.sortedQuotas(source.metric("quota")?.value.rows.filter { $0["remaining_percent"].double != nil } ?? []) }
 
     var body: some View {
         Card(tint: brand.tint) {
+            // Same section order for every provider: quota windows, balances,
+            // credit refresh, reset cards, renewal, tokens.
             header
-            if quotas.count == 1 { singleQuota(quotas[0]) }
-            else if quotas.count > 1 { VStack(spacing: 9) { ForEach(quotas.indices, id: \.self) { QuotaBar(quota: quotas[$0], now: now) } } }
+            if !quotas.isEmpty { VStack(spacing: 9) { ForEach(quotas.indices, id: \.self) { QuotaBar(quota: quotas[$0], now: now) } } }
             details
             dailyTokens
         }
@@ -90,24 +94,24 @@ struct AccountCard: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                     Spacer()
                     Text(Fmt.tokens(points.reduce(0) { $0 + $1.tokens }))
-                        .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(brand.tint)
+                        .font(.system(size: 11, weight: .bold, design: theme.numberDesign)).foregroundStyle(tint)
                 }
                 Chart {
                     ForEach(points, id: \.day) { p in
                         AreaMark(x: .value("日期", p.day), y: .value("Token", p.tokens))
-                            .foregroundStyle(LinearGradient(colors: [brand.tint.opacity(0.45), brand.tint.opacity(0.02)],
+                            .foregroundStyle(LinearGradient(colors: [tint.opacity(theme == .minimal ? 0.12 : 0.45), tint.opacity(0.02)],
                                                             startPoint: .top, endPoint: .bottom))
                             .interpolationMethod(.catmullRom)
                         LineMark(x: .value("日期", p.day), y: .value("Token", p.tokens))
-                            .foregroundStyle(brand.tint)
-                            .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                            .foregroundStyle(tint)
+                            .lineStyle(StrokeStyle(lineWidth: theme == .minimal ? 1 : 1.6, lineCap: .round))
                             .interpolationMethod(.catmullRom)
                     }
                 }
                 .chartXAxis(.hidden)
                 .chartYAxis(.hidden)
                 .frame(height: 40)
-                .shadow(color: brand.tint.opacity(0.5), radius: 4)
+                .themeGlow(tint.opacity(0.5), radius: 4, theme: theme)
             }
         }
     }
@@ -116,7 +120,7 @@ struct AccountCard: View {
         HStack(spacing: 10) {
             BrandBadge(brand: brand, size: 30, icon: AppLauncher.icon(for: source.baseID, in: snapshot))
             VStack(alignment: .leading, spacing: 1) {
-                Text(source.displayName).font(.system(size: 13.5, weight: .bold))
+                Text(source.displayName).font(.system(size: 13.5, weight: theme == .minimal ? .semibold : .bold))
                 Text(subtitle).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
@@ -136,71 +140,68 @@ struct AccountCard: View {
         return parts.joined(separator: " · ")
     }
 
-    private func singleQuota(_ q: JSON) -> some View {
-        let remaining = q["remaining_percent"].double ?? 0
-        return HStack(spacing: 14) {
-            Ring(remaining: remaining, size: 70, lineWidth: 7)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("\(Catalog.bucketLabel(q)) 窗口").font(.system(size: 12, weight: .medium))
-                if let used = q["used_percent"].double {
-                    Text("已用 \(Fmt.percent(used.rounded()))").font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                if let reset = q["resets_at"].date {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 9.5, weight: .semibold))
-                        Text(reset > now ? "\(Fmt.countdown(to: reset, now: now)) 重置" : "已重置，待刷新")
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(brand.tint)
-                    Text(Fmt.moment(reset, now: now)).font(.system(size: 10.5)).foregroundStyle(.secondary).monospacedDigit()
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
     @ViewBuilder private var details: some View {
-        let rows = detailRows
-        if !rows.isEmpty {
+        let top = balanceRows
+        let bottom = renewalAndTokenRows
+        let cards = source.metric("reset_cards")?.value["cards"].array ?? []
+        if !top.isEmpty || !bottom.isEmpty || resetCardRow != nil {
             VStack(spacing: 7) {
-                ForEach(rows.indices, id: \.self) { rows[$0] }
+                ForEach(top.indices, id: \.self) { top[$0] }
+                if let row = resetCardRow {
+                    row
+                    if !cards.isEmpty { ResetCardStrip(cards: cards, now: now, tint: tint).padding(.bottom, 2) }
+                }
+                ForEach(bottom.indices, id: \.self) { bottom[$0] }
             }
             .padding(.top, quotas.isEmpty ? 0 : 2)
         }
-        let cards = source.metric("reset_cards")?.value["cards"].array ?? []
-        if !cards.isEmpty {
-            ResetCardStrip(cards: cards, now: now, tint: brand.tint)
-        }
     }
 
-    private var detailRows: [InfoRow] {
+    /// Countdowns are coloured by urgency, never by brand, so every card agrees.
+    private func dueTint(_ day: Date) -> Color {
+        let d = Fmt.daysUntil(day, now: now)
+        if d <= 3 { return theme == .neon ? Neon.orange : .orange }
+        return .primary
+    }
+
+    private var resetCardRow: InfoRow? {
+        guard let cards = source.metric("reset_cards")?.value else { return nil }
+        let count = Int(cards["available_count"].double ?? 0)
+        let expiries = cards["cards"].array.compactMap { $0["expires_at"].date }.filter { $0 > now }.sorted()
+        let next = expiries.first ?? cards["next_known_expiry"].date
+        return InfoRow(symbol: "ticket", title: "重置卡", value: "\(count) 张",
+                       detail: next.map { "最早 \(Fmt.moment($0, now: now)) 到期" })
+    }
+
+    /// Balances and credit buckets, then when credits next refresh.
+    private var balanceRows: [InfoRow] {
         var rows: [InfoRow] = []
-        if let cards = source.metric("reset_cards")?.value {
-            let count = Int(cards["available_count"].double ?? 0)
-            let expiries = cards["cards"].array.compactMap { $0["expires_at"].date }.filter { $0 > now }.sorted()
-            let next = expiries.first ?? cards["next_known_expiry"].date
-            rows.append(InfoRow(symbol: "ticket", title: "重置卡", value: "\(count) 张",
-                                detail: next.map { "最早 \(Fmt.moment($0, now: now)) 到期" }))
-        }
         for c in source.metric("credits")?.value.rows ?? [] {
             rows.append(contentsOf: creditRows(c))
         }
         if let v = source.metric("credit_refresh_time")?.value, let day = Fmt.parseDay(v["date"].string) {
             rows.append(InfoRow(symbol: "arrow.triangle.2.circlepath", title: "积分更新", value: Fmt.dayCountdown(day, now: now),
                                 detail: Fmt.day(day, now: now) + (v["origin"].string == "user" ? " · 手填" : ""),
-                                valueTint: brand.tint))
+                                valueTint: dueTint(day)))
         }
+        return rows
+    }
+
+    private var renewalAndTokenRows: [InfoRow] {
+        var rows: [InfoRow] = []
         if let v = source.metric("renewal_time")?.value, let day = Fmt.parseDay(v["date"].string) {
             var detail = Fmt.day(day, now: now)
             if let a = source.metric("renewal_amount")?.value, let amount = a["amount"].double {
                 detail += " · " + Fmt.amount(amount, unit: a["currency"].string)
                 if a["confirmed_by_provider"].bool == false { detail += "（手填）" }
             }
-            rows.append(InfoRow(symbol: "calendar", title: "续费", value: Fmt.dayCountdown(day, now: now), detail: detail))
+            rows.append(InfoRow(symbol: "calendar", title: "续费", value: Fmt.dayCountdown(day, now: now), detail: detail,
+                                valueTint: dueTint(day)))
         } else if let end = Fmt.parseDay(source.subscription["ends_on"].string) {
             let note = source.subscription["auto_renew"].bool == false ? "未开自动续费" : nil
             rows.append(InfoRow(symbol: "calendar", title: "会员到期", value: Fmt.dayCountdown(end, now: now),
-                                detail: [Fmt.day(end, now: now), note].compactMap { $0 }.joined(separator: " · ")))
+                                detail: [Fmt.day(end, now: now), note].compactMap { $0 }.joined(separator: " · "),
+                                valueTint: dueTint(end)))
         }
         if let t = source.metric("tokens")?.value["lifetime_tokens"].double, t > 0 {
             rows.append(InfoRow(symbol: "number", title: "账户累计 Token", value: Fmt.tokens(t)))
@@ -240,7 +241,7 @@ struct AccountCard: View {
             rows.append(InfoRow(symbol: "hourglass", title: bucketTitle,
                                 value: Fmt.grouped(amount),
                                 detail: exp.map { "\(Fmt.day($0, now: now)) 失效 · \(Fmt.countdown(to: $0, now: now))" } ?? "无失效日期",
-                                valueTint: .secondary))
+                                valueTint: .secondary, nested: true))
         }
         return rows
     }
@@ -249,6 +250,7 @@ struct AccountCard: View {
 struct QuotaBar: View {
     let quota: JSON
     let now: Date
+    @Environment(\.panelTheme) private var theme
     var body: some View {
         let remaining = quota["remaining_percent"].double ?? 0
         VStack(alignment: .leading, spacing: 4) {
@@ -260,9 +262,9 @@ struct QuotaBar: View {
                 Spacer()
                 Text("剩余 \(Fmt.percent(remaining.rounded()))")
                     .font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                    .foregroundStyle(healthTint(remaining))
+                    .foregroundStyle(theme.health(remaining))
             }
-            Meter(fraction: remaining / 100, tint: healthTint(remaining), accent: healthTintAccent(remaining))
+            Meter(fraction: remaining / 100, tint: theme.health(remaining), accent: theme.healthAccent(remaining))
             if let reset = quota["resets_at"].date {
                 Text("\(reset > now ? Fmt.countdown(to: reset, now: now) + " 重置" : "已重置，待刷新") · \(Fmt.moment(reset, now: now))")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary).monospacedDigit()
@@ -276,6 +278,7 @@ struct ResetCardStrip: View {
     let cards: [JSON]
     let now: Date
     let tint: Color
+    @Environment(\.panelTheme) private var theme
     var body: some View {
         HStack(spacing: 6) {
             ForEach(cards.indices, id: \.self) { i in
@@ -290,9 +293,28 @@ struct ResetCardStrip: View {
                 }
                 .padding(.horizontal, 8).padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(urgent ? 0.06 : 0.1)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.5) : tint.opacity(0.25), lineWidth: 0.6))
+                .background { chip(urgent: urgent) }
             }
+        }
+    }
+
+    @ViewBuilder private func chip(urgent: Bool) -> some View {
+        let edge = urgent ? (theme == .neon ? Neon.orange : Color.orange) : tint
+        switch theme {
+        case .minimal:
+            // Just a leading rule; orange only when it is close to expiring.
+            Rectangle().fill(urgent ? Color.orange : Color.primary.opacity(0.15)).frame(width: 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .native:
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.6) : Color(nsColor: .separatorColor), lineWidth: 0.5))
+        case .aurora:
+            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(urgent ? 0.06 : 0.1))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.5) : tint.opacity(0.25), lineWidth: 0.6))
+        case .neon:
+            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(edge.opacity(0.1))
+                .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(edge.opacity(0.85), lineWidth: 1))
+                .shadow(color: edge.opacity(0.6), radius: 5)
         }
     }
 }

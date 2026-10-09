@@ -341,6 +341,7 @@ struct ConnectionsView: View {
         }
         .frame(width: 480)
         .frame(minHeight: 420)
+        .themedRoot(store.theme)
         .onAppear(perform: reload)
         .onChange(of: store.snapshot?.collectedAt) { _, _ in reload() }
     }

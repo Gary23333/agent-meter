@@ -52,13 +52,14 @@ private struct PeriodSummary: View {
     let history: Source
     let snapshot: Snapshot
     let now: Date
+    @Environment(\.panelTheme) private var theme
 
     private var totals: JSON { data["totals"] }
     private var segments: [Segment] {
-        [Segment(id: "in", label: "新输入", value: totals["fresh_input"].double ?? 0, color: Color(red: 0.30, green: 0.56, blue: 0.98)),
-         Segment(id: "out", label: "输出", value: totals["output"].double ?? 0, color: Color(red: 0.58, green: 0.40, blue: 0.97)),
-         Segment(id: "cr", label: "缓存读取", value: totals["cache_read"].double ?? 0, color: Color(red: 0.22, green: 0.76, blue: 0.70)),
-         Segment(id: "cw", label: "缓存写入", value: totals["cache_write"].double ?? 0, color: Color(red: 0.98, green: 0.64, blue: 0.24))]
+        [Segment(id: "in", label: "新输入", value: totals["fresh_input"].double ?? 0, color: theme.series(Color(red: 0.30, green: 0.56, blue: 0.98), index: 0)),
+         Segment(id: "out", label: "输出", value: totals["output"].double ?? 0, color: theme.series(Color(red: 0.58, green: 0.40, blue: 0.97), index: 1)),
+         Segment(id: "cr", label: "缓存读取", value: totals["cache_read"].double ?? 0, color: theme.series(Color(red: 0.22, green: 0.76, blue: 0.70), index: 2)),
+         Segment(id: "cw", label: "缓存写入", value: totals["cache_write"].double ?? 0, color: theme.series(Color(red: 0.98, green: 0.64, blue: 0.24), index: 3))]
     }
 
     var body: some View {
@@ -79,9 +80,9 @@ private struct PeriodSummary: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Token 总量").font(.system(size: 11)).foregroundStyle(.secondary)
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(Fmt.tokens(total)).font(.system(size: 26, weight: .heavy, design: .rounded)).monospacedDigit()
-                            .foregroundStyle(LinearGradient(colors: [Color(red: 0.45, green: 0.6, blue: 1), Color(red: 0.75, green: 0.45, blue: 1)],
-                                                            startPoint: .leading, endPoint: .trailing))
+                        Text(Fmt.tokens(total)).font(theme.number(26)).monospacedDigit()
+                            .foregroundStyle(theme.figure([Color(red: 0.45, green: 0.6, blue: 1), Color(red: 0.75, green: 0.45, blue: 1)]))
+                            .themeGlow(Neon.cyan.opacity(0.6), radius: 4, theme: theme == .neon ? .neon : .minimal)
                             .contentTransition(.numericText())
                         if data["total_is_lower_bound"].bool == true {
                             Text("起").font(.system(size: 11, weight: .semibold)).foregroundStyle(.orange)
@@ -95,9 +96,10 @@ private struct PeriodSummary: View {
             Card(tint: Color(red: 0.15, green: 0.82, blue: 0.62)) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("估算费用").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Text(cost.map(Fmt.usd) ?? "—").font(.system(size: 26, weight: .heavy, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(LinearGradient(colors: [Color(red: 0.2, green: 0.9, blue: 0.6), Color(red: 0.2, green: 0.75, blue: 1)],
-                                                        startPoint: .leading, endPoint: .trailing))
+                    Text(cost.map(Fmt.usd) ?? "—").font(theme.number(26)).monospacedDigit()
+                        .foregroundStyle(theme == .neon ? AnyShapeStyle(LinearGradient(colors: [Neon.lime, Neon.cyan], startPoint: .leading, endPoint: .trailing))
+                                                        : theme.figure([Color(red: 0.2, green: 0.9, blue: 0.6), Color(red: 0.2, green: 0.75, blue: 1)]))
+                        .themeGlow(Neon.lime.opacity(0.6), radius: 4, theme: theme == .neon ? .neon : .minimal)
                         .contentTransition(.numericText())
                     Text(unpricedNote).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -126,10 +128,10 @@ private struct PeriodSummary: View {
                             .foregroundStyle(s.color.gradient)
                     }
                     .frame(width: 104, height: 104)
-                    .shadow(color: segments[2].color.opacity(0.45), radius: 8)
+                    .themeGlow(segments[2].color.opacity(0.45), radius: 8, theme: theme)
                     VStack(spacing: 0) {
                         Text(totals["cache_hit_rate"].double.map { Fmt.percent(($0 * 1000).rounded() / 10) } ?? "—")
-                            .font(.system(size: 16, weight: .heavy, design: .rounded)).monospacedDigit()
+                            .font(theme.number(16)).monospacedDigit()
                             .foregroundStyle(segments[2].color)
                         Text("缓存命中").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
@@ -138,10 +140,10 @@ private struct PeriodSummary: View {
                     ForEach(segments) { s in
                         HStack(spacing: 6) {
                             RoundedRectangle(cornerRadius: 2).fill(s.color.gradient).frame(width: 8, height: 8)
-                                .shadow(color: s.color, radius: 2)
+                                .themeGlow(s.color, radius: 2, theme: theme)
                             Text(s.label).font(.system(size: 11)).foregroundStyle(.secondary)
                             Spacer(minLength: 2)
-                            Text(Fmt.tokens(s.value)).font(.system(size: 11.5, weight: .bold, design: .rounded)).monospacedDigit()
+                            Text(Fmt.tokens(s.value)).font(.system(size: 11.5, weight: theme == .minimal ? .regular : .bold, design: theme.numberDesign)).monospacedDigit()
                         }
                     }
                 }
@@ -184,7 +186,7 @@ private struct PeriodSummary: View {
                             if let icon = AppLauncher.icon(for: provider, in: snapshot) {
                                 Image(nsImage: icon).resizable().frame(width: 16, height: 16)
                             } else {
-                                Circle().fill(Catalog.appTint(a.id)).frame(width: 7, height: 7).shadow(color: Catalog.appTint(a.id), radius: 3)
+                                Circle().fill(theme.tint(Catalog.appTint(a.id))).frame(width: 7, height: 7).themeGlow(Catalog.appTint(a.id), radius: 3, theme: theme)
                             }
                             Text(Catalog.appLabel(a.id)).font(.system(size: 12, weight: .medium))
                             OpenAppButton(sourceID: provider, snapshot: snapshot, compact: true)
@@ -193,7 +195,7 @@ private struct PeriodSummary: View {
                             Text(a.priced ? Fmt.usd(a.cost) : "—").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
                                 .frame(minWidth: 54, alignment: .trailing)
                         }
-                        Meter(fraction: a.tokens / max(top, 1), tint: Catalog.appTint(a.id), height: 5)
+                        Meter(fraction: a.tokens / max(top, 1), tint: theme.tint(Catalog.appTint(a.id)), height: 5)
                     }
                 }
             }
@@ -211,8 +213,8 @@ private struct PeriodSummary: View {
                         Text(Catalog.appLabel(g["app"].string ?? ""))
                             .font(.system(size: 9.5, weight: .medium))
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .foregroundStyle(Catalog.appTint(g["app"].string ?? ""))
-                            .background(Capsule().fill(Catalog.appTint(g["app"].string ?? "").opacity(0.13)))
+                            .foregroundStyle(theme.tint(Catalog.appTint(g["app"].string ?? "")))
+                            .background(Capsule().fill(theme.tint(Catalog.appTint(g["app"].string ?? "")).opacity(theme == .minimal ? 0.06 : 0.13)))
                         Spacer()
                         Text(Fmt.tokens(g["total_tokens"].double ?? 0)).font(.system(size: 11.5, weight: .medium)).monospacedDigit()
                     }

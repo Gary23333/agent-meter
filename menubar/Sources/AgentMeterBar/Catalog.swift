@@ -141,6 +141,9 @@ enum Catalog {
                      "seven_day_oauth_apps": "7 天 OAuth 应用"]
         if let b = q["bucket"].string, let n = named[b] { return n }
         if let minutes = q["window_minutes"].double { return Fmt.window(minutes: minutes) }
+        // Same window, same words across providers ("1 周" reads as "7 天").
+        if let m = windowMinutes(q), q["window"]["unit"].string != nil || q["window_minutes"].double != nil,
+           m.truncatingRemainder(dividingBy: 60) == 0 { return Fmt.window(minutes: m) }
         if let d = q["window"]["duration"].double, let u = q["window"]["unit"].string {
             let unit = ["second": "秒", "minute": "分钟", "hour": "小时", "day": "天", "week": "周", "month": "个月"][u] ?? u
             return "\(Fmt.trim(d)) \(unit)"
@@ -153,9 +156,25 @@ enum Catalog {
         return names[b] ?? (b.isEmpty ? "额度" : b)
     }
 
+    /// Window length in minutes, when the provider says or the bucket name implies it.
+    static func windowMinutes(_ q: JSON) -> Double? {
+        if let m = q["window_minutes"].double { return m }
+        if let d = q["window"]["duration"].double, let u = q["window"]["unit"].string,
+           let per = ["minute": 1.0, "hour": 60, "day": 1440, "week": 10080][u] { return d * per }
+        return ["limit5h": 300, "5h": 300, "limit7d": 10080, "week": 10080][q["bucket"].string ?? ""]
+    }
+
+    /// Short windows first, so every card reads 5 小时 → 7 天 → 月度.
+    static func sortedQuotas(_ rows: [JSON]) -> [JSON] {
+        rows.enumerated().sorted { a, b in
+            let x = windowMinutes(a.element) ?? .infinity, y = windowMinutes(b.element) ?? .infinity
+            return x != y ? x < y : a.offset < b.offset
+        }.map(\.element)
+    }
+
     static func unitLabel(_ unit: String?) -> String {
         switch unit {
-        case "provider_credits", "dreamina_credits": return "积分"
+        case "provider_credits", "dreamina_credits", "credits", "credit": return "积分"
         case "minimax_design_media_credits": return "媒体积分"
         case "workbuddy_credits", "trae_credits", "qoder_credits": return "积分"
         case "CNY": return "元"
