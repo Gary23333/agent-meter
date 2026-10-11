@@ -18,6 +18,8 @@ struct WebProvider: Identifiable {
     var manual: ManualEntry? = nil
     /// Where to get those keys, shown as a link.
     var keyHelp: (title: String, url: URL)? = nil
+    /// Pages a hidden window visits to renew `tokenCapture` after the first login.
+    var renewPaths: [String] = []
 
     static let all: [WebProvider] = [
         WebProvider(id: "claude", loginURL: URL(string: "https://claude.ai/login")!,
@@ -31,11 +33,12 @@ struct WebProvider: Identifiable {
                     note: "积分包剩余、冻结与套餐；登录态与本窗口的浏览器标识绑定。"),
         WebProvider(id: "trae_cn", loginURL: URL(string: "https://www.trae.cn/")!,
                     cookieDomain: nil,
-                    note: "实验性：登录后打开用量/账户页，自动捕获 Cloud-IDE-JWT；也可手动粘贴。",
+                    note: "登录一次后 App 会在后台自动续期 Cloud-IDE-JWT；也可登录后打开用量/账户页手动捕获，或手动粘贴。",
                     tokenCapture: TokenCapture(url: #"^https:\/\/api\.trae\.cn\/"#, value: #"^Cloud-IDE-JWT\s+\S+$"#,
                                                strip: "Cloud-IDE-JWT "),
                     manual: ManualEntry(fields: [KeyField(field: "token", placeholder: "或粘贴 Cloud-IDE-JWT（新增一个账号）")],
-                                        strip: "Cloud-IDE-JWT ")),
+                                        strip: "Cloud-IDE-JWT "),
+                    renewPaths: ["/pricing", "/account-setting"]),
         WebProvider(id: "zcode", loginURL: URL(string: "https://bigmodel.cn/coding-plan/personal/usage")!,
                     cookieDomain: nil,
                     note: "实验性：登录智谱开放平台（ZCode 的 GLM Coding Plan 账户），打开「用量」页后自动捕获页面自己的查询凭据，读取 5 小时 / 每周额度与 MCP 次数。也可粘贴 Coding Plan API Key。重置卡只在 ZCode 桌面端，暂不读取。",
@@ -109,6 +112,39 @@ struct WebProvider: Identifiable {
 
     /// Must match the backend default so WorkBuddy's UA binding holds.
     static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+
+    /// Providers whose captured token is short-lived: their login window keeps a
+    /// persistent website store, so a hidden window can renew it later.
+    static let autoRenew: Set<String> = ["trae_cn"]
+
+    static func isAutoRenew(_ slot: String) -> Bool {
+        autoRenew.contains(ConnectionManager.provider(ofSlot: slot))
+    }
+
+    /// Website store for one login slot. Renewing providers get a persistent
+    /// store so cookies survive launches; the captured token still leaves only
+    /// through the Keychain.
+    static func dataStore(forSlot slot: String) -> WKWebsiteDataStore {
+        guard isAutoRenew(slot) else { return .nonPersistent() }
+        return WKWebsiteDataStore(forIdentifier: storeID(for: slot))
+    }
+
+    /// Persistent stores are keyed by UUID, so one is minted per slot and kept
+    /// in UserDefaults to recognise the same account's cookies on every launch.
+    static func storeID(for slot: String) -> UUID {
+        let key = "webStoreUUID." + slot
+        if let raw = UserDefaults.standard.string(forKey: key), let uuid = UUID(uuidString: raw) { return uuid }
+        let uuid = UUID()
+        UserDefaults.standard.set(uuid.uuidString, forKey: key)
+        return uuid
+    }
+
+    /// Pages a hidden window tries, in order, until one re-triggers the API call.
+    func renewURLs() -> [URL] {
+        guard let host = loginURL.host else { return [loginURL] }
+        let root = "\(loginURL.scheme ?? "https")://\(host)"
+        return ([loginURL] + renewPaths.compactMap { URL(string: root + $0) })
+    }
 }
 
 /// Owns stored sessions and keeps the backend in sync with them. Each login
@@ -219,47 +255,11 @@ final class ConnectionManager {
     }
 }
 
-// MARK: Login window
-
-@MainActor @Observable
-final class WebLoginModel: NSObject, WKScriptMessageHandler {
-    let provider: WebProvider
-    let slot: String
-    var label: String
-    let webView: WKWebView
-    var capturedToken: String?
-    var capturedOrigin: String?
-    var capturedURL: String?
-    @ObservationIgnored let discovery = DreaminaDiscovery()
-    var status = "请在下方完成登录，然后点「完成连接」。"
-    var saving = false
-
-    init(provider: WebProvider, slot: String, label: String) {
-        self.provider = provider
-        self.slot = slot
-        self.label = label
-        let config = WKWebViewConfiguration()
-        // A private store: the session leaves this window only via the Keychain.
-        config.websiteDataStore = .nonPersistent()
-        let web = WKWebView(frame: .zero, configuration: config)
-        web.customUserAgent = WebProvider.userAgent
-        self.webView = web
-        super.init()
-        if provider.discovers {
-            config.userContentController.add(self, name: DreaminaDiscovery.handlerName)
-            config.userContentController.addUserScript(WKUserScript(source: DreaminaDiscovery.script,
-                                                                    injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        }
-        if let capture = provider.tokenCapture {
-            config.userContentController.add(self, name: "agentMeterAuth")
-            config.userContentController.addUserScript(WKUserScript(source: Self.captureScript(capture),
-                                                                    injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        }
-        web.load(URLRequest(url: provider.loginURL))
-    }
-
-    /// Observes (never alters) the page's own API calls to the provider's API host.
-    private static func captureScript(_ c: WebProvider.TokenCapture) -> String {
+/// Read-only observer of the page's own API calls. Shared by the login window
+/// and by the background renewer, so both accept exactly the same credentials.
+enum AuthCapture {
+    /// Records a request header the page already sends; never alters the page.
+    static func script(_ c: WebProvider.TokenCapture) -> String {
         """
         (function(){
           const URL_RE = new RegExp(\(jsString(c.url))), VALUE_RE = new RegExp(\(jsString(c.value)), 'i');
@@ -292,9 +292,60 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
         """
     }
 
-    private static func jsString(_ s: String) -> String {
+    static func jsString(_ s: String) -> String {
         let data = try? JSONSerialization.data(withJSONObject: [s])
         return String(data: data ?? Data("[\"\"]".utf8), encoding: .utf8).map { String($0.dropFirst().dropLast()) } ?? "\"\""
+    }
+
+    /// Drops the scheme word ("Cloud-IDE-JWT "); nil when the value is unusable.
+    static func normalize(_ value: String, strip: String?) -> String? {
+        var token = value
+        if let strip {
+            token = token.replacingOccurrences(of: strip, with: "", options: [.caseInsensitive, .anchored])
+        }
+        token = token.trimmingCharacters(in: .whitespaces)
+        return token.isEmpty || token.count >= 8000 ? nil : token
+    }
+}
+
+// MARK: Login window
+
+@MainActor @Observable
+final class WebLoginModel: NSObject, WKScriptMessageHandler {
+    let provider: WebProvider
+    let slot: String
+    var label: String
+    let webView: WKWebView
+    var capturedToken: String?
+    var capturedOrigin: String?
+    var capturedURL: String?
+    @ObservationIgnored let discovery = DreaminaDiscovery()
+    var status = "请在下方完成登录，然后点「完成连接」。"
+    var saving = false
+
+    init(provider: WebProvider, slot: String, label: String) {
+        self.provider = provider
+        self.slot = slot
+        self.label = label
+        let config = WKWebViewConfiguration()
+        // Auto-renew providers keep their website cookies on disk so a hidden
+        // window can renew later; the token still leaves only via the Keychain.
+        config.websiteDataStore = WebProvider.dataStore(forSlot: slot)
+        let web = WKWebView(frame: .zero, configuration: config)
+        web.customUserAgent = WebProvider.userAgent
+        self.webView = web
+        super.init()
+        if provider.discovers {
+            config.userContentController.add(self, name: DreaminaDiscovery.handlerName)
+            config.userContentController.addUserScript(WKUserScript(source: DreaminaDiscovery.script,
+                                                                    injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
+        if let capture = provider.tokenCapture {
+            config.userContentController.add(self, name: "agentMeterAuth")
+            config.userContentController.addUserScript(WKUserScript(source: AuthCapture.script(capture),
+                                                                    injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
+        web.load(URLRequest(url: provider.loginURL))
     }
 
     nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -311,12 +362,7 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
         guard let body = message.body as? [String: Any], let value = body["value"] as? String,
               let origin = body["origin"] as? String, let url = body["url"] as? String else { return }
         Task { @MainActor in
-            var token = value
-            if let strip = self.provider.tokenCapture?.strip {
-                token = token.replacingOccurrences(of: strip, with: "", options: [.caseInsensitive, .anchored])
-            }
-            token = token.trimmingCharacters(in: .whitespaces)
-            guard !token.isEmpty, token.count < 8000 else { return }
+            guard let token = AuthCapture.normalize(value, strip: self.provider.tokenCapture?.strip) else { return }
             self.capturedToken = token
             self.capturedOrigin = origin
             self.capturedURL = url
@@ -361,6 +407,7 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
             discovery.write(to: dir.appendingPathComponent(".runtime/dreamina-discovery.json"))
         }
         ConnectionManager.shared.save(slot, session)
+        TokenRenewer.shared.reset(slot: slot)
         return true
     }
 }
@@ -399,7 +446,9 @@ struct WebLoginView: View {
             Divider()
             WebViewHost(webView: model.webView)
             Divider()
-            Label("登录只在本窗口内进行。保存的 Cookie / 凭据仅存入钥匙串，并只发送给本机后端用于读取用量。",
+            Label(WebProvider.isAutoRenew(model.slot)
+                  ? "凭据只存入钥匙串，并只发送给本机后端用于读取用量。登录网站留下的 Cookie 保存在本机独立的浏览器数据目录，只用于在后台自动续期，不会发送给后端。"
+                  : "登录只在本窗口内进行。保存的 Cookie / 凭据仅存入钥匙串，并只发送给本机后端用于读取用量。",
                   systemImage: "lock.shield")
                 .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -515,7 +564,9 @@ struct ConnectionsView: View {
                 Image(systemName: "person.crop.circle.fill").foregroundStyle(brand.tint)
                 Text(source?.accountLabel ?? store.session(for: slot)?["label"] ?? "账号 \(index + 1)")
                     .font(.system(size: 12, weight: .medium))
-                if p.backendManaged {
+                if store.renewingSlots.contains(slot) {
+                    StatusPill(status: "loading", text: "自动续期中…")
+                } else if p.backendManaged {
                     StatusPill(status: source?.status ?? "not_provided",
                                text: source.map { $0.status == "available" ? "已连接" : Catalog.statusLabel($0.status) } ?? "已保存")
                         .help(Catalog.reason(source?.reason))

@@ -45,6 +45,8 @@ final class UsageStore {
     static let shared = UsageStore()
 
     var snapshot: Snapshot?
+    /// Login slots whose short-lived token is being renewed in a hidden window.
+    var renewingSlots: Set<String> = []
     var phase: Phase = .idle
     var errorMessage: String?
     var lastFetched: Date?
@@ -214,6 +216,7 @@ final class UsageStore {
                 lastFetched = Date()
                 errorMessage = nil
                 Notifier.shared.evaluate(result, store: self, now: Date())
+                TokenRenewer.shared.consider(result)
             } catch {
                 errorMessage = error.localizedDescription
                 NSLog("AgentMeterBar fetch: %@", String(describing: error))
