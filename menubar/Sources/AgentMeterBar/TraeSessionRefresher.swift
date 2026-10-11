@@ -57,12 +57,15 @@ final class TokenRenewer {
         guard let provider = WebProvider.find(ConnectionManager.provider(ofSlot: slot)),
               provider.tokenCapture != nil else { return false }
         // Only accounts that already have a stored login are renewed; a pasted
-        // key without a website session has nothing to renew from.
-        guard ConnectionManager.shared.session(for: slot) != nil else { return false }
+        // key without a website session has nothing to renew from. The cached
+        // copy is read here because a Keychain read on the main thread is denied
+        // (see ConnectionManager.storedSessions).
+        guard UsageStore.shared.session(for: slot) != nil else { return false }
         if let failed = lastFailure[slot], Date().timeIntervalSince(failed) < retryWait { return false }
         if UserDefaults.standard.integer(forKey: failKey + slot) >= maxFailures { return false }
 
         UsageStore.shared.renewingSlots.insert(slot)
+        NSLog("AgentMeterBar renew: %@ starts a hidden window", slot)
         let capture = Capture(provider: provider, slot: slot)
         captures[slot] = capture
         let task = Task { @MainActor in
@@ -78,16 +81,21 @@ final class TokenRenewer {
         if ok {
             reset(slot: slot)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: renewedKey + slot)
+            NSLog("AgentMeterBar renew: %@ captured a fresh credential", slot)
         } else {
             lastFailure[slot] = Date()
-            UserDefaults.standard.set(UserDefaults.standard.integer(forKey: failKey + slot) + 1, forKey: failKey + slot)
+            let fails = UserDefaults.standard.integer(forKey: failKey + slot) + 1
+            UserDefaults.standard.set(fails, forKey: failKey + slot)
+            // No credential found means the saved website login is gone as well;
+            // the user has to log in again, so stop opening windows.
+            NSLog("AgentMeterBar renew: %@ captured nothing (fail %d/%d)", slot, fails, maxFailures)
         }
         return ok
     }
 
     /// Keeps the account's other fields, replaces only the captured credential.
     private static func save(_ token: String, for slot: String, provider: WebProvider) -> Bool {
-        var session = ConnectionManager.shared.session(for: slot) ?? [:]
+        var session = UsageStore.shared.session(for: slot) ?? [:]
         session[provider.tokenCapture?.field ?? "token"] = token
         session["user_agent"] = WebProvider.userAgent
         guard !session.isEmpty else { return false }
@@ -131,8 +139,9 @@ private final class Capture: NSObject, WKScriptMessageHandler {
     private func loadNext() {
         guard !done else { return }
         guard index < urls.count else { finish(nil); return }
+        let url = urls[index]
         index += 1
-        web.load(URLRequest(url: urls[index]))
+        web.load(URLRequest(url: url))
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(self?.pageWindow ?? 8))
             self?.loadNext()
