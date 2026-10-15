@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from agent_meter.collector import SnapshotService, coverage_matrix, safe_collect
-from agent_meter.model import METRICS, SourceError, failed_source, metric, source, timestamp
+from agent_meter.model import COVERAGE_METRICS, METRICS, SourceError, failed_source, metric, source, timestamp
 from agent_meter.server import load_or_create_token, make_server
 
 
@@ -17,7 +17,7 @@ def sample(now=1000):
     s=source('codex','account',now)
     s['metrics']['quota']=metric([{'used_percent':10,'remaining_percent':90}])
     app={'name':'Codex','provider':'codex','installed':True}
-    return {'schema_version':3,'collected_at':timestamp(now),'sources':[s],
+    return {'schema_version':4,'collected_at':timestamp(now),'sources':[s],
             'coverage':coverage_matrix([app],[s]),'coverage_summary':{'applications':1}}
 
 
@@ -56,7 +56,7 @@ class ServiceTests(unittest.TestCase):
         s.set_web_sessions({'claude':[{'cookie':'x'}]})
         elapsed=time.monotonic()-started
         release.set();reader.join(10)
-        self.assertEqual(done[0]['schema_version'],3)
+        self.assertEqual(done[0]['schema_version'],4)
         self.assertLess(elapsed,2)
 
     def test_invalidation_survives_an_in_flight_collection(self):
@@ -110,7 +110,7 @@ class ServiceTests(unittest.TestCase):
         self.service().get()
         p=Path(self.tmp.name)/'snapshot.json'
         self.assertEqual(p.stat().st_mode&0o777,0o600)
-        self.assertEqual(json.loads(p.read_text())['schema_version'],3)
+        self.assertEqual(json.loads(p.read_text())['schema_version'],4)
 
     def test_source_error_isolated_and_private_message_not_exposed(self):
         def fn():raise RuntimeError('Authorization: secret-value private URL')
@@ -128,8 +128,16 @@ class ServiceTests(unittest.TestCase):
 
     def test_unsupported_apps_have_all_field_gaps(self):
         matrix=coverage_matrix([{'name':'Unknown','provider':'unknown','installed':True}],[])
-        self.assertEqual(len(matrix[0]['fields']),len(METRICS))
+        self.assertEqual(len(matrix[0]['fields']),len(COVERAGE_METRICS))
         self.assertTrue(all(x['status']=='not_supported' for x in matrix[0]['fields'].values()))
+
+    def test_reset_forecast_is_not_a_per_application_coverage_axis(self):
+        # The forecast feature must not show up as a gap on every application.
+        self.assertNotIn('reset_forecast',METRICS[:len(COVERAGE_METRICS)])
+        matrix=coverage_matrix([{'name':'Unknown','provider':'unknown','installed':True}],[])
+        for name in ('reset_forecast','known_reset_countdown'):
+            self.assertIn(name,METRICS)
+            self.assertNotIn(name,matrix[0]['fields'])
 
 
 class HTTPTests(unittest.TestCase):
@@ -152,13 +160,13 @@ class HTTPTests(unittest.TestCase):
 
     def test_authenticated_snapshot(self):
         with self.request('/v1/snapshot') as r:
-            self.assertEqual(r.status,200);self.assertEqual(json.load(r)['schema_version'],3)
+            self.assertEqual(r.status,200);self.assertEqual(json.load(r)['schema_version'],4)
 
     def test_health_schema_version_matches_snapshot(self):
         with self.request('/v1/health') as r:health=json.load(r)
         with self.request('/v1/snapshot') as r:snapshot=json.load(r)
         self.assertEqual(health['schema_version'],snapshot['schema_version'])
-        self.assertEqual(health['schema_version'],3)
+        self.assertEqual(health['schema_version'],4)
 
     def test_no_auth_denied(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:self.request('/v1/snapshot',False)

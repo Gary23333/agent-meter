@@ -122,6 +122,38 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 }
             }
         }
+        out += forecastAlerts(snapshot, now: now)
+        return out
+    }
+
+    /// Global-reset alerts fire on announced events only: a probability is never
+    /// a reason to notify, and a landing is only claimed from a verified record.
+    private func forecastAlerts(_ snapshot: Snapshot, now: Date) -> [Alert] {
+        guard let source = snapshot.sources.first(where: { $0.id == "reset_forecast" }) else { return [] }
+        var out: [Alert] = []
+        for target in source.metric("known_reset_countdown")?.value["targets"].array ?? [] {
+            guard target["kind"].string == "promised_reset",
+                  let close = target["close_at"].date,
+                  ["inside_window", "elapsed_awaiting_landing"].contains(target["state"].string ?? "") else { continue }
+            let inside = target["state"].string == "inside_window"
+            out.append(Alert(
+                key: "tiboWindow|\(Int(close.timeIntervalSince1970))|\(inside ? "open" : "past")",
+                title: inside ? "已公告的全员重置进入时段" : "公告时段已过，额度尚未刷新",
+                body: (target["label"].string ?? "Tibo 公告的重置") + (inside
+                    ? "：\(Fmt.moment(close, now: now)) 前落地，去 Codex 确认额度。"
+                    : "：\(Fmt.moment(close, now: now)) 已过，本机还没看到刷新。")))
+        }
+        if let latest = source.metric("reset_forecast")?.value["history_events"].array.first,
+           latest["kind"].string == "reset", let at = latest["announced_at"].date,
+           at <= now, now.timeIntervalSince(at) < 3 * 86400,
+           ["high", "medium"].contains(latest["confidence"].string ?? "") {
+            let corroborated = latest["sources"].array.count > 1
+            let detail = corroborated ? "，\(latest["sources"].array.count) 家印证" : "，仅 1 家记录"
+            out.append(Alert(key: "tiboLanded|\(latest["post_id"].string ?? "")",
+                             title: "全员重置已记录落地",
+                             body: (latest["summary"].string ?? "追踪站记录到一次全局重置")
+                                + "（\(Fmt.moment(at, now: now))\(detail)）"))
+        }
         return out
     }
 

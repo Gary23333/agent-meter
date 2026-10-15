@@ -12,7 +12,7 @@ from .dreamina_web import validate_observations
 
 MAX_SESSION_BODY = 64 * 1024
 # Sources the app may switch off at runtime.
-TOGGLEABLE = {"claude", "codex", "kimi", "qoder", "minimax_code", "deepseek_api", "dreamina", "minimax_design", "workbuddy", "trae_cn"}
+TOGGLEABLE = {"claude", "codex", "kimi", "qoder", "minimax_code", "deepseek_api", "dreamina", "minimax_design", "workbuddy", "trae_cn", "reset_forecast"}
 
 
 def load_or_create_token(path):

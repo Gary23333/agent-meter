@@ -1,12 +1,12 @@
 # 后端快照与测试约定
 
-后端通过 JSON CLI 和本机 HTTP 返回相同的 schema 版本 3。来源之间独立采集，一个来源失败时仍返回其他来源的数据。
+后端通过 JSON CLI 和本机 HTTP 返回相同的 schema 版本 4。来源之间独立采集，一个来源失败时仍返回其他来源的数据。
 
 ## 快照
 
 | 字段 | 含义 |
 | --- | --- |
-| `schema_version` | 当前为 3 |
+| `schema_version` | 当前为 4 |
 | `collected_at` | 本轮采集开始时间 |
 | `display_timezone` | 北京时间 `Asia/Shanghai` |
 | `sources` | 来源列表，包含指标、范围、观测时间和固定错误代码 |
@@ -18,7 +18,7 @@
 
 ## 指标
 
-每个来源包含 `quota`、`reset_time`、`reset_cards`、`credits`、`tokens`、`cost`、`renewal_time`、`renewal_countdown`、`renewal_amount`、`credit_refresh_time`、`credit_refresh_countdown` 十一类指标。每类指标都有 `status`、`value` 和 `reason`。
+每个来源包含 `quota`、`reset_time`、`reset_cards`、`credits`、`tokens`、`cost`、`renewal_time`、`renewal_countdown`、`renewal_amount`、`credit_refresh_time`、`credit_refresh_countdown` 十一类通用指标，外加只属于预测来源的 `reset_forecast` 与 `known_reset_countdown`。每类指标都有 `status`、`value` 和 `reason`。
 
 | 状态 | 用户含义 |
 | --- | --- |
@@ -161,3 +161,22 @@ Design 读取 `next_credit_refresh_time`；原 `reset_time` 中的 membership_cr
 手填配置增加 `billing_overrides.<provider>.credit_refresh_date`，仍需匹配当前 account_key，使用用户来源标识。不会覆盖当前提供方的有效日期。无数据时该字段和倒计时为 not_provided；错误日期只影响积分更新字段，不抹去余额或续费日期。
 
 历史 schema 1/2 证据文件保留原版本；当前快照和 health 为 3。
+
+## 全员重置预测（schema 4）
+
+独立来源 `reset_forecast`，scope `external_forecast`。它记录 OpenAI Codex 负责人在 X 上不定期宣布的**全员额度重置**（社区称 Tibo 重置），与各账户自身的 5 小时 / 每周窗口是两类事件：本来源**永不写 `reset_time`**，也不进入账户卡片、菜单栏滚动和本机消耗，只在面板「重置预测」页展示。
+
+三家追踪站各自的字段由 `agent_meter/reset_forecast.py` 归一化到同一行结构：`raw_24h/raw_48h`（站内模型值）、`headline_24h/headline_48h`（该站对外公布的答复）、`band_24h/band_48h`（该站自评区间）、`self_reported`（信心、注记、Brier/回测样本与状态）、`cadence`（间隔统计与样本口径）、`promise`（承诺横幅）、`typical_window`（常见公告时段）、`last_reset`、`updated_at`、`provenance`。
+
+合成规则：`ensemble.horizons.<24h|48h>` 的区间与加权中位数**只用各站自己公布的数值**（`basis=published_answer`；某站没公布时才回退到站内模型值并标 `cadence_model_fallback`）。权重完全取自各站上报的质量字段——自报信心、校准状态、样本量、数据新鲜度——系数常量在模块顶部，逐行随 `weight_components` 下发，便于核对。超过 48 小时未更新的来源整体剔除（`forecast_source_stale`），不按 0 处理。
+
+`known_reset_countdown.targets[]` 每项带 `kind`（`promised_reset` / `typical_window`）、`precision`（`window` / `label_only`）、`open_at/close_at`、`state`（`upcoming` / `inside_window` / `elapsed_awaiting_landing` / `no_clock` / `label_only`）与 `sources`。只有拿到可机读的时间或时段才给 `seconds_remaining_*`；公告只说"会重置"没给时间时保留 null 并在面板显示"未给时间"，与日精度续费倒计时不给秒数同一原则。时段类目标按"下一个每日出现窗口"滚动。
+
+历史 `history_events[]` 按各站共享的 X 状态 ID 去重合并，`sources` 列出印证家数；`announced_at`（公告）与 `effective_at`（观测落地）、`official_window`（官方窗口）是三个不同事实，不相加也不互相覆盖；推文正文不进快照，只留各站的摘要文本（截断 240 字）。
+
+失败与节流：三家全挂且无缓存时来源为 `error`、code `reset_forecast_sources_unavailable`；有缓存则按 `stale` 返回旧值并保留原观测时间。默认 45 分钟抓一次（`reset_forecast_refresh_minutes`），有来源失败时缩短到 5 分钟重试，缓存写在 `.runtime/reset-forecast.json`（0600）。三家都拒绝默认 User-Agent，请求固定带应用 UA；纯公开只读 GET，不发送任何本机数据、不带 Cookie。
+
+`codexreset.org` 没有 JSON 接口，预测对象内嵌在页面脚本里且 `score24h` 在历史序列中重复 400+ 次，解析锚定 `forecast:$R[` 到 `semanticSignals` 的区间；锚点缺失即 `forecast_object_not_found`，字段缺失即 `unsupported_forecast_contract`，两者都只让该源降级，不影响其余两源。
+
+预测类两个指标不计入应用覆盖矩阵（`COVERAGE_METRICS` 排除），否则每个应用都会凭空多出两项"缺失"。`verify` 对每条区间、中位数、分歧标签、去重与倒计时状态做独立重算，共 33 项。
+

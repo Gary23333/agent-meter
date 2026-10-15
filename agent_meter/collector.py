@@ -18,7 +18,7 @@ from .design_tokens import collect_design_tokens
 from .discovery import discover
 from .kimi import collect_kimi
 from .kimi_tokens import collect_kimi_tokens
-from .model import SCHEMA_VERSION, METRICS, SourceError, failed_source, metric, source, timestamp
+from .model import COVERAGE_METRICS, SCHEMA_VERSION, SourceError, failed_source, metric, source, timestamp
 from .opencode_tokens import collect_opencode_tokens
 from .qoder import collect_qoder
 from .qoder_tokens import collect_qoder_credits, merge_credits_metric
@@ -32,6 +32,7 @@ from .zcode import collect_zcode
 from .dreamina import collect_dreamina
 from .minimax_design import collect_design
 from .billing import refresh_countdowns
+from .reset_forecast import CACHE_NAME, collect_reset_forecast, refresh_forecast_countdowns
 from .dreamina_web import merge_dreamina
 from .workbuddy_tokens import collect_workbuddy_tokens
 from .zcode_local import zcode_tokens_metric
@@ -60,6 +61,9 @@ def default_config():
             "design_gateway_url":"http://127.0.0.1:8001",
             "design_mcp_entry":"/Applications/MiniMax Design.app/Contents/Resources/mcp-tools/dist/main.js",
             "design_probe_mcp":True,"billing_overrides":{},
+            # Third-party reset trackers throttle themselves; keep their pages out of the
+            # 120 s snapshot cycle.
+            "enable_reset_forecast":True,"reset_forecast_refresh_minutes":45,
             "runtime_dir":str(Path.cwd()/".runtime"),"start_kimi_server":False,
             "codexbar_binary":shutil.which("codexbar"),"enable_codexbar":False,
             # 即梦 is read from its web page by the app; the CLI route is opt-in.
@@ -88,7 +92,7 @@ def safe_collect(source_id,scope,now,fn):
                       "codex_sessions_not_found","claude_projects_not_found","gemini_chats_not_found","mcode_db_not_found",
                       "agy_conversations_not_found","design_opencode_db_not_found",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
-                      "claude_keychain_unavailable","web_session_missing","disabled_by_user"}
+                      "claude_keychain_unavailable","web_session_missing","disabled_by_user","disabled_in_config"}
         return failed_source(source_id,scope,now,e.code,"not_connected" if e.code in disconnected else "error")
     except Exception:
         # No raw exception text: it can contain paths, request URLs or secrets.
@@ -115,10 +119,10 @@ def coverage_matrix(apps,sources):
     matrix=[]
     for app in apps:
         provider=app["provider"]
-        fields={name:{"status":"not_supported","source":None,"reason":"adapter_not_implemented"} for name in METRICS}
+        fields={name:{"status":"not_supported","source":None,"reason":"adapter_not_implemented"} for name in COVERAGE_METRICS}
         candidate=by_id.get(provider) or by_id.get("codexbar:"+provider)
         if candidate:
-            for name in METRICS:
+            for name in COVERAGE_METRICS:
                 m=candidate["metrics"][name]
                 fields[name]={"status":m["status"],"source":candidate["id"],"reason":m["reason"],"scope":candidate["scope"]}
         if provider in history:
@@ -193,6 +197,11 @@ def collect(config=None,now=None):
       "opencode":("local_session_history",lambda:collect_opencode_tokens(config["opencode_db"],config["ccswitch_db"],now)),
       "gemini":("local_session_history",lambda:collect_gemini_sessions(config["gemini_dir"],config["ccswitch_db"],now)),
       "antigravity":("local_session_history",lambda:collect_antigravity_sessions(config["agy_conversations_dir"],config["ccswitch_db"],now)),
+      # Global-reset forecasts: third-party wording, never an account clock.
+      "reset_forecast":("external_forecast",lambda:collect_reset_forecast(
+          now=now,cache_path=str(runtime/CACHE_NAME),
+          refresh_minutes=config["reset_forecast_refresh_minutes"])
+          if config.get("enable_reset_forecast") else _raise(SourceError("disabled_in_config"))),
     }
     web_collectors={"claude":collect_claude_web,"qoder":collect_qoder_web,"workbuddy":collect_workbuddy,"trae_cn":collect_trae,
                     "mimo":collect_mimo,"zcode":collect_zcode,"volcengine":collect_volcengine,
@@ -362,7 +371,7 @@ class SnapshotService:
             return None
         out=copy.deepcopy(self.snapshot)
         out["served_from_cache"]=True
-        return refresh_countdowns(out,now)
+        return refresh_forecast_countdowns(refresh_countdowns(out,now),now)
 
     def get(self,force=False):
         with self.lock:
@@ -403,7 +412,7 @@ class SnapshotService:
                 # fresh-looking field attached to an old source.
                 fresh["coverage"]=coverage_matrix([r["application"] for r in fresh["coverage"] if r["application"]["installed"]],fresh["sources"])
                 fresh["coverage_summary"]=coverage_summary(fresh["coverage"])
-            refresh_countdowns(fresh,now)
+            refresh_forecast_countdowns(refresh_countdowns(fresh,now),now)
             fresh["served_from_cache"]=False
             with self.lock:
                 self.snapshot=fresh

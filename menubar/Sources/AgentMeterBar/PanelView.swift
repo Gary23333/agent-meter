@@ -1,11 +1,12 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case accounts, usage, apps
+    case accounts, forecast, usage, apps
     var id: String { rawValue }
     var label: String {
         switch self {
         case .accounts: return "账户额度"
+        case .forecast: return "重置预测"
         case .usage: return "本机消耗"
         case .apps: return "应用覆盖"
         }
@@ -106,6 +107,7 @@ struct PanelView: View {
             Button("调整卡片顺序…") { SourceOrderWindow.show() }
             Button("API 价格表（本机估算）…") { PricesWindow.show() }
             Toggle("读取 Claude 额度", isOn: Binding(get: { store.claudeEnabled }, set: { store.claudeEnabled = $0 }))
+            Toggle("全员重置预测（联网读第三方追踪站）", isOn: Binding(get: { store.forecastEnabled }, set: { store.forecastEnabled = $0 }))
             Divider()
             Toggle("额度与到期提醒", isOn: Binding(get: { store.notificationsEnabled }, set: { store.notificationsEnabled = $0 }))
             Picker("额度不足阈值", selection: Binding(get: { store.lowQuotaThreshold }, set: { store.lowQuotaThreshold = $0 })) {
@@ -144,6 +146,7 @@ struct PanelView: View {
             if let error = store.errorMessage { ErrorBanner(message: error) }
             switch Tab(rawValue: tabRaw) ?? .accounts {
             case .accounts: AccountsView(snapshot: snapshot, now: store.now)
+            case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now)
             case .apps: AppsView(snapshot: snapshot)
             }
