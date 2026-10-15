@@ -10,17 +10,17 @@
 
 <p align="center">
   <strong>专为开发者与创作者打造的 macOS 菜单栏 AI Agent 用量与额度大盘</strong><br />
-  实时聚合账户额度 · 重置倒计时 · 重置卡库存 · 创作积分 · 本机 Token 消耗流
+  实时聚合账户额度 · 重置倒计时 · 重置卡库存 · 创作积分 · 本机 Token 消耗流 · Tibo 全员重置预测
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-macOS%2014%2B-black?logo=apple" alt="Platform: macOS 14+" />
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
-  <img src="https://img.shields.io/badge/Schema-v3-success" alt="Schema: v3" />
-  <img src="https://img.shields.io/badge/Tests-233%20Passed-brightgreen" alt="Tests: 233 Passed" />
+  <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
+  <img src="https://img.shields.io/badge/Tests-266%20Passed-brightgreen" alt="Tests: 266 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.5.0-blue" alt="Release: v0.5.0" />
+  <img src="https://img.shields.io/badge/Release-v0.6.0-blue" alt="Release: v0.6.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -53,6 +53,7 @@
 │ ✦ 四套界面风格面板：极简 · 原生 · 极光 · 霓虹 (AgentMeterBar)          │
 │ ├─ 顶部驾驶舱：每个账户一个同心圆仪表（5 小时 / 7 天合一），一键直达应用 │
 │ ├─ 账户额度：各供应商统一卡片——额度窗口、积分钱包、重置卡、续费提醒    │
+│ ├─ 重置预测：Q 版 Tibo + 重置器，三家追踪站交叉的全员重置概率与倒计时  │
 │ ├─ 本机消耗：CC Switch 历史 + Kimi Code 真实会话 Token 双流去重合并     │
 │ └─ 应用覆盖：已检测 24+ Agent 应用的原生状态矩阵                       │
 └────────────────────────────────────────────────────────────────────────┘
@@ -122,6 +123,28 @@
 ### 6. 🎨 创作类工具专属指标支持（Creative Metering）
 - **MiniMax Design**：读取当前个人 Media Plan 钱包余额，精准追踪积分包失效时间与次月积分刷新倒计时；
 - **即梦 (Dreamina)**：内置隐藏 Web 监控视图，定期在后台拦截自身发出的安全查询响应，直观展现会员等级、积分明细与续费倒计时。
+
+### 7. 🔮 Tibo 全员重置预测 + Q 版重置器（Reset Forecast）
+- **独立的「重置预测」标签页**：只读抓取三家第三方追踪站（Will Codex Reset、Tibo Radar、Codex Reset Monitor）公布的 ChatGPT / Codex 全员重置概率，给出 24 / 48 小时**区间 + 加权中位**，并标出各站「接近 / 分歧」；
+- **Q 版 Tibo 与重置器**：大头小身的 Tibo 会随数据换表情——犯困（概率低）、等待、手按按钮（站内挂着承诺）、拍下按钮（公告时段进行中）、星星眼庆祝（追踪站刚记录到落地）；旁边的复古「重置器」屏幕显示 48 小时中位与 LED 进度条，出票口打印下一个已知时段的倒计时；
+- **四套主题各有造型**：极简为黑白线稿，原生用系统色，极光是粉彩渐变与微光，霓虹是发光线框；
+- **口径克制**：只汇总各站自己公布的数值，不写入账户重置时间、不进菜单栏行情条；通知只在**已公告**的时段开始 / 结束或追踪站记录到落地时触发，概率永远不弹通知；可在设置菜单一键关闭联网抓取。
+
+<p align="center">
+  <img src="docs/images/forecast-themes-light.png" alt="Tibo 重置器四套主题对比（浅色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
+  <img src="docs/images/forecast-themes-dark.png" alt="Tibo 重置器四套主题对比（深色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
+</p>
+<p align="center"><sub>从左到右：极简 · 原生 · 极光 · 霓虹（演示数据，非真实预测）</sub></p>
+
+<details>
+<summary>查看完整的重置预测页</summary>
+
+<p align="center">
+  <img src="docs/images/forecast-light.png" alt="重置预测浅色完整页面：Tibo 重置器、概率区间、承诺、倒计时、各站口径与历史记录，使用演示数据" width="48%" />
+  <img src="docs/images/forecast-dark.png" alt="重置预测深色完整页面，使用演示数据" width="48%" />
+</p>
+
+</details>
 
 ---
 
@@ -206,13 +229,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.5.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.5.0) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.5.0-macos-arm64.dmg`
+1. 从 [Releases · v0.6.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.6.0) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.6.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.3.1.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.6.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -228,7 +251,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.5.0，发布标签为 v0.5.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.6.0，发布标签为 v0.6.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -312,6 +335,10 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.6.0 · 2026-10-15
+- **新增「重置预测」标签页（Tibo 全员重置）**：只读抓取三家第三方追踪站，汇总 ChatGPT / Codex 全员重置的 24 / 48 小时概率区间与加权中位，列出站内承诺、已知时段倒计时、各站口径与已验证的重置记录；通知只按已公告事件触发。schema 升至 4。详见[发布说明](docs/release-v0.6.md)。
+- **Q 版 Tibo 与重置器**：预测页顶部的吉祥物会随数据换表情，旁边的「重置器」显示 48 小时中位、LED 进度条和下一时段倒计时小票；四套主题各有造型，整页颜色改为跟随主题。
 
 ### v0.5.0 · 2026-10-15
 - **新增来源：阶跃星辰 (StepFun) 开放平台** —— 内嵌窗口登录控制台读取账户余额（充值 / 赠送）与 STEP plan 用量（5 小时 / 每周窗口，或 Token Plan 的月度积分池），并显示套餐名与到期日；也可改用开放平台 API Key（按官方文档 `GET /v1/accounts`，只能读余额）。最多 5 个账号。详见[发布说明](docs/release-v0.5.md)。
