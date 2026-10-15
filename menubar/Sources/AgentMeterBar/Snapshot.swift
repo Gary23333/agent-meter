@@ -59,6 +59,9 @@ struct Source: Identifiable {
     }
 
     var isLocalHistory: Bool { scope == "local_imported_history" || scope == "local_session_history" }
+    /// The reset-forecast feature is neither an account nor local history; it has
+    /// its own tab and must not appear in either account list.
+    var isForecastFeature: Bool { scope == "external_forecast" }
     var hasAccountData: Bool {
         ["quota", "reset_cards", "credits", "renewal_time", "credit_refresh_time"].contains { metric($0) != nil }
     }
@@ -117,12 +120,12 @@ struct Snapshot {
 
     /// Accounts with something to show, in the catalog's preferred order.
     var accountSources: [Source] {
-        sources.filter { !$0.isLocalHistory && $0.hasAccountData }
+        sources.filter { !$0.isLocalHistory && !$0.isForecastFeature && $0.hasAccountData }
             .sorted { Catalog.rank($0.id) < Catalog.rank($1.id) }
     }
 
     var inactiveSources: [Source] {
-        sources.filter { !$0.isLocalHistory && !$0.hasAccountData }
+        sources.filter { !$0.isLocalHistory && !$0.isForecastFeature && !$0.hasAccountData }
             .sorted { Catalog.rank($0.id) < Catalog.rank($1.id) }
     }
 

@@ -74,6 +74,13 @@ final class UsageStore {
             Task { await pushPreferences(); await fetch(force: true) }
         }
     }
+    /// Third-party global-reset polling can be switched off.
+    var forecastEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(forecastEnabled, forKey: "forecastEnabled")
+            Task { await pushPreferences(); await fetch(force: true) }
+        }
+    }
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     @ObservationIgnored private let backend = BackendProcess()
@@ -98,6 +105,7 @@ final class UsageStore {
         theme = PanelTheme(rawValue: d.string(forKey: "panelTheme") ?? "") ?? .aurora
         notificationsEnabled = d.object(forKey: "notificationsEnabled") as? Bool ?? true
         claudeEnabled = d.object(forKey: "claudeEnabled") as? Bool ?? true
+        forecastEnabled = d.object(forKey: "forecastEnabled") as? Bool ?? true
         lowQuotaThreshold = d.object(forKey: "lowQuotaThreshold") as? Double ?? 20
     }
 
@@ -265,7 +273,10 @@ final class UsageStore {
 
     private func pushPreferences() async {
         guard let client else { return }
-        do { try await client.putPreferences(disabled: claudeEnabled ? [] : ["claude"]) }
+        var off: [String] = []
+        if !claudeEnabled { off.append("claude") }
+        if !forecastEnabled { off.append("reset_forecast") }
+        do { try await client.putPreferences(disabled: off) }
         catch { NSLog("AgentMeterBar preferences push: %@", String(describing: error)) }
     }
 

@@ -39,6 +39,7 @@ enum Catalog {
         case "volcengine": return Brand(name: "火山方舟 Coding Plan", symbol: "flame.fill", tint: Color(red: 0.20, green: 0.44, blue: 1.0))
         case "mimo": return Brand(name: "MiMo API", symbol: "bolt.horizontal.fill", tint: Color(red: 1.0, green: 0.42, blue: 0.0))
         case "stepfun": return Brand(name: "阶跃星辰", symbol: "figure.stairs", tint: Color(red: 0.15, green: 0.55, blue: 0.95))
+        case "reset_forecast": return Brand(name: "重置预测", symbol: "clock.arrow.2.circlepath", tint: Color(red: 0.42, green: 0.36, blue: 0.92))
         case "ccswitch": return Brand(name: "CC Switch", symbol: "arrow.triangle.swap", tint: .orange)
         case "opencode": return Brand(name: "OpenCode", symbol: "terminal.fill", tint: Color(red: 0.45, green: 0.40, blue: 0.90))
         case "gemini": return Brand(name: "Gemini CLI", symbol: "diamond.fill", tint: Color(red: 0.26, green: 0.52, blue: 0.96))
@@ -57,7 +58,7 @@ enum Catalog {
         return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
          "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
          "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo", "stepfun": "阶跃",
-         "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity"][id]
+         "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity", "reset_forecast": "预测"][id]
             ?? brand(id).name
     }
 
@@ -69,6 +70,7 @@ enum Catalog {
         case "creative_personal_account": return "个人创作账户"
         case "local_imported_history": return "本机历史"
         case "local_session_history": return "本机记录"
+        case "external_forecast": return "第三方预测"
         default: return scope
         }
     }
@@ -183,6 +185,12 @@ enum Catalog {
             "design_opencode_db_read_failed": "MiniMax Design token 账本读取失败",
             "unsupported_design_opencode_schema": "MiniMax Design token 账本结构不兼容",
             "design_opencode_reference_unreadable": "无法读取 OpenCode 对照库，为避免重复计算已暂停 Design token 统计",
+            "reset_forecast_sources_unavailable": "三家追踪站都没抓到，且不显示旧值",
+            "unsupported_forecast_contract": "追踪站改了字段格式，此项暂停",
+            "forecast_object_not_found": "追踪站页面结构变了，没找到预测数据",
+            "unexpected_forecast_shape": "追踪站返回的内容读不懂",
+            "forecast_source_stale": "该站更新时间太久，已从合成中剔除",
+            "no_machine_readable_reset_time": "公告只说会重置、没给可机读的时间",
             "adapter_not_implemented": "尚无适配器",
             "unexpected_source_error": "未知错误",
         ]

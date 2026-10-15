@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from .ccswitch import readonly_database, summarize, validate_schema, period_bounds
 from .model import METRICS, SourceError, timestamp
+from .reset_forecast import SOURCES as FORECAST_SOURCES
 
 
 def reference_ccswitch(conn,start,end,zone):
@@ -373,6 +374,64 @@ def verify_snapshot(snapshot,config,native_reference=None):
             if cards:
                 check("codex.cards.count_authoritative",isinstance(cards["available_count"],int))
                 check("codex.cards.truncated_contract",cards["cards"] is None or len(cards["cards"])>=cards["available_count"] or cards["details_state"]=="truncated")
+        if src["id"]=="reset_forecast":
+            forecast=src["metrics"]["reset_forecast"]["value"]
+            if forecast:
+                ensemble=forecast["ensemble"]
+                pooled=[row for row in forecast["sources"] if row.get("weight")]
+                check("reset_forecast.pool_membership",sorted(ensemble.get("sources_used") or [])==sorted(row["source"] for row in pooled))
+                for horizon in ("24h","48h"):
+                    band=ensemble["horizons"].get(horizon)
+                    if not band:continue
+                    prefix="reset_forecast."+horizon
+                    # A source's published answer is the pooled number; its internals are metadata.
+                    entries=[]
+                    for row in pooled:
+                        published,model=row.get("headline_"+horizon),row.get("raw_"+horizon)
+                        if published is not None:
+                            entries.append((round(published,2),row["weight"],row["source"],"published_answer"))
+                        elif model is not None:
+                            entries.append((round(model,2),row["weight"],row["source"],"cadence_model_fallback"))
+                    entries.sort()
+                    total=sum(weight for _,weight,_,_ in entries) or 1.0
+                    running,median=0.0,entries[-1][0]
+                    for value,weight,_,_ in entries:
+                        running+=weight/total
+                        if running>=0.5:
+                            median=value
+                            break
+                    check(prefix+".band",band["min"]==entries[0][0] and band["max"]==entries[-1][0])
+                    check(prefix+".median_recomputed",band["weighted_median"]==round(median,2),
+                          {"backend":band["weighted_median"],"reference":round(median,2)})
+                    check(prefix+".spread",band["spread"]==round(entries[-1][0]-entries[0][0],2))
+                    check(prefix+".agreement_rule",band["agreement"]==("close" if band["spread"]<=15 else "split"))
+                    check(prefix+".values_are_published_answers_only",
+                          sorted((item["source"],item["percent"],item["basis"]) for item in band["values"])==
+                          sorted((source,value,basis) for value,_,source,basis in entries))
+                events=forecast["history_events"]
+                ids=[event["post_id"] for event in events]
+                check("reset_forecast.history_dedup",len(ids)==len(set(ids)))
+                check("reset_forecast.history_sources_known",all(set(event["sources"])<=set(FORECAST_SOURCES) for event in events))
+                check("reset_forecast.no_tweet_bodies",not any("body" in event for event in events))
+                check("reset_forecast.history_order",[event["announced_at"]["epoch_seconds"] for event in events]==
+                      sorted((event["announced_at"]["epoch_seconds"] for event in events),reverse=True))
+            countdown=src["metrics"]["known_reset_countdown"]["value"]
+            if countdown:
+                for index,target in enumerate(countdown["targets"]):
+                    prefix="reset_forecast.countdown."+str(index)
+                    seconds=(target["seconds_remaining_open"],target["seconds_remaining_close"])
+                    if target["precision"]!="window":
+                        check(prefix+".no_invented_seconds",all(item is None for item in seconds),{"seconds":seconds})
+                        check(prefix+".state",target["state"]==("no_clock" if target["kind"]=="promised_reset" else "label_only"))
+                        continue
+                    close,open_seconds=target.get("close_at"),target.get("open_at")
+                    expected=("elapsed_awaiting_landing" if seconds[1]<0 else
+                              "inside_window" if seconds[0] is not None and seconds[0]<=0 else "upcoming")
+                    check(prefix+".state",target["state"]==expected,{"backend":target["state"],"reference":expected})
+                    if close and open_seconds and seconds[0] is not None:
+                        check(prefix+".band_shape",close["epoch_seconds"]>open_seconds["epoch_seconds"])
+                        check(prefix+".band_matches_seconds",
+                              abs((close["epoch_seconds"]-open_seconds["epoch_seconds"])-(seconds[1]-seconds[0]))<0.2)
     if native_reference is not None:
         codex=next((s for s in snapshot['sources'] if s['id']=='codex' and s['status'] in {'available','partial'}),None)
         identity_matches=codex is not None and codex.get('account_key') is not None and codex.get('account_key')==native_reference.get('account_key')

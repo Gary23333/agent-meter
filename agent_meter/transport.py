@@ -26,21 +26,30 @@ def post_json(url, body, timeout=10, headers=None):
     return get_json(url, timeout=timeout, headers=headers, body=body)
 
 
-def get_json(url, token=None, timeout=10, local=False, headers=None, body=None):
+def build_opener(url, local=False):
+    """Same URL guards for JSON and text reads."""
     parsed = urllib.parse.urlsplit(url)
     if parsed.username or parsed.password or parsed.fragment:
         raise SourceError("invalid_endpoint")
     if local:
         if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}:
             raise SourceError("non_loopback_endpoint")
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    else:
-        if parsed.scheme != "https":
-            raise SourceError("insecure_endpoint")
-        opener = urllib.request.build_opener(NoRedirect())
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    if parsed.scheme != "https":
+        raise SourceError("insecure_endpoint")
+    return urllib.request.build_opener(NoRedirect())
+
+
+def clean_headers(headers):
     headers = dict(headers or {})
-    if any(not isinstance(v,str) or "\r" in v or "\n" in v for v in headers.values()):
+    if any(not isinstance(v, str) or "\r" in v or "\n" in v for v in headers.values()):
         raise SourceError("invalid_request_header")
+    return headers
+
+
+def get_json(url, token=None, timeout=10, local=False, headers=None, body=None):
+    opener = build_opener(url, local)
+    headers = clean_headers(headers)
     headers.setdefault("Accept", "application/json")
     if token:
         headers["Authorization"] = "Bearer " + token
@@ -69,6 +78,29 @@ def get_json(url, token=None, timeout=10, local=False, headers=None, body=None):
         raise SourceError("connection_failed") from None
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise SourceError("invalid_json") from None
+
+
+def get_text(url, token=None, timeout=10, local=False, headers=None, max_bytes=MAX_BODY):
+    """Public HTML pages (reset trackers publish their state inline, not as JSON)."""
+    opener = build_opener(url, local)
+    headers = clean_headers(headers)
+    headers.setdefault("Accept", "text/html")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    try:
+        request = urllib.request.Request(url, headers=headers)
+        with opener.open(request, timeout=timeout) as response:
+            raw = response.read(max_bytes + 1)
+            if len(raw) > max_bytes:
+                raise SourceError("response_too_large")
+            # Third-party pages are not trusted to be valid UTF-8.
+            return raw.decode("utf-8", "ignore")
+    except urllib.error.HTTPError as e:
+        raise SourceError("not_authenticated" if e.code in (401, 403) else "http_" + str(e.code)) from None
+    except SourceError:
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise SourceError("connection_failed") from None
 
 
 class CodexRPC:

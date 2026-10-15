@@ -55,10 +55,11 @@ struct SourceOrderView: View {
         .onChange(of: store.snapshot?.collectedAt) { _, _ in reload() }
     }
 
-    /// Every source except CC Switch (local history has its own tab), in the current order.
+    /// Every card source except local history (own tab) and the reset-forecast
+    /// feature (own tab), in the current order.
     private func reload() {
         guard let snapshot = store.snapshot else { return }
-        ids = snapshot.sources.filter { !$0.isLocalHistory }
+        ids = snapshot.sources.filter { !$0.isLocalHistory && !$0.isForecastFeature }
             .sorted { Catalog.rank($0.id) < Catalog.rank($1.id) }
             .map(\.id)
     }
