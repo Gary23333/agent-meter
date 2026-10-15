@@ -91,7 +91,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             }
 
             // 3. Credit packs with a balance and an expiry.
-            for c in s.metric("credits")?.value.rows ?? [] {
+            for c in s.metric("credits")?.creditRows ?? [] {
                 for b in c["buckets"].array {
                     guard let amount = b["balance"].double, amount > 0, let exp = b["expires_at"].date,
                           let level = expiryLevel(exp, now: now) else { continue }

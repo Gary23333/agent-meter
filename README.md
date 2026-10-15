@@ -18,9 +18,9 @@
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v3-success" alt="Schema: v3" />
-  <img src="https://img.shields.io/badge/Tests-163%20Passed-brightgreen" alt="Tests: 163 Passed" />
+  <img src="https://img.shields.io/badge/Tests-233%20Passed-brightgreen" alt="Tests: 233 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.4.1-blue" alt="Release: v0.4.1" />
+  <img src="https://img.shields.io/badge/Release-v0.5.0-blue" alt="Release: v0.5.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -150,7 +150,7 @@
 | **Claude Code** | Claude Code CLI | 钥匙串 OAuth 令牌只读获取 | 5 小时 / 7 天窗口额度与重置时刻 | 独立账户 |
 | **Kimi Code** | Kimi 编程助手 | 本机 REST + 本机 `wire.jsonl` | 周/5小时额度、Token 消耗流（turn 级精准解析） | 独立账户 |
 | **Qoder CN** | Qoder 中国区 | 内嵌安全网页登录 / Cookie | 总体额度、共享额度、已用/剩余、下次重置时间 | 最多 5 账号 |
-| **WorkBuddy** | WorkBuddy 腾讯协作 | 内嵌安全网页登录 / Cookie | 资源包总量、剩余量、冻结积分、周期截止时间 | 最多 5 账号 |
+| **WorkBuddy** | WorkBuddy 腾讯协作 | 内嵌安全网页登录 / Cookie + 本机会话日志直读 | 资源包总量、剩余量、冻结积分、周期截止时间、本机 Token/费用估算 | 最多 5 账号 |
 | **TRAE CN** | 字节 TRAE IDE / SOLO | 内嵌安全网页登录 / Cloud-IDE-JWT | 权益包额度汇总、已用额度、有效积分 | 最多 5 账号 |
 | **MiniMax Code** | MiniMax Coding Plan | 环境变量 / 钥匙串 API Key | 周套餐余量百分比、到期时间 | 独立账户 |
 | **MiniMax Design** | MiniMax 创作工作台 | 本机安全网关 `127.0.0.1:8001` | 个人钱包、积分包失效期、月积分刷新日、年费续费倒计时 | 个人 Media Plan |
@@ -159,6 +159,7 @@
 | **ZCode / 智谱 Coding Plan** | ZCode、GLM Coding Plan（中国区） | 内嵌网页登录捕获控制台凭据 / 钥匙串 API Key | 5 小时 / 每周额度（已用/总量）、周重置时间、MCP 月度次数 | 最多 5 账号 |
 | **火山方舟 Coding Plan** | 火山引擎方舟 | 内嵌控制台登录（回放页面自身的只读 `GetCodingPlanUsage`）/ 钥匙串 AccessKey 签名 | 5 小时 / 每周 / 每月额度与各自重置时间 | 最多 5 账号 |
 | **小米 MiMo API** | MiMo 开放平台控制台 | 内嵌安全网页登录 / Cookie | 账户余额（现金 / 赠送）、Token Plan 本月用量 | 最多 5 账号 |
+| **阶跃星辰 (StepFun)** | 阶跃星辰开放平台 | 内嵌安全网页登录 / Cookie + 开放平台 API Key | 账户余额（充值 / 赠送）、STEP plan 5 小时 / 每周窗口或月度积分池、套餐名与到期日 | 最多 5 账号 |
 | **CC Switch** | 本机多模型路由历史 | 本机 SQLite 数据库只读事务 | 今日/7天/30天/全部 Token、缓存命中率、估算费用 | 本机聚合 |
 
 ---
@@ -205,8 +206,8 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.4.1](https://github.com/Gary23333/agent-meter/releases/tag/v0.4.1) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.4.1-macos-arm64.dmg`
+1. 从 [Releases · v0.5.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.5.0) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.5.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
@@ -227,7 +228,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.4.1，发布标签为 v0.4.1；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.5.0，发布标签为 v0.5.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -299,12 +300,48 @@ with urlopen(req, timeout=30) as resp:
 本项目拥有严格的质量保障体系，包含完整的单元测试、契约测试与真实对账校验器：
 
 ```sh
-# 1. 运行全量单元测试（包含 137 项严格测试，零失败）
+# 1. 运行全量单元测试（包含 233 项严格测试，零失败）
 python3 -m unittest discover -v
 
 # 2. 运行真实环境对账校验（核对 CC Switch 逐条计算与后端 SQL 一致性）
 python3 -m agent_meter verify --output .runtime/verification.json
 ```
+
+---
+
+## 📝 更新日志
+
+各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.5.0 · 2026-10-15
+- **新增来源：阶跃星辰 (StepFun) 开放平台** —— 内嵌窗口登录控制台读取账户余额（充值 / 赠送）与 STEP plan 用量（5 小时 / 每周窗口，或 Token Plan 的月度积分池），并显示套餐名与到期日；也可改用开放平台 API Key（按官方文档 `GET /v1/accounts`，只能读余额）。最多 5 个账号。详见[发布说明](docs/release-v0.5.md)。
+- **Qoder CN 本机积分账本**：CLI 会话日志每请求带 `credits`（本机 token 字段恒为 0，不臆造），按 `request_id` 去重后折叠进 Qoder 账户卡片的「积分消耗 今日 / 近 30 天 / 全部」，**不写 tokens 指标**，绝不混入本机消耗。
+- **MiniMax Design 本机 Token**：读取 Design.app 内嵌 opencode 运行时的账本，按 session ID 剔除与独立 OpenCode 库重复的拷贝会话后附着到 Design 账户卡，附模型 / agent 双分项。
+- **本机消耗口径完善**：WorkBuddy 补上按模型分组、Kimi 补齐输入 / 输出 / 缓存拆项，两者首次进入「按应用 / 模型 Top」并获得价格表估算；价格表匹配先归一化（取最后一段 id、小写、`.`≡`-`），新增混元 hy4/hy3、阶跃 step-5 等 8 个刊例，仅 CNY 刊例的国产模型在 USD 表按 1/7.25 折算并标注。
+- **修复**：Swift「估算费用」卡此前恒为「—」（CC Switch 估价没进合并视图）；账户额度页 token 行改读与本机消耗页同一个合并函数，不再显示 0。
+
+### v0.4.1 · 2026-10-09
+- 品牌更新：新 Logo（两圈 270° 仪表环绕 Agent 星芒）、应用包新增 `AppIcon.icns`、面板顶部标志按主题配色。
+
+### v0.4.0 · 2026-10-09
+- 本机 token 历史扩展到 10 个来源：新增 ZCode 用量库、OpenCode、WorkBuddy、Antigravity CLI，以及 Codex CLI / Claude Code / Gemini CLI / MiniMax Code 会话日志直读——**未安装 CC Switch 也能完整读取**；与 CC Switch 重叠的日期动态剔除、绝不叠加。
+- API 等价费用估算（18 个模型家族默认价，USD/CNY 双币种）与菜单「API 价格表」配置页。
+- DeepSeek 网页用量（近 30 天，仅展示、不计入本机消耗）。
+- 加固：来源开关覆盖第二账号与本地历史、采集线程池与任务数同宽、配置 PUT 不再被长采集阻塞。
+
+### v0.3.1 · 2026-10-09
+- 顶部仪表合并：同一账户的多个窗口合成同心圆仪表。
+- 火山方舟 Coding Plan 支持控制台登录（回放页面自身的只读查询，无需密钥）。
+- 修复火山重置时间异常导致整卡失败、即梦多账号串卡等问题。
+
+### v0.3.0 · 2026-10-09
+- 新增 ZCode / 智谱 GLM Coding Plan、小米 MiMo API、火山方舟 Coding Plan 三个来源。
+
+### v0.2.0 · 2026-10-09
+- 本机 token 历史从 2 个来源扩展到 10 个；API 等价费用估算；DeepSeek 网页用量。
+
+### v0.1.0 · 2026-10-09
+- 首个版本：Swift 原生菜单栏应用 + 内嵌独立 Python 后端。
 
 ---
 

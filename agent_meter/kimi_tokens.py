@@ -80,7 +80,7 @@ def load_records(root):
 
 def summarize(records, start, end):
     totals = dict.fromkeys(("requests", "fresh_input", "output", "cache_read", "cache_write"), 0)
-    models = defaultdict(lambda: [0, 0])
+    models = {}
     for t, model, fresh, out, read, write in records:
         if (start is not None and t < start) or t > end:
             continue
@@ -89,16 +89,25 @@ def summarize(records, start, end):
         totals["output"] += out
         totals["cache_read"] += read
         totals["cache_write"] += write
-        models[model][0] += 1
-        models[model][1] += fresh + out + read + write
+        target = models.setdefault(model, dict.fromkeys(("requests", "fresh_input", "output",
+                                                         "cache_read", "cache_write"), 0))
+        target["requests"] += 1
+        target["fresh_input"] += fresh
+        target["output"] += out
+        target["cache_read"] += read
+        target["cache_write"] += write
     total = totals["fresh_input"] + totals["output"] + totals["cache_read"] + totals["cache_write"]
     cache_base = totals["fresh_input"] + totals["cache_read"] + totals["cache_write"]
     totals["total_tokens"] = total
     totals["cache_hit_rate"] = totals["cache_read"] / cache_base if cache_base else None
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": totals,
-            "groups": [{"app": "kimi", "model": m, "requests": r, "total_tokens": t}
-                       for m, (r, t) in sorted(models.items(), key=lambda x: -x[1][1])]}
+            # The per-model split carries the same input/output/cache breakdown
+            # as the totals, so the price table can cost each model.
+            "groups": [{"app": "kimi", "model": m, **v,
+                        "total_tokens": sum(v[k] for k in ("fresh_input", "output",
+                                                           "cache_read", "cache_write"))}
+                       for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])]}
 
 
 def collect_kimi_tokens(home, now, zone=ZoneInfo("Asia/Shanghai")):

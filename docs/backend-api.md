@@ -58,7 +58,25 @@ CC Switch 日汇总的源时区默认按本机研究设置为北京时间，可�
 
 口径：ZCode/OpenCode 的 `input` 均为不含缓存的新鲜输入，缓存读写单列，ZCode 另有 `reasoning` 字段；WorkBuddy 为 OpenAI 风格 `prompt_tokens`，doubao 方言下新鲜输入取 `prompt_cache_miss_tokens`（本机已验证 hit+miss==prompt 恒等），anthropic 方言按 prompt−read−write 推导并在诊断中计数。WorkBuddy 的 `credit_charged` 是其自身积分扣减（all 期间，单位 `workbuddy_credits`），不是货币费用。tokens 指标结构与 CC Switch/Kimi 一致：`periods`（today/7d/30d/all）+ `daily_buckets` + `coverage` + `dedup_rule`。
 
+注意各来源 tokens 指标是**单账本口径**：与 CC Switch 重叠的日期已按日剔除（`ccswitch_overlap.excluded_days`），因此装了 CC Switch 的机器上 Codex/Claude/MiniMax Code 直读来源的 periods 会是全 0——这是防双算的设计，不是故障。展示层（菜单栏"本机消耗"页与账户卡片的 token 行）必须在客户端把 CC Switch 与各直读来源合并后按 app 归因，不能直接展示单来源指标；合并链路只有 Swift 侧 `LocalUsage.merged` 一份实现，账户卡片经 `LocalUsage.appTotals` 按 app 投影同一函数的结果。按 app 的日序列在当前快照中不存在（CC Switch 的 daily_buckets 不分 app），需要时以后端增加按 app 日汇总为前提，不做客户端拼凑。
+
 覆盖矩阵中，同一 provider 存在专用 `local_session_history` 来源且其 tokens 可用时，token 字段由该来源署名，cost 仍归 CC Switch；专用来源不可用时回落到 CC Switch 历史署名。用户在应用内关闭 workbuddy 时其本地 token 记录一并停止；zcode/opencode/gemini 与 ccswitch 一样属于本机历史，不提供应用内开关，可通过配置 `disabled_sources` 或 CLI `--disable` 关闭。stale 恢复不会用旧的本地 token 记录覆盖新采集值。
+
+## Qoder CN 本地积分账本（仅账户卡片）
+
+Qoder CN CLI 的会话日志（`~/.qoder-cn/projects/**/*.jsonl`，Claude Code 兼容格式）每条 assistant 请求的最终记录带 `message.usage`，其中 token 字段在本机恒为 0（2026-10-15 实测 8,896 条无一条非零，IDE 亦报 `tokenCountsAvailable=false`），但 `credits`/`original_credits`/`billable`/`request_id`/`context_usage_ratio`/`model` 为真实值。采集器 `agent_meter/qoder_tokens.py` 只报积分，不臆造 token。
+
+| 项 | 契约 |
+| --- | --- |
+| 数据位置 | `qoder_projects_dir`（默认 `~/.qoder-cn/projects`）下 `**/*.jsonl`，只读，仅取 usage 字段，不读消息正文 |
+| 去重 | `request_id` 逐请求唯一（本机 8,896/8,896 验证），跨文件全局去重 |
+| 增量 | 每文件 `(mtime,size)` 缓存；文件被清理时天然为下界 |
+| 错误码 | 目录或 jsonl 不存在 → `qoder_sessions_not_found`（not_connected）；usage 对象普遍失去 `credits` → `unsupported_qoder_usage_schema`（私有格式漂移，不静默） |
+| 附着位置 | **qoder 账户源的 `credits` 指标**：`{"rows": [网页/SDK 钱包…], "usage": [账本]}`，**不写 tokens 指标** |
+
+账本结构：`{unit: qoder_credits, token_fields: not_provided, coverage: qoder_cn_cli_local_sessions, dedup_rule: request_id_unique_per_record, usage_records_seen, excluded_usage_records, sidechain: {requests, credits}, periods: {today/7d/30d/all: {start, end, timezone, totals: {requests, credits, billable_requests, billable_credits}, groups: [按 model]}}, daily_buckets: [{date, requests, credits}]}`。积分为 Decimal 定点字符串（与 WorkBuddy `credit_charged` 同约定）；`billable` 双口径分开，`isSidechain` 子代理单列，均不合并。
+
+**边界**：该账本只在账户额度卡片展示（"积分消耗 今日/近30天/全部"行），不计入本机消耗——`LocalUsage` 只汇总各来源 tokens 指标，qoder 的 tokens 保持 not_provided；也不参与 API 价格表估算（cost 仅由 tokens 驱动）。网页/SDK 钱包查询失败时账本照常附着（账户源 status 仍为失败原因，卡片显示本地积分）；账本读取失败不覆盖已有钱包行，错误码记入 `diagnostics.credits_ledger_error`。用户在应用内关闭 qoder 时本地积分一并停止。与 CC Switch 无重叠（其 `data_source` 无 qoder 类记录）。verify 对 today/all 两个周期的 requests/credits/billable 做独立重算对账（本机实测逐位一致）。
 
 ## CLI 会话日志直读（无 CC Switch 也可用）
 
@@ -76,15 +94,39 @@ Antigravity 的 usage 字段是从本机数据（agy 1.3.2）解码验证的：f
 
 ## 本地价格表与 API 等价估算
 
-`GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（CNY 无刊例的条目按 7.25 折算并在 GET 的 `converted_patterns` 中列出；用户编辑过的条目移出该列表）。匹配规则：小写精确命中优先，否则取最长子串 pattern。
+`GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（含 2026-10-15 增补）：取有官方刊例的一侧币种，另一侧按 7.25 汇率折算并在 GET 的 `converted_patterns` 中列出（双向：仅 USD 刊例的折成 CNY，仅 CNY 刊例的国产模型折成 USD）；用户编辑过的条目移出该列表。匹配规则（2026-10-15 起先归一化再匹配）：两侧都取最后一个 `/` 之后的模型 id、转小写并把 `.` 统一成 `-`（`account:bigmodel-coding-plan/GLM-5.3-Flash`、`glm-5-3-flash`、`GLM-5.3.Flash` 都命中 `glm-5.3-flash`），归一化后精确命中优先、否则取最长子串 pattern；快照里的 `model` 字段保留原始拼写。
 
-带分项构成的本地 token 来源（ZCode/OpenCode/Gemini/Antigravity/Codex/Claude/MiniMax Code 直读等）会得到 `cost` 指标：`{unit: 币种, kind: estimate, basis: local_price_table, periods: {period: {amount, unmatched_models}}}`；有未匹配模型时 status=partial（未匹配部分不计零价）。Kimi/WorkBuddy 这类只有总量、无输入输出拆分的来源不估算。CC Switch 与 CodexBar 保留自己的估价；DeepSeek 的 provider 账单 cost（见下）不会被覆盖。订阅套餐内的调用不按 API 价计费，估算仅作量级比较。
+带按模型分项的本地 token 来源（ZCode/OpenCode/Gemini/Antigravity/Codex/Claude/MiniMax Code 直读、Kimi Code、WorkBuddy）会得到 `cost` 指标：`{unit: 币种, kind: estimate, basis: local_price_table, periods: {period: {amount, models: {原始模型名: 金额}, unmatched_models}}}`；有未匹配模型时 status=partial（未匹配部分不计零价）。仅 CC Switch 自带估价与 CodexBar 保留自己的口径；DeepSeek 的 provider 账单 cost（见下）不会被覆盖。订阅套餐内的调用不按 API 价计费，估算仅作量级比较。
+
+菜单栏「本机消耗」页把两路估算合成一个总数：CC Switch 自带 USD 估价 + 价格表估算（价格表为 USD 时相加，为 CNY 时分列展示、不跨币种相加）；按应用行与模型排行显示各自金额（CC Switch 组自带 `estimated_cost_usd`，本地来源按 `models` 金额表），无定价模型按 token 量排序列出前几个。全零估算显示「—」，不把未知价格当零。
 
 ## DeepSeek 网页用量（仅展示）
 
 `deepseek_api` 来源可选携带 `user_token`（platform.deepseek.com 登录后的 localStorage 值，经应用内存通道传入，不落盘）。提供时后端以 Bearer 只读调用控制台未公开接口 `GET /api/v0/usage/by_api_key/amount|cost?start&end&tz=28800`（契约取自 MIT 的 deepseek-harness-usage-dashboard 逆向，2026-09 schema），把近 30 天按天分桶写进 `cost` 指标：`{basis: platform_web_usage, currency, daily: [{date, tokens, requests, amount}], total_amount, total_tokens}`。它**不计入本机消耗**（tokens 指标不受影响），仅在余额卡片展示。接口失败只降级该指标（固定错误码），不影响余额读取。该接口未公开、随时可能变更，尚未在本机登录会话上实测。
 
 与 CC Switch 的重叠处理：CC Switch 记录过该应用（折叠 claude-desktop、任意 data_source）的本地日期被剔除、以 CC Switch 为主，动态计算，绝不叠加；`ccswitch_overlap` 字段记录剔除日期与检查状态（`checked` / `ccswitch_absent` / `ccswitch_read_failed`）。CC Switch 缺失或未运行时为全量覆盖。直读解析带每文件 (mtime,size) 增量缓存；文件被 CLI 清理时本地记录天然为下界，verify 的交叉对账跳过 CC Switch 的代理路由日（其库内存在上游自身的 600 秒去重语义，原始文件无法复现）。
+
+## 阶跃星辰 (StepFun) 开放平台
+
+`stepfun` 来源（scope `account`）有两条只读路线，与 ZCode、火山方舟同构：控制台网页登录（`cookie`）优先，其次开放平台 API Key（`api_key`）；两者都没有时 `stepfun_credential_not_connected`（not_connected）。
+
+| 路线 | 端点 | 读取内容 |
+| --- | --- | --- |
+| 控制台会话 | `POST https://platform.stepfun.com/api/step.openapi.devcenter.Dashboard/{QueryAccountBalance,GetStepPlanStatus,QueryStepPlanRateLimit}`，body `{}` | 余额 + STEP plan 用量 + 套餐名与到期日 |
+| 开放平台 API Key | `GET https://api.stepfun.com/v1/accounts`（Bearer，官方文档 `/docs/zh/api-reference/accounts/get`） | 仅余额；quota 报 `stepfun_step_plan_needs_console_login` |
+
+**Cookie 收窄**：控制台会话里只要多带 `INGRESSCOOKIE`、`Oasis-Webid` 等任意一个字段，服务端就会把整串当成单个 JWT 解析并回 401。因此 `console_session` 只保留 `Oasis-Token`，并从该值的两段 JWT（`access...device`，`.` 分段共 8 段）取 `device_id` 作为 `oasis-webid` 请求头、取 `oasis_id` 作为 `account_key` 的散列输入（不落盘、不进快照）。
+
+**金额单位**：控制台 `QueryAccountBalance` 全部以**分**下发（`"1500"` = 15.00 元），按元换算后写入 `credits`；官方 `/v1/accounts` 已是元，两者产出同一个钱包形状 `{unit: CNY, balance, cash, topped_up, granted}`（`payment`/`total_cash_balance` → 充值，`voucher`/`total_voucher_balance` → 赠送）。`notify_threshold` 是全响应里唯一按元的例外，未使用。
+
+**「0」表示没有配额，不是已用完**：套餐不配置某个窗口时，服务端把比例与重置时间都返回 `0`。因此只有出现**真实重置时间**的窗口才成为一行 `quota`；`five_hour_usage_left_rate`/`weekly_usage_left_rate` 的 `0` 不会被渲染成 0% 的假进度条。两种计费模型：
+
+- **Coding Plan**：5 小时 / 每周滚动窗口（`bucket` 为 `limit5h` / `limit7d`，`window_minutes` 300 / 10080），只有剩余比例，不臆造 token 计数。
+- **Token Plan**：`plan_credit_rate_limit` 的月度积分池。订阅积分与加油积分是**各自独立的比例，不相加**；优先用 `credit_buckets` 的 `credit_residual/credit_total` 求和（全部桶可用时），任一桶不可用则回退到 `subscription_credit_left_rate`（无则 `topup_credit_left_rate`），此时只给百分比、不给计数（`unit=percent`），避免把不同量纲的数硬凑成一对。
+
+`GetStepPlanStatus` 的 `subscription.expired_at` 只取**日精度**写入 `renewal_time`（`origin=provider`），`subscription` 另存 `plan`、`ends_on`、`auto_renew`。`plan_definition.price` 是套餐刊例价，**不作为 `renewal_amount`**（不把公开套餐价当成下一笔扣款）。没有套餐时 `subscription.plan` 为「按量付费」，quota 报 `stepfun_no_step_plan`。
+
+错误码：`stepfun_not_authenticated`（会话失效，Connect 错误 `unauthenticated`/`permission_denied` 或 HTTP 401/重定向）、`stepfun_api_error`、`stepfun_step_plan_usage_unrecognized`（有套餐但未识别用量格式）、`unsupported_stepfun_balance_contract`、`invalid_stepfun_{amount,rate,credits,response}`。余额查询成功而套餐查询失败时只降级 quota 指标，余额照常展示。
 
 ## 测试分层
 

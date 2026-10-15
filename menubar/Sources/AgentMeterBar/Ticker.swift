@@ -49,7 +49,7 @@ extension Snapshot {
                     numeric: count))
             }
             if quotas.isEmpty {
-                for (i, c) in (s.metric("credits")?.value.rows ?? []).enumerated() {
+                for (i, c) in (s.metric("credits")?.creditRows ?? []).enumerated() {
                     guard let amount = c["balance"].double ?? c["remaining"].double ?? c["amount"].double ?? c["total"].double else { continue }
                     let unit = c["unit"].string
                     let value = unit == "CNY" || unit == "USD" ? Fmt.amount(amount, unit: unit) : Fmt.compact(amount)

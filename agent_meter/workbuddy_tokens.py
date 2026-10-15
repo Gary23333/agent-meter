@@ -11,6 +11,15 @@ miss part) and anthropic-style cache_read/creation columns (not present
 locally; the fresh = prompt - read - write rule is implemented but
 flagged in diagnostics until seen). Only token fields are read, never
 message text.
+
+Model attribution (added 2026-10-15) comes from providerData.model, the
+vendor's own id (e.g. deepseek-v4.1-flash, hy4-preview, glm-5.3-flash);
+providerData.requestModelName is the display spelling and is only the
+fallback. completion_tokens already contains the thinking tokens
+(verified on 6,398 records: completion_tokens >= completion_thinking_tokens
+== completion_tokens_details.reasoning_tokens), so thinking is reported
+as a sub-part and never added to the totals; prompt_cache_write_tokens is
+read as the doubao-dialect cache write (zero on every local record).
 """
 import json
 from datetime import datetime
@@ -22,6 +31,7 @@ from .ccswitch import period_bounds
 from .model import SourceError, metric, timestamp
 
 MARKER = b'"rawUsage"'
+TOKEN_FIELDS = ("fresh_input", "output", "cache_read", "cache_write")
 _cache = {}   # path -> ((mtime_ns, size), records, stats)
 
 
@@ -29,10 +39,18 @@ def _int(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
+def _model(provider_data):
+    for key in ("model", "requestModelName"):
+        value = provider_data.get(key)
+        if isinstance(value, str) and 0 < len(value) < 120:
+            return value
+    return "unknown"
+
+
 def _parse_file(path):
     records = []
     stats = {"identity_mismatches": 0, "anthropic_style_records": 0,
-             "skipped_malformed": 0, "credit_records": 0}
+             "skipped_malformed": 0, "credit_records": 0, "unknown_model_records": 0}
     credit = Decimal(0)
     with open(path, "rb") as handle:
         for line in handle:
@@ -45,11 +63,15 @@ def _parse_file(path):
                 continue
             if not isinstance(o, dict) or not isinstance((o.get("providerData") or {}).get("rawUsage"), dict):
                 continue
-            raw = o["providerData"]["rawUsage"]
+            provider = o["providerData"]
+            raw = provider["rawUsage"]
             ts = o.get("timestamp")
             if isinstance(ts, bool) or not isinstance(ts, (int, float)):
                 stats["skipped_malformed"] += 1
                 continue
+            model = _model(provider)
+            if model == "unknown":
+                stats["unknown_model_records"] += 1
             prompt = _int(raw.get("prompt_tokens")) or 0
             output = _int(raw.get("completion_tokens")) or 0
             hit = _int(raw.get("prompt_cache_hit_tokens"))
@@ -59,7 +81,8 @@ def _parse_file(path):
             if hit is not None or miss is not None:
                 if hit is None or miss is None or hit + miss != prompt:
                     stats["identity_mismatches"] += 1
-                fresh, cache_read, cache_write = (miss or 0), (hit or 0), 0
+                fresh, cache_read = (miss or 0), (hit or 0)
+                cache_write = _int(raw.get("prompt_cache_write_tokens")) or 0
             elif read or write:
                 # Locally unseen dialect; surfaced in diagnostics, not silent.
                 stats["anthropic_style_records"] += 1
@@ -73,7 +96,9 @@ def _parse_file(path):
                     stats["credit_records"] += 1
                 except (InvalidOperation, ValueError):
                     pass
-            records.append((ts / 1000, fresh, output, cache_read, cache_write))
+            # Thinking is already inside completion_tokens; carried separately.
+            records.append((ts / 1000, model, fresh, output, cache_read, cache_write,
+                            _int(raw.get("completion_thinking_tokens")) or 0))
     return records, credit, stats
 
 
@@ -84,7 +109,7 @@ def load_records(root):
     records, seen = [], set()
     credit = Decimal(0)
     totals = {k: 0 for k in ("identity_mismatches", "anthropic_style_records",
-                             "skipped_malformed", "credit_records")}
+                             "skipped_malformed", "credit_records", "unknown_model_records")}
     for path in root.glob("**/*.jsonl"):
         seen.add(str(path))
         try:
@@ -109,19 +134,27 @@ def load_records(root):
 
 
 def summarize(records, start, end):
-    out = {"requests": 0, "fresh_input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
-    for t, fresh, output, cache_read, cache_write in records:
+    out = {"requests": 0, "fresh_input": 0, "output": 0, "cache_read": 0, "cache_write": 0,
+           "thinking_tokens": 0}
+    models = {}
+    for t, model, fresh, output, cache_read, cache_write, thinking in records:
         if (start is not None and t < start) or t > end:
             continue
         out["requests"] += 1
-        out["fresh_input"] += fresh
-        out["output"] += output
-        out["cache_read"] += cache_read
-        out["cache_write"] += cache_write
-    out["total_tokens"] = out["fresh_input"] + out["output"] + out["cache_read"] + out["cache_write"]
+        for name, value in (("fresh_input", fresh), ("output", output), ("cache_read", cache_read),
+                            ("cache_write", cache_write), ("thinking_tokens", thinking)):
+            out[name] += value
+            target = models.setdefault(model, dict.fromkeys(("requests", *TOKEN_FIELDS, "thinking_tokens"), 0))
+            target[name] += value
+        models[model]["requests"] += 1
+    out["total_tokens"] = sum(out[k] for k in TOKEN_FIELDS)
     denominator = out["fresh_input"] + out["cache_read"] + out["cache_write"]
     out["cache_hit_rate"] = out["cache_read"] / denominator if denominator else None
-    return {"start": timestamp(start) if start is not None else None, "end": timestamp(end), "totals": out}
+    return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
+            "totals": out,
+            "groups": [{"app": "workbuddy", "model": m, **v,
+                        "total_tokens": sum(v[k] for k in TOKEN_FIELDS)}
+                       for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])]}
 
 
 def collect_workbuddy_tokens(root, now, zone=ZoneInfo("Asia/Shanghai")):
@@ -133,7 +166,7 @@ def collect_workbuddy_tokens(root, now, zone=ZoneInfo("Asia/Shanghai")):
         p["timezone"] = str(zone)
     periods["all"]["credit_charged"] = format(credit, "f")
     daily = {}
-    for t, fresh, output, cache_read, cache_write in records:
+    for t, model, fresh, output, cache_read, cache_write, thinking in records:
         day = datetime.fromtimestamp(t, zone).date().isoformat()
         daily[day] = daily.get(day, 0) + fresh + output + cache_read + cache_write
     return metric({
@@ -142,5 +175,7 @@ def collect_workbuddy_tokens(root, now, zone=ZoneInfo("Asia/Shanghai")):
         "coverage": "workbuddy_local_projects",
         "dedup_rule": "one_rawUsage_record_per_response",
         "credit_unit": "workbuddy_credits",
+        # thinking_tokens is a sub-part of output, never an extra total.
+        "thinking_in_output": True,
         **stats,
     })

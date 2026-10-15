@@ -134,10 +134,13 @@ struct PricesView: View {
             guard let value = source.metric("tokens")?.value else { continue }
             for group in value["periods"]["all"]["groups"].array {
                 guard let full = group["model"].string else { continue }
-                let short = full.split(separator: "/").last.map(String.init) ?? full
+                let short = Catalog.modelLabel(full)
                 if short.isEmpty || short == "unknown" || names.contains(short) { continue }
                 names.insert(short)
-                if !rows.contains(where: { row in short.lowercased().contains(row.id.lowercased()) && !row.id.isEmpty }) {
+                // Same rule the backend matches on, so "glm-5.3-flash" already
+                // covers WorkBuddy's "glm-5-3-flash" spelling.
+                let key = Catalog.modelKey(short)
+                if !rows.contains(where: { row in !row.id.isEmpty && key.contains(Catalog.modelKey(row.id)) }) {
                     if !seen.contains(short) {
                         rows.append(PriceRow(id: short, input: "", cacheRead: "", cacheWrite: "", output: "", converted: false))
                         seen.insert(short)

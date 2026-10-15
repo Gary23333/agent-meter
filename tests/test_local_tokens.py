@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from agent_meter.collector import collect, coverage_matrix
 from agent_meter.model import SourceError, metric, source
 from agent_meter.opencode_tokens import collect_opencode_tokens
+from agent_meter.qoder_tokens import collect_qoder_credits, merge_credits_metric
 from agent_meter.workbuddy_tokens import collect_workbuddy_tokens
 from agent_meter.zcode_local import collect_zcode_local
 
@@ -140,14 +141,17 @@ def workbuddy_file(path, lines):
     path.write_text("\n".join(json.dumps(x, ensure_ascii=False) for x in lines) + "\n")
 
 
-def usage_record(rid, ts_ms, **raw):
+def usage_record(rid, ts_ms, model="deepseek-v4.1-flash", **raw):
     full = {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
             "prompt_tokens_details": {"cached_tokens": 90}, "prompt_cache_hit_tokens": 90,
             "prompt_cache_miss_tokens": 10, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
-            "credit": 1.5}
+            "prompt_cache_write_tokens": 0, "completion_thinking_tokens": 0, "credit": 1.5}
     full.update(raw)
+    provider = {"rawUsage": full}
+    if model is not None:
+        provider["model"] = model
     return {"id": rid, "type": "function_call", "sessionId": "s", "timestamp": ts_ms,
-            "providerData": {"rawUsage": full}}
+            "providerData": provider}
 
 
 class WorkBuddyTests(unittest.TestCase):
@@ -169,10 +173,50 @@ class WorkBuddyTests(unittest.TestCase):
                               allp["cache_write"], allp["output"]), (3, 165, 110, 5, 30))
             self.assertEqual(value["periods"]["all"]["credit_charged"], "4.5")
             self.assertEqual(value["anthropic_style_records"], 1)
+            self.assertEqual(value["thinking_in_output"], True)
             # Incremental cache: rewriting the file must be picked up.
             workbuddy_file(root / "a.jsonl", [usage_record("r1", ms(9), prompt_cache_hit_tokens=0, prompt_cache_miss_tokens=100)])
             value = collect_workbuddy_tokens(Path(tmp) / "projects", NOW, ZONE)["value"]
             self.assertEqual(value["periods"]["all"]["totals"]["requests"], 1)
+
+    def test_groups_carry_model_and_thinking_stays_inside_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "projects"
+            ms = lambda d: int(datetime(2026, 10, d, 10, tzinfo=ZONE).timestamp() * 1000)
+            workbuddy_file(root / "a.jsonl", [
+                usage_record("r1", ms(9), model="hy4-preview", prompt_cache_hit_tokens=0,
+                             prompt_cache_miss_tokens=100, completion_tokens=40, completion_thinking_tokens=30),
+                usage_record("r2", ms(9), model="glm-5-3-flash", prompt_cache_miss_tokens=7,
+                             prompt_cache_hit_tokens=93, completion_tokens=5),
+                # no model field: falls back to requestModelName, then "unknown"
+                usage_record("r3", ms(8), model=None, prompt_cache_hit_tokens=0,
+                             prompt_cache_miss_tokens=1, completion_tokens=1),
+            ])
+            value = collect_workbuddy_tokens(root, NOW, ZONE)["value"]
+            allp = value["periods"]["all"]
+            groups = {g["model"]: g for g in allp["groups"]}
+            self.assertEqual(set(groups), {"hy4-preview", "glm-5-3-flash", "unknown"})
+            self.assertEqual((groups["hy4-preview"]["fresh_input"], groups["hy4-preview"]["output"],
+                              groups["hy4-preview"]["total_tokens"]), (100, 40, 140))
+            # thinking is a sub-part of output, never an extra total
+            self.assertEqual(groups["hy4-preview"]["thinking_tokens"], 30)
+            self.assertEqual(allp["totals"]["thinking_tokens"], 30)
+            self.assertEqual(allp["totals"]["total_tokens"], sum(
+                allp["totals"][f] for f in ("fresh_input", "output", "cache_read", "cache_write")))
+            self.assertEqual(value["unknown_model_records"], 1)
+            # The per-model split reproduces the period totals exactly.
+            for field in ("requests", "fresh_input", "output", "cache_read", "cache_write"):
+                self.assertEqual(sum(g[field] for g in allp["groups"]), allp["totals"][field])
+            self.assertEqual(value["periods"]["today"]["totals"]["requests"], 2)
+
+    def test_request_model_name_is_the_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "projects"
+            record = usage_record("r1", 1791480000000, model=None)
+            record["providerData"]["requestModelName"] = "Hy4 preview"
+            workbuddy_file(root / "a.jsonl", [record])
+            value = collect_workbuddy_tokens(root, NOW, ZONE)["value"]
+            self.assertEqual([g["model"] for g in value["periods"]["all"]["groups"]], ["Hy4 preview"])
 
     def test_malformed_lines_and_missing_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -184,6 +228,7 @@ class WorkBuddyTests(unittest.TestCase):
             value = collect_workbuddy_tokens(root, NOW, ZONE)["value"]
             self.assertEqual(value["periods"]["all"]["totals"]["requests"], 1)
             self.assertEqual(value["skipped_malformed"], 1)
+            self.assertEqual(value["unknown_model_records"], 1)
             with self.assertRaises(SourceError) as ctx:
                 collect_workbuddy_tokens(Path(tmp) / "none", NOW, ZONE)
             self.assertEqual(ctx.exception.code, "workbuddy_projects_not_found")
@@ -286,6 +331,167 @@ class CollectorIntegrationTests(unittest.TestCase):
         down = source("opencode", "local_session_history", NOW)
         fields = coverage_matrix([app], [history_source(["opencode"]), down])[0]["fields"]
         self.assertEqual(fields["tokens"]["source"], "ccswitch")
+
+
+def qoder_file(path, records):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write((record if isinstance(record, str) else json.dumps(record, ensure_ascii=False)) + "\n")
+
+
+def qoder_record(rid, ts, credits, model="qfmodel", billable=False, sidechain=False):
+    return {"type": "assistant", "uuid": rid, "timestamp": ts, "sessionId": "s1", "isSidechain": sidechain,
+            "message": {"model": model, "usage": {
+                "input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0, "credits": credits, "original_credits": credits,
+                "billable": billable, "request_id": rid, "context_usage_ratio": 0.01}}}
+
+
+class QoderCreditsTests(unittest.TestCase):
+    """Qoder CN logs carry per-request credits; token fields are always zero."""
+
+    def test_periods_models_billable_sidechain_and_daily(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "projects"
+            qoder_file(root / "p1" / "a.jsonl", [
+                qoder_record("r1", "2026-10-09T03:00:00.000Z", 1.5, model="qfmodel"),
+                qoder_record("r2", "2026-10-09T03:30:00.000Z", 2.5, model="dfmodel", billable=True),
+                qoder_record("r3", "2026-10-01T04:00:00.000Z", 10, model="qmodel_38max"),
+                qoder_record("r4", "2026-08-01T04:00:00.000Z", 100, model=None, billable=True),  # outside 30d, no model
+                qoder_record("r5", "2026-10-09T02:00:00.000Z", 0.25, sidechain=True),
+            ])
+            value = collect_qoder_credits(root, NOW, ZONE)
+            self.assertEqual(value["unit"], "qoder_credits")
+            self.assertEqual(value["token_fields"], "not_provided")
+            self.assertEqual(value["usage_records_seen"], 5)
+            self.assertEqual(value["excluded_usage_records"], 0)
+            allp = value["periods"]["all"]["totals"]
+            self.assertEqual((allp["requests"], allp["billable_requests"]), (5, 2))
+            self.assertEqual((allp["credits"], allp["billable_credits"]), ("114.25", "102.5"))
+            today = value["periods"]["today"]["totals"]
+            self.assertEqual((today["requests"], today["credits"]), (3, "4.25"))
+            month = value["periods"]["30d"]["totals"]
+            self.assertEqual((month["requests"], month["credits"]), (4, "14.25"))
+            week = value["periods"]["7d"]["totals"]
+            self.assertEqual(week["requests"], 3)
+            models = {g["model"]: g for g in value["periods"]["all"]["groups"]}
+            self.assertEqual(set(models), {"qfmodel", "dfmodel", "qmodel_38max", "unknown"})
+            self.assertEqual(models["dfmodel"]["credits"], "2.5")
+            self.assertEqual(value["sidechain"], {"requests": 1, "credits": "0.25"})
+            self.assertEqual([(b["date"], b["requests"], b["credits"]) for b in value["daily_buckets"]],
+                             [("2026-08-01", 1, "100"), ("2026-10-01", 1, "10"),
+                              ("2026-10-09", 3, "4.25")])
+
+    def test_dedup_malformed_and_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "projects"
+            qoder_file(root / "p1" / "a.jsonl", [
+                qoder_record("r1", "2026-10-09T04:00:00.000Z", 1.5),
+                qoder_record("r1", "2026-10-09T04:30:00.000Z", 9),          # duplicate request_id
+                "not json at all",
+                json.dumps({"type": "assistant", "message": {"usage": {"credits": 3}}, "timestamp": "2026-10-09T04:00:00Z"}),  # no request_id
+                json.dumps({"type": "assistant", "message": {"usage": {"credits": 3, "request_id": "r9"}},
+                            "timestamp": "nope"}),                          # bad timestamp
+                json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 5, "request_id": "r8"}},
+                            "timestamp": "2026-10-09T04:00:00Z"}),          # usage without credits
+            ])
+            value = collect_qoder_credits(root, NOW, ZONE)
+            self.assertEqual(value["periods"]["all"]["totals"]["requests"], 1)
+            self.assertEqual(value["periods"]["all"]["totals"]["credits"], "1.5")
+            self.assertEqual(value["excluded_usage_records"], 4)
+            self.assertEqual(value["usage_records_seen"], 5)
+            # Every usage object lost its credits: the private format drifted.
+            drift = Path(tmp) / "drift"
+            qoder_file(drift / "a.jsonl", [
+                json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 5, "request_id": "r8"}},
+                            "timestamp": "2026-10-09T04:00:00Z"}),
+            ])
+            with self.assertRaises(SourceError) as ctx:
+                collect_qoder_credits(drift, NOW, ZONE)
+            self.assertEqual(ctx.exception.code, "unsupported_qoder_usage_schema")
+            with self.assertRaises(SourceError) as ctx:
+                collect_qoder_credits(Path(tmp) / "none", NOW, ZONE)
+            self.assertEqual(ctx.exception.code, "qoder_sessions_not_found")
+
+    def test_merge_credits_metric_keeps_wallet_rows(self):
+        wallets = [{"bucket": "totalQuota", "total": "100", "used": "10", "remaining": "90",
+                    "unit": "qoder_credits"}]
+        ledger = {"unit": "qoder_credits", "periods": {}}
+        merged = merge_credits_metric(metric(wallets), ledger)
+        self.assertEqual(merged["value"]["rows"], wallets)
+        self.assertEqual(merged["value"]["usage"], ledger)
+        self.assertEqual(merged["status"], "available")
+        empty = merge_credits_metric(metric(), ledger)
+        self.assertEqual(empty["value"]["rows"], [])
+        kept = merge_credits_metric(metric({"rows": wallets, "usage": {}}), ledger)
+        self.assertEqual(kept["value"]["rows"], wallets)
+
+
+class QoderCollectorIntegrationTests(unittest.TestCase):
+    ALL = ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
+           "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode"]
+
+    def qoder_root(self, tmp):
+        root = Path(tmp) / "qoder-projects"
+        qoder_file(root / "p1" / "a.jsonl", [
+            qoder_record("r1", "2026-10-09T03:00:00.000Z", 1.5, billable=True),
+            qoder_record("r2", "2026-10-09T03:30:00.000Z", 2.5),
+        ])
+        return root
+
+    def test_credits_attach_to_account_source_never_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"runtime_dir": tmp, "app_roots": [], "qoder_projects_dir": str(self.qoder_root(tmp)),
+                      "disabled_sources": [x for x in self.ALL if x != "qoder"]}
+            with patch("agent_meter.collector.collect_qoder", side_effect=SourceError("qoder_sdk_not_installed")):
+                snap = collect(config, now=NOW)
+            qoder = next(s for s in snap["sources"] if s["id"] == "qoder")
+            self.assertEqual(qoder["scope"], "account")
+            # Account query failed, but the local credits ledger still shows.
+            self.assertEqual(qoder["metrics"]["credits"]["status"], "available")
+            usage = qoder["metrics"]["credits"]["value"]["usage"]
+            self.assertEqual(usage["periods"]["all"]["totals"],
+                             {"requests": 2, "credits": "4.0", "billable_requests": 1, "billable_credits": "1.5"})
+            self.assertEqual(qoder["metrics"]["credits"]["value"]["rows"], [])
+            # Never a tokens metric: the local-consumption sum cannot see it.
+            self.assertIsNone(qoder["metrics"]["tokens"]["value"])
+            self.assertNotIn("periods", qoder["metrics"]["tokens"]["value"] or {})
+            # Second web-login accounts never get the machine-wide ledger.
+            self.assertFalse(any(s["id"] == "qoder#2" for s in snap["sources"]))
+
+    def test_user_switch_skips_qoder_credits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"runtime_dir": tmp, "app_roots": [], "qoder_projects_dir": str(self.qoder_root(tmp)),
+                      "preferences": {"disabled_sources": ["qoder"]},
+                      "disabled_sources": [x for x in self.ALL if x != "qoder"]}
+            with patch("agent_meter.collector.collect_qoder", side_effect=SourceError("qoder_sdk_not_installed")):
+                snap = collect(config, now=NOW)
+            qoder = next(s for s in snap["sources"] if s["id"] == "qoder")
+            self.assertEqual(qoder["metrics"]["credits"]["reason"], "disabled_by_user")
+            self.assertIsNone(qoder["metrics"]["credits"]["value"])
+
+    def test_web_wallets_and_ledger_merge(self):
+        wallets = [{"bucket": "totalQuota", "total": "1000", "used": "100", "remaining": "900",
+                    "unit": "qoder_credits"}]
+
+        def fake_web(session, now, timeout=15):
+            out = source("qoder", "account", NOW)
+            out["metrics"]["quota"] = metric([{"bucket": "totalQuota", "used_percent": 10,
+                                               "remaining_percent": 90, "unit": "qoder_credits"}])
+            out["metrics"]["credits"] = metric(wallets)
+            return out
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"runtime_dir": tmp, "app_roots": [], "qoder_projects_dir": str(self.qoder_root(tmp)),
+                      "web_sessions": {"qoder": [{"cookie": "a=1", "user_agent": "UA"}]},
+                      "disabled_sources": [x for x in self.ALL if x != "qoder"]}
+            with patch("agent_meter.collector.collect_qoder_web", side_effect=fake_web):
+                snap = collect(config, now=NOW)
+            qoder = next(s for s in snap["sources"] if s["id"] == "qoder")
+            credits = qoder["metrics"]["credits"]["value"]
+            self.assertEqual(credits["rows"], wallets)
+            self.assertEqual(credits["usage"]["periods"]["today"]["totals"]["requests"], 2)
 
 
 if __name__ == "__main__":

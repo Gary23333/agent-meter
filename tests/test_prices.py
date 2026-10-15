@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from agent_meter.deepseek import collect_deepseek, normalize_web_usage
 from agent_meter.model import metric, source
-from agent_meter.prices import DEFAULTS_USD, estimate_source_cost, load_prices, save_prices
+from agent_meter.prices import DEFAULTS_USD, PriceTable, estimate_source_cost, load_prices, save_prices
 
 NOW = int(datetime(2026, 10, 9, 4, 0, tzinfo=timezone.utc).timestamp())
 
@@ -22,12 +22,13 @@ class PriceTableTests(unittest.TestCase):
             # Longest pattern wins over the shorter glm-5.3.
             self.assertEqual(table.match("glm-5.3"), "glm-5.3")
             self.assertEqual(table.match("kimi-code/k3-256k"), "k3")
-            self.assertIsNone(table.match("claude-fable-5"))
-            saved = save_prices(tmp, "CNY", {"claude-fable-5": {"input": 1, "output": 2}})
+            # Coding-plan-only models have no per-token list price.
+            self.assertIsNone(table.match("kimi-code/kimi-for-coding"))
+            saved = save_prices(tmp, "CNY", {"kimi-for-coding": {"input": 1, "output": 2}})
             self.assertEqual(saved["currency"], "CNY")
             cny = load_prices(tmp)
             self.assertEqual(cny.currency, "CNY")
-            self.assertEqual(cny.match("claude-fable-5"), "claude-fable-5")
+            self.assertEqual(cny.match("kimi-code/kimi-for-coding"), "kimi-for-coding")
             self.assertIn("k3", cny.converted)          # FX fallback flagged
             self.assertNotIn("glm-5.3-flash", cny.converted)  # published CNY price
             # A user edit removes the converted flag.
@@ -40,16 +41,63 @@ class PriceTableTests(unittest.TestCase):
             tokens = metric({"periods": {"all": {"groups": [
                 {"model": "builtin:bigmodel-coding-plan/GLM-5.3-Flash", "fresh_input": 1_000_000,
                  "output": 1_000_000, "cache_read": 2_000_000, "cache_write": 0},
-                {"model": "claude-fable-5", "fresh_input": 100, "output": 100, "cache_read": 0, "cache_write": 0},
+                {"model": "kimi-code/kimi-for-coding", "fresh_input": 100, "output": 100,
+                 "cache_read": 0, "cache_write": 0},
             ]}}})
             cost = estimate_source_cost(tokens, table)
-            # flash: 1M*0.15 + 2M*0.03 + 1M*0.50 = 1.01
+            # flash: 1M*0.15 + 2M*0.03 + 1M*0.50 = 0.71
             self.assertEqual(cost["value"]["periods"]["all"]["amount"], "0.71")
+            # Per-model amounts add up to the period amount.
+            self.assertEqual(cost["value"]["periods"]["all"]["models"],
+                             {"builtin:bigmodel-coding-plan/GLM-5.3-Flash": "0.71"})
             self.assertEqual(cost["status"], "partial")
-            self.assertEqual(cost["value"]["periods"]["all"]["unmatched_models"], ["claude-fable-5"])
-            # Groups without a component breakdown (Kimi totals) stay unpriced.
+            self.assertEqual(cost["value"]["periods"]["all"]["unmatched_models"],
+                             ["kimi-code/kimi-for-coding"])
+            # Groups without a component breakdown (archived totals) stay unpriced.
             totals_only = metric({"periods": {"all": {"groups": [{"model": "kimi-code/k3", "total_tokens": 5}]}}})
             self.assertIsNone(estimate_source_cost(totals_only, table))
+
+    def test_model_name_normalization(self):
+        from agent_meter.prices import normalize_model
+        with tempfile.TemporaryDirectory() as tmp:
+            table = load_prices(tmp)
+            # Vendor prefix is dropped: only the id after the last "/" is priced.
+            self.assertEqual(normalize_model("account:bigmodel-individual-coding-plan/GLM-5.3"),
+                             "glm-5-3")
+            self.assertEqual(normalize_model("kimi-code/k3"), "k3")
+            self.assertEqual(normalize_model("custom_provider:provider-48cad9/mimo-v2.5-pro"),
+                             "mimo-v2-5-pro")
+            # "-" and "." are the same separator: WorkBuddy writes glm-5-3-flash
+            # for the model the price table lists as glm-5.3-flash.
+            self.assertEqual(table.match("glm-5-3-flash"), "glm-5.3-flash")
+            self.assertEqual(table.match("account:bigmodel-start-plan/GLM-5.3-Flash"), "glm-5.3-flash")
+            self.assertEqual(table.match("GLM-5.3.Flash"), "glm-5.3-flash")
+            # The user's own pattern wins over a default on the same key.
+            save_prices(tmp, "USD", {"GLM-5.3-Flash": {"input": 9, "output": 9}})
+            self.assertEqual(load_prices(tmp).match("glm-5-3-flash"), "GLM-5.3-Flash")
+            # Unification must not invent matches: v4.1-flash is not v4-flash,
+            # and a "-free" tier is not the priced model.
+            self.assertEqual(table.match("deepseek-v4.1-flash"), "deepseek-v4.1-flash")
+            self.assertEqual(table.match("deepseek-v4-flash"), "deepseek-v4-flash")
+            self.assertIsNone(table.match("mimo-v2.5"))
+            self.assertIsNone(table.match("x-preview-f-free"))
+            # 2026-10-15 survey additions: Hunyuan/Step/MiMo publish CNY list
+            # prices only, so the USD table carries them as FX conversions
+            # (flagged), the same rule USD-only models get in CNY tables.
+            self.assertEqual(table.match("hy4-preview"), "hy4-preview")
+            self.assertIn("hy4-preview", table.converted)
+            self.assertEqual(table.match("step-5-preview"), "step-5-preview")
+            cny = PriceTable("CNY", {}, set())
+            self.assertEqual(cny.match("hy4-preview"), "hy4-preview")
+            self.assertEqual(cny.match("hy3"), "hy3")
+            self.assertEqual(cny.match("step-5-preview"), "step-5-preview")
+            self.assertEqual(cny.match("mimo-v2.6-flash"), "mimo-v2.6-flash")
+            self.assertNotIn("hy4-preview", cny.converted)   # official CNY price
+            # USD-published additions match in both currencies.
+            self.assertEqual(table.match("claude-opus-4-8"), "claude-opus-4-8")
+            self.assertEqual(table.match("claude-fable-5-1"), "claude-fable-5-1")
+            self.assertEqual(table.match("MiniMax-M2.7"), "minimax-m2.7")
+            self.assertEqual(cny.match("claude-fable-5-1"), "claude-fable-5-1")
 
     def test_collector_attaches_estimates(self):
         from agent_meter.collector import collect

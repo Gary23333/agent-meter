@@ -1,6 +1,6 @@
 # 全量模型定价摸排与本地价格表
 
-日期：2026-10-09。本摸排回答"现有统计的模型按 API 牌价折算要多少钱"。**API 等价估算不是订阅账单**：ZCode/Kimi/Claude 等Coding 套餐内的调用不按 API 价计费，估算仅用于横向比较量级。
+日期：2026-10-09（2026-10-15 增补见文末）。本摸排回答"现有统计的模型按 API 牌价折算要多少钱"。**API 等价估算不是订阅账单**：ZCode/Kimi/Claude 等Coding 套餐内的调用不按 API 价计费，估算仅用于横向比较量级。
 
 背景：此前唯一的费用数字来自 CC Switch 自带的 USD 估价（它库里的 `total_cost_usd` 列）；ZCode/OpenCode/WorkBuddy/Kimi/Antigravity 及四家直读 CLI 来源没有任何费用。本轮新增本地价格表（`agent_meter/prices.py`，默认价 + 用户可改 + USD/CNY 双币种），对这些来源的 token 分组做 API 等价估算。
 
@@ -45,3 +45,41 @@ CNY 默认值规则：有国内刊例的用刊例；仅 USD 刊例的按 7.25 �
 - 其余来源的估算显示在菜单栏"本机消耗"标签页的费用卡片（按币种分行，与 CC Switch 自带的 USD 估价分列展示）。
 
 价格表入口：菜单 → API 价格表（本机估算）…。修改保存后自动重新估算。匹配规则：先精确、再最长子串（如 `builtin:bigmodel-coding-plan/GLM-5.3-Flash` 命中 `glm-5.3-flash`）。无分项构成的来源（如 Kimi 只有总量分组）不做估算，避免把未知拆分当成零价。
+
+---
+
+## 2026-10-15 增补：第二轮摸排（联网核实刊例 + 匹配归一化）
+
+背景：WorkBuddy 直读来源补上了按模型分组、Kimi Code 分组补上了输入/输出/缓存拆项，两者首次可被价格表估算；同时价格表匹配改为「取最后一个 `/` 后的模型 id、小写、`.`/`-` 等价」的归一化匹配（`glm-5-3-flash` 与 `account:…/GLM-5.3-Flash` 都命中 `glm-5.3-flash`）。为此重新核实了一批原「未定价」模型的官方刊例。
+
+### 新增默认价（8 个 pattern）
+
+| Pattern | 官方刊例（每 1M tokens：输入/缓存读/输出） | 币种 | 来源 |
+|---|---|---|---|
+| claude-opus-4-8 | $5 / $0.50 / $25（发布时与 Opus 5 同价；缓存读按官方 0.1×输入） | USD | [Anthropic 公告](https://www.anthropic.com/news/claude-opus-4-8)、[Finout 汇总](https://www.finout.io/blog/claude-opus-4.8-pricing-2026-everything-you-need-to-know) |
+| claude-fable-5 | $10 / $1.00 / $50（缓存读 1.00，由 5.1「便宜 75%」反推） | USD | [Anthropic Fable 页](https://www.anthropic.com/claude/fable)、[平台文档](https://platform.claude.com/docs/en/models/fable-5/overview) |
+| claude-fable-5-1 | $10 / $0.25 / $50 | USD | 同上 |
+| minimax-m2.7 | $0.30 / $0.06 / $0.375 写 / $1.20（四项全官方） | USD | [MiniMax 按量定价](https://platform.minimax.io/docs/guides/pricing-paygo) |
+| mimo-v2.6-pro | $0.435 / $0.0036 / $0.87；CNY 3 / 0.025 / 6 | USD+CNY | [MiMo 定价页](https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go)、[模型页](https://mimo.mi.com/models/zh-CN/mimo-v2.6-pro) |
+| mimo-v2.6-flash | CNY 1 / 0.02 / 2（官方只给人民币价；USD 侧按 1/7.25 折算并标「折算」） | CNY | [MiMo 定价页](https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go) |
+| hy4-preview（混元） | CNY 6 / 0.3 / 18 | CNY | 网易报道上线路价（2026-08-28）、[腾讯云 TokenHub 价目](https://cloud.tencent.com/document/product/1823/130055) |
+| hy3（混元） | CNY 1 / 0.25 / 4 | CNY | 同上 |
+| step-5-preview（阶跃） | CNY 7 / 0.7 / 20（2026-10-14 起缓存命中价 0.35→0.7，取新价） | CNY | [阶跃调价报道](http://m.bbtnews.com.cn/content/21/55/243344.html)、[PPIO 报价](https://ppinfra.com) |
+
+规则补充：仅 CNY 刊例的国产模型在 USD 表按 1/7.25 折算并标「折算」（与原 USD→CNY 规则对称）。`hy4-preview-f`、`step-5-preview-free` 等 `-f`/`-free` 变体无独立刊例，被子串匹配带入口刊价（量极小：本机分别 19 万 / 1050 万 tokens），如需精确请在本机价格表单独加行。
+
+### 仍未定价（不猜，UI 按用量列出提示补充）
+
+| 模型 | 说明 |
+|---|---|
+| kimi-code/kimi-for-coding（2.4 亿 tok） | Coding 套餐内模型，无独立按量刊例（K3 有） |
+| ark-code-latest（2.4 亿 tok） | 方舟 Coding Plan 按订阅计费（Lite ¥40/月起），无按量刊例 |
+| mimo-v2-pro / mimo-v2.5 / mimo-v2.5-free（约 4.6 亿 tok） | [官方定价页](https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go)已无 v2-pro 行，v2.5 系 2026-10-21 下线、价格列已移除；第三方聚合价不作数 |
+| gpt-5.5 / gpt-5.6-sol / codex-auto-review 等 | 刊例来源冲突（$2.50/$15 与 $5/$30 并存），且在本机直读来源中合计 <1 亿 tok（CC Switch 自带估价不受影响），留空 |
+| space-bunny、big-pickle、x-preview-f、qwen3.8、gemini-default | 客户端内部代号或免费层，无公开刊例 |
+| LongCat-2.0 | 有官方刊例（CNY 5 / 0.10 / 20，限时折扣 2/0.04/8，[官方文档](https://longcat.chat/platform/docs/zh/api-pay-as-you-go)），但本机只出现在 CC Switch（自带估价、不消费本地价格表），不入默认表 |
+
+### 本机估算结果变化（默认 USD 价，all 期间）
+
+- 价格表合计 $2,547 → **$3,152.74**：Claude 直读 +$550（fable-5/-5-1、opus-4-8），WorkBuddy $13.59 → $66.38（混元/阶跃按折算价），Kimi Code $0 → $646.70（拆项补全后 k3 可价）。
+- 菜单栏「本机消耗」的费用卡显示合成总数（CC Switch $7,120 + 价格表 $3,153），无定价模型按用量排序列出；按应用行与模型排行各自带金额。

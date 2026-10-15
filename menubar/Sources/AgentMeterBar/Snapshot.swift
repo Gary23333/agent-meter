@@ -12,6 +12,14 @@ struct Metric {
     }
 
     var hasValue: Bool { !value.isNull }
+
+    /// Credit wallet rows. A legacy list value is the rows themselves; an
+    /// object value (Qoder: wallets plus a local usage section) carries them
+    /// under "rows", and an object without "rows" is treated as one row.
+    var creditRows: [JSON] {
+        let rows = value["rows"].array
+        return rows.isEmpty ? value.rows : rows
+    }
 }
 
 struct Source: Identifiable {

@@ -3,11 +3,19 @@
 The CC Switch source already reports its own USD estimates; this module adds
 estimates for the direct local token sources that have none. Prices are per
 1M tokens: input (fresh), cache read, cache write, output. Defaults come
-from the 2026-10-09 pricing survey (docs/pricing-survey-2026-10-09.md):
-CN list prices where published, otherwise USD list prices; CNY fallbacks
-for USD-only models are converted at 7.25 and flagged as converted. Every
-value is user-editable via PUT /v1/prices; user entries override defaults
-by pattern. Estimates are never bills: 订阅套餐内的调用不按 API 价计费.
+from the pricing surveys (docs/pricing-survey-2026-10-09.md and its
+2026-10-15 update), taking the official list price in whichever currency
+published one; the other currency falls back to an FX conversion at 7.25,
+flagged as converted (USD-only models convert into CNY, domestic CNY-only
+models convert into USD). Every value is user-editable via PUT /v1/prices;
+user entries override defaults by pattern. Estimates are never bills:
+订阅套餐内的调用不按 API 价计费.
+
+Matching (2026-10-15) normalizes both sides first — see normalize_model —
+so the same model is priced no matter which prefix or separator spelling a
+reader stores. Only published prices are shipped: a model with no known
+list price stays unmatched (unknown ≠ zero) and is named in the estimate's
+unmatched_models so the user can add it in the price table.
 """
 import json
 from decimal import Decimal
@@ -26,10 +34,20 @@ DEFAULTS_USD = {
     "deepseek-flash": (0.15, 0.003, 0, 0.60),
     "gemini-3.7-flash": (0.75, 0.075, 0, 3.75),
     "gemini-3.8-flash": (0.75, 0.075, 0, 3.75),
+    "gemini-3.6-flash": (0.75, 0.075, 0, 3.75),
     "gemini-3-flash": (0.30, 0.075, 0, 2.50),
     "gemini-3.1-pro": (2.00, 0.50, 0, 12.00),
     "claude-opus-5-5": (4, 0.20, 0, 20),
     "claude-opus-5": (5, 0.50, 0, 25),
+    # 2026-10-15 additions (survey update in docs/pricing-survey-2026-10-09.md):
+    # opus-4-8 launched at the opus-5 rate; fable-5.1 cut cache reads to 0.25
+    # (75% below fable-5, so fable-5 reads at 1.00); M2.7 publishes cache
+    # write; mimo-v2.6-pro keeps the v2.5-pro USD rate.
+    "claude-opus-4-8": (5, 0.50, 0, 25),
+    "claude-fable-5": (10, 1.00, 0, 50),
+    "claude-fable-5-1": (10, 0.25, 0, 50),
+    "minimax-m2.7": (0.30, 0.06, 0.375, 1.20),
+    "mimo-v2.6-pro": (0.435, 0.0036, 0, 0.87),
     "claude-sonnet-5": (2, 0.10, 0, 10),
     "claude-haiku-5": (0.10, 0.01, 0, 0.50),
     "claude-haiku-4-5": (1, 0.10, 0, 5),
@@ -37,14 +55,39 @@ DEFAULTS_USD = {
     "minimax-m3": (0.30, 0, 0, 1.20),
 }
 # CN list prices where published; the rest are USD x 7.25 (flagged converted).
+# The 2026-10-15 additions are official CNY list prices with no official USD
+# rate (Hunyuan Hy4/Hy3, Step 5 Preview, MiMo v2.6-flash); USD tables get them
+# back at 1/7.25, flagged as converted.
 DEFAULTS_CNY_PUBLISHED = {
     "glm-5.3-flash": (0.8, 0.23, 0, 2.8),
     "glm-5.3": (8, 0, 0, 28),
     "mimo-v2.5-pro": (3, 0.025, 0, 6),
+    "hy4-preview": (6, 0.3, 0, 18),
+    "hy3": (1, 0.25, 0, 4),
+    "step-5-preview": (7, 0.7, 0, 20),
+    "mimo-v2.6-pro": (3, 0.025, 0, 6),
+    "mimo-v2.6-flash": (1, 0.02, 0, 2),
 }
 FX_FALLBACK = Decimal("7.25")
 PRICE_KEYS = ("input", "cache_read", "cache_write", "output")
 CURRENCIES = {"USD", "CNY"}
+
+
+def normalize_model(name):
+    """Match key for a model id: vendor prefix dropped, dot/dash unified.
+
+    The same model is spelled differently per reader — ZCode stores
+    "account:bigmodel-coding-plan/GLM-5.3-Flash", Kimi "kimi-code/k3",
+    OpenCode "custom_provider:deepseek/deepseek-v4-flash", WorkBuddy
+    "glm-5-3-flash" — while vendors publish one id. The part after the last
+    "/" is the vendor's own model id, and "-" and "." are used
+    interchangeably inside it (glm-5.3-flash vs glm-5-3-flash), so both are
+    unified here. The snapshot keeps the raw name; only matching normalizes.
+    """
+    if not isinstance(name, str):
+        return ""
+    tail = name.rsplit("/", 1)[-1].strip().lower()
+    return tail.replace(".", "-")
 
 
 def default_prices(currency):
@@ -54,12 +97,18 @@ def default_prices(currency):
         table = dict(DEFAULTS_CNY_PUBLISHED)
         table.update({p: tuple(float(v) for v in prices) for p, prices in converted.items()})
         return table
-    return {p: prices for p, prices in DEFAULTS_USD.items()}
+    # USD mirrors the CNY rule: a domestic model with only a CNY list price
+    # converts back at 1/FX and is flagged, instead of staying unpriced.
+    converted = {p: tuple(float(round(Decimal(v) / FX_FALLBACK, 4)) for v in prices)
+                 for p, prices in DEFAULTS_CNY_PUBLISHED.items() if p not in DEFAULTS_USD}
+    return {**{p: prices for p, prices in DEFAULTS_USD.items()}, **converted}
 
 
-def converted_patterns():
-    """CNY entries that are pure FX conversions of USD list prices."""
-    return set(DEFAULTS_USD) - set(DEFAULTS_CNY_PUBLISHED)
+def converted_patterns(currency):
+    """Entries that are pure FX conversions of the other currency's list."""
+    if currency == "CNY":
+        return set(DEFAULTS_USD) - set(DEFAULTS_CNY_PUBLISHED)
+    return set(DEFAULTS_CNY_PUBLISHED) - set(DEFAULTS_USD)
 
 
 class PriceTable:
@@ -67,19 +116,28 @@ class PriceTable:
         self.currency = currency
         self.models = dict(default_prices(currency))
         self.models.update(user_models or {})
-        # CNY entries that are pure FX conversions (unless the user edited them).
-        self.converted = (converted_patterns() - set(user_models or {})) if currency == "CNY" else set()
+        # Normalized pattern -> the pattern as stored (user entries are
+        # inserted last, so they win a collision on the normalized form).
+        self.index = {}
+        for pattern in self.models:
+            key = normalize_model(pattern)
+            if key:
+                self.index[key] = pattern
+        # Entries that are pure FX conversions (unless the user edited them).
+        self.converted = converted_patterns(currency) - set(user_models or {})
 
     def match(self, model):
         """Longest matching pattern (exact first, then substring), or None."""
-        name = model.lower()
-        if name in self.models:
-            return name
+        key = normalize_model(model)
+        if not key:
+            return None
+        if key in self.index:
+            return self.index[key]
         best = None
-        for pattern in self.models:
-            if pattern in name and (best is None or len(pattern) > len(best)):
-                best = pattern
-        return best
+        for candidate in self.index:
+            if candidate in key and (best is None or len(candidate) > len(best)):
+                best = candidate
+        return self.index[best] if best is not None else None
 
     def cost_for(self, group, pattern):
         """Decimal cost of one {fresh_input, cache_read, cache_write, output} group."""
@@ -131,7 +189,7 @@ def save_prices(runtime_dir, currency, models):
         clean[pattern] = row
     from .collector import atomic_json
     payload = {"currency": currency, "models": clean,
-               "converted": sorted(converted_patterns() & set(clean)) if currency == "CNY" else []}
+               "converted": sorted(converted_patterns(currency) & set(clean))}
     atomic_json(Path(runtime_dir) / "prices.json", payload)
     return {"currency": currency, "models": clean}
 
@@ -139,7 +197,9 @@ def save_prices(runtime_dir, currency, models):
 def estimate_source_cost(tokens_metric, table):
     """Fill a cost metric from a tokens metric's per-period groups.
 
-    Sources without a per-model breakdown cannot be priced and stay
+    Each period carries the period total, a per-model amount map (so the UI
+    can show what each model cost) and the names of models that matched no
+    pattern. Sources without a per-model breakdown cannot be priced and stay
     not_provided. Returns the cost metric, or None when nothing matched.
     """
     value = tokens_metric.get("value") if isinstance(tokens_metric, dict) else None
@@ -154,22 +214,27 @@ def estimate_source_cost(tokens_metric, table):
         if not isinstance(groups, list) or not groups:
             # A period with no rows (e.g. archive-only history has no today)
             # simply costs nothing; it does not block the other periods.
-            out_periods[period] = {"amount": "0", "unmatched_models": []}
+            out_periods[period] = {"amount": "0", "models": {}, "unmatched_models": []}
             continue
         total = Decimal(0)
+        models = {}
         unmatched = set()
         for group in groups:
             model = str(group.get("model", ""))
             pattern = table.match(model)
             if pattern is None or "fresh_input" not in group:
-                # No price, or no per-component breakdown (e.g. Kimi totals):
-                # both stay unpriced rather than costing zero.
+                # No price, or no per-component breakdown (e.g. an archived
+                # totals-only row): both stay unpriced rather than costing zero.
                 unmatched.add(model + ("" if "fresh_input" in group else " (no breakdown)"))
                 continue
             any_group = True
-            total += table.cost_for(group, pattern)
+            amount = table.cost_for(group, pattern)
+            total += amount
+            models[model] = models.get(model, Decimal(0)) + amount
         unmatched_all |= unmatched
-        out_periods[period] = {"amount": format(total, "f"), "unmatched_models": sorted(unmatched)}
+        out_periods[period] = {"amount": format(total, "f"),
+                               "models": {name: format(amount, "f") for name, amount in models.items()},
+                               "unmatched_models": sorted(unmatched)}
     if not any_group:
         return None
     status = "partial" if unmatched_all else "available"

@@ -58,6 +58,17 @@ class KimiTokenTests(unittest.TestCase):
         self.assertEqual(value["excluded_session_scope_records"], 1)
         self.assertEqual({g["model"] for g in value["periods"]["all"]["groups"]},
                          {"kimi-code/k3", "kimi-code/kimi-for-coding"})
+        # Each model group carries the full breakdown, so the price table can
+        # cost it (k3 has a published price; kimi-for-coding has none).
+        groups = {g["model"]: g for g in value["periods"]["all"]["groups"]}
+        self.assertEqual((groups["kimi-code/k3"]["requests"], groups["kimi-code/k3"]["fresh_input"],
+                          groups["kimi-code/k3"]["output"], groups["kimi-code/k3"]["cache_read"],
+                          groups["kimi-code/k3"]["cache_write"], groups["kimi-code/k3"]["total_tokens"]),
+                         (2, 11, 7, 103, 4, 125))
+        self.assertEqual(groups["kimi-code/kimi-for-coding"]["total_tokens"], 28)
+        for field in ("requests", "fresh_input", "output", "cache_read", "cache_write"):
+            self.assertEqual(sum(g[field] for g in value["periods"]["all"]["groups"]),
+                             value["periods"]["all"]["totals"][field])
         self.assertEqual(sum(b["tokens"] for b in value["daily_buckets"]), 153)
 
     def test_cache_follows_file_changes(self):

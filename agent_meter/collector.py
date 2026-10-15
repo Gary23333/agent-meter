@@ -14,16 +14,19 @@ from .agy_tokens import collect_antigravity_sessions
 from .claude_code import collect_claude, collect_claude_web
 from .cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
 from .codex import collect_codex
+from .design_tokens import collect_design_tokens
 from .discovery import discover
 from .kimi import collect_kimi
 from .kimi_tokens import collect_kimi_tokens
 from .model import SCHEMA_VERSION, METRICS, SourceError, failed_source, metric, source, timestamp
 from .opencode_tokens import collect_opencode_tokens
 from .qoder import collect_qoder
+from .qoder_tokens import collect_qoder_credits, merge_credits_metric
 from .web_sources import as_account_lists, collect_qoder_web, collect_trae, collect_workbuddy
 from .minimax import collect_minimax
 from .deepseek import collect_deepseek
 from .mimo import collect_mimo
+from .stepfun import collect_stepfun
 from .volcengine import collect_volcengine
 from .zcode import collect_zcode
 from .dreamina import collect_dreamina
@@ -46,8 +49,13 @@ def default_config():
             "claude_projects_dir":str(home/".claude/projects"),"gemini_dir":str(home/".gemini"),
             "mcode_db":str(home/".minimax/v2/sqlite/runtime-state.sqlite"),
             "agy_conversations_dir":str(home/".gemini/antigravity-cli/conversations"),
+            # The design agent's embedded opencode runtime keeps its own
+            # data-home; its ledger overlaps the standalone db only through
+            # copied sessions, which the collector excludes by session id.
+            "design_opencode_db":str(home/"Library/Application Support/@hilo/desktop/ai-runtime/data-home/opencode/opencode.db"),
             "codex_binary":shutil.which("codex"),"kimi_binary":shutil.which("kimi"),
             "qoder_app":"/Applications/Qoder CN.app","node_binary":shutil.which("node"),
+            "qoder_projects_dir":str(home/".qoder-cn/projects"),
             "dreamina_binary":shutil.which("dreamina") or (str(home/".local/bin/dreamina") if (home/".local/bin/dreamina").is_file() else None),
             "design_gateway_url":"http://127.0.0.1:8001",
             "design_mcp_entry":"/Applications/MiniMax Design.app/Contents/Resources/mcp-tools/dist/main.js",
@@ -71,12 +79,14 @@ def safe_collect(source_id,scope,now,fn):
                       "not_authenticated","qoder_not_authenticated","qoder_sdk_not_installed","qoder_usage_unavailable","codexbar_not_installed",
                       "minimax_credential_not_connected","deepseek_credential_not_connected",
                       "zcode_credential_not_connected","volcengine_credential_not_connected","mimo_not_authenticated",
+                      "stepfun_credential_not_connected","stepfun_not_authenticated",
                       "volcengine_not_authenticated","volcengine_ark_key_not_supported",
                       "dreamina_cli_not_available","dreamina_not_authenticated","design_gateway_not_ready",
                       "design_billing_scope_unavailable","design_personal_scope_required",
                       "zcode_db_not_found","opencode_db_not_found","workbuddy_projects_not_found",
+                      "qoder_sessions_not_found",
                       "codex_sessions_not_found","claude_projects_not_found","gemini_chats_not_found","mcode_db_not_found",
-                      "agy_conversations_not_found",
+                      "agy_conversations_not_found","design_opencode_db_not_found",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
                       "claude_keychain_unavailable","web_session_missing","disabled_by_user"}
         return failed_source(source_id,scope,now,e.code,"not_connected" if e.code in disconnected else "error")
@@ -176,6 +186,7 @@ def collect(config=None,now=None):
       "zcode":("account",lambda:collect_zcode(web.get("zcode"),now,timeout)),
       "mimo":("api_account",lambda:collect_mimo(web.get("mimo"),now,timeout) if "mimo" in web
               else _raise(SourceError("web_session_missing"))),
+      "stepfun":("account",lambda:collect_stepfun(web.get("stepfun"),now,timeout)),
       "volcengine":("account",lambda:collect_volcengine(web.get("volcengine"),now,timeout)),
       # Local token history that CC Switch does not import; ZCode's own local
       # usage db attaches to its account source below (kimi pattern).
@@ -184,7 +195,8 @@ def collect(config=None,now=None):
       "antigravity":("local_session_history",lambda:collect_antigravity_sessions(config["agy_conversations_dir"],config["ccswitch_db"],now)),
     }
     web_collectors={"claude":collect_claude_web,"qoder":collect_qoder_web,"workbuddy":collect_workbuddy,"trae_cn":collect_trae,
-                    "mimo":collect_mimo,"zcode":collect_zcode,"volcengine":collect_volcengine}
+                    "mimo":collect_mimo,"zcode":collect_zcode,"volcengine":collect_volcengine,
+                    "stepfun":collect_stepfun}
     def labelled(key,label,fn):
         def run():
             out=fn()
@@ -222,9 +234,17 @@ def collect(config=None,now=None):
             ("claude",lambda:claude_tokens_metric(config["claude_projects_dir"],config["ccswitch_db"],now)),
             ("minimax_code",lambda:mcode_tokens_metric(config["mcode_db"],config["ccswitch_db"],now)),
             ("zcode",lambda:zcode_tokens_metric(config["zcode_usage_db"],now)),
+            # Design's agent ledger attaches to its account source (mcode
+            # pattern) and is gated by the same source switch.
+            ("minimax_design",lambda:collect_design_tokens(config["design_opencode_db"],config["opencode_db"],now)),
         ):
             if not switched_off(provider):
                 token_futures[provider]=pool.submit(fn)
+        # Qoder CN's local credits ledger is account-page statistics, never a
+        # tokens metric: it must not enter the local-consumption sum.
+        credits_futures={}
+        if not switched_off("qoder"):
+            credits_futures["qoder"]=pool.submit(lambda:collect_qoder_credits(config["qoder_projects_dir"],now))
         for key in jobs:
             if key not in futures:
                 reason="disabled_by_user" if key.split("#",1)[0] in user_off else "disabled_in_config"
@@ -241,6 +261,23 @@ def collect(config=None,now=None):
         try:src["metrics"]["tokens"]=future.result()
         except SourceError as e:src["metrics"]["tokens"]=metric(status="not_connected",reason=e.code)
         except Exception:src["metrics"]["tokens"]=metric(status="error",reason="local_token_parse_failed")
+    # Qoder CN local credits: folded into the account source's credits metric
+    # (wallets stay under "rows"), never into tokens, so the local-consumption
+    # tab cannot sum credits as tokens. Attached even when the account query
+    # failed; a ledger error never discards web/SDK wallet rows.
+    for src in sources:
+        future=credits_futures.get(src["id"])
+        if future is None:
+            continue
+        try:ledger=future.result()
+        except SourceError as e:
+            src["diagnostics"]["credits_ledger_error"]=e.code
+            if src["metrics"]["credits"]["value"] is None:
+                src["metrics"]["credits"]=metric(status="not_connected",reason=e.code)
+        except Exception:
+            src["diagnostics"]["credits_ledger_error"]="local_credits_parse_failed"
+        else:
+            src["metrics"]["credits"]=merge_credits_metric(src["metrics"]["credits"],ledger)
     # Web-page observations (即梦 membership / credit split) from the app.
     if not switched_off("dreamina"):
         sources=merge_dreamina(sources,config.get("observations"),now)
@@ -347,7 +384,8 @@ class SnapshotService:
                 previous=old.get(src["id"])
                 if src["diagnostics"].get("reason") not in {"dreamina_not_authenticated","not_authenticated",
                         "design_account_changed_during_query","design_personal_scope_required","web_session_missing","disabled_by_user",
-                        "mimo_not_authenticated","volcengine_not_authenticated","volcengine_ark_key_not_supported"} and src["status"] in {"error","not_connected"} and previous and previous["status"] in {"available","partial","stale"}:
+                        "mimo_not_authenticated","volcengine_not_authenticated","volcengine_ark_key_not_supported",
+                        "stepfun_not_authenticated","stepfun_credential_not_connected"} and src["status"] in {"error","not_connected"} and previous and previous["status"] in {"available","partial","stale"}:
                     cached=copy.deepcopy(previous)
                     cached["status"]="stale"
                     cached["diagnostics"]["last_attempt_at"]=timestamp(now)

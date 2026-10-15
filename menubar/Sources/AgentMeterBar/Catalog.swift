@@ -8,7 +8,7 @@ enum Catalog {
         let tint: Color
     }
 
-    static let order = ["codex", "claude", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "zcode", "volcengine", "minimax_design", "dreamina", "mimo", "deepseek_api"]
+    static let order = ["codex", "claude", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "zcode", "volcengine", "minimax_design", "dreamina", "mimo", "stepfun", "deepseek_api"]
     static let metricOrder = ["quota", "reset_time", "reset_cards", "credits", "tokens", "cost",
                               "renewal_time", "renewal_countdown", "renewal_amount",
                               "credit_refresh_time", "credit_refresh_countdown"]
@@ -38,6 +38,7 @@ enum Catalog {
         case "zcode": return Brand(name: "ZCode", symbol: "z.square.fill", tint: Color(red: 0.16, green: 0.38, blue: 0.98))
         case "volcengine": return Brand(name: "火山方舟 Coding Plan", symbol: "flame.fill", tint: Color(red: 0.20, green: 0.44, blue: 1.0))
         case "mimo": return Brand(name: "MiMo API", symbol: "bolt.horizontal.fill", tint: Color(red: 1.0, green: 0.42, blue: 0.0))
+        case "stepfun": return Brand(name: "阶跃星辰", symbol: "figure.stairs", tint: Color(red: 0.15, green: 0.55, blue: 0.95))
         case "ccswitch": return Brand(name: "CC Switch", symbol: "arrow.triangle.swap", tint: .orange)
         case "opencode": return Brand(name: "OpenCode", symbol: "terminal.fill", tint: Color(red: 0.45, green: 0.40, blue: 0.90))
         case "gemini": return Brand(name: "Gemini CLI", symbol: "diamond.fill", tint: Color(red: 0.26, green: 0.52, blue: 0.96))
@@ -55,7 +56,7 @@ enum Catalog {
         let id = ConnectionManager.provider(ofSlot: id)
         return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
          "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
-         "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo",
+         "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo", "stepfun": "阶跃",
          "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity"][id]
             ?? brand(id).name
     }
@@ -126,6 +127,17 @@ enum Catalog {
             "mimo_api_error": "MiMo 返回错误",
             "mimo_token_plan_usage_unrecognized": "未识别 Token Plan 用量格式",
             "unsupported_mimo_balance_contract": "MiMo 返回格式不支持",
+            "stepfun_credential_not_connected": "未连接（在「连接网页账户」里登录阶跃星辰开放平台，或粘贴 API Key）",
+            "stepfun_not_authenticated": "阶跃星辰控制台未登录或登录已失效，请重新登录",
+            "stepfun_api_error": "阶跃星辰返回错误",
+            "stepfun_no_step_plan": "该账户没有 STEP plan，只显示余额",
+            "stepfun_step_plan_usage_unrecognized": "未识别 STEP plan 用量格式",
+            "stepfun_step_plan_needs_console_login": "STEP plan 用量需登录控制台读取；API Key 只能查余额",
+            "unsupported_stepfun_balance_contract": "阶跃星辰返回格式不支持",
+            "invalid_stepfun_amount": "阶跃星辰返回的金额无法解析",
+            "invalid_stepfun_rate": "阶跃星辰返回的用量比例无法解析",
+            "invalid_stepfun_credits": "阶跃星辰返回的积分数无法解析",
+            "invalid_stepfun_response": "阶跃星辰返回格式不支持",
             "dreamina_cli_not_available": "未找到即梦 CLI",
             "dreamina_not_authenticated": "即梦未登录",
             "design_gateway_not_ready": "MiniMax Design 未运行",
@@ -167,6 +179,10 @@ enum Catalog {
             "mcode_db_read_failed": "MiniMax Code 数据库读取失败",
             "unsupported_mcode_schema": "MiniMax Code 数据库结构不兼容",
             "agy_conversations_not_found": "未找到 Antigravity CLI 会话记录",
+            "design_opencode_db_not_found": "未找到 MiniMax Design 本机 token 账本（本机未安装或未运行过 Design）",
+            "design_opencode_db_read_failed": "MiniMax Design token 账本读取失败",
+            "unsupported_design_opencode_schema": "MiniMax Design token 账本结构不兼容",
+            "design_opencode_reference_unreadable": "无法读取 OpenCode 对照库，为避免重复计算已暂停 Design token 统计",
             "adapter_not_implemented": "尚无适配器",
             "unexpected_source_error": "未知错误",
         ]
@@ -187,6 +203,7 @@ enum Catalog {
             return "\(Fmt.trim(d)) \(unit)"
         }
         let names = ["limit5h": "5 小时", "limit7d": "7 天", "monthTotal": "本月总量", "monthCode": "本月编程",
+                     "stepPlanCredits": "STEP 积分",
                      "5h": "5 小时", "week": "每周", "userQuota": "套餐额度", "addOnQuota": "加购额度",
                      "orgResourcePackage": "组织资源包", "totalQuota": "总额度", "sharedQuota": "共享额度", "credits": "积分", "primary": "主窗口", "secondary": "次窗口",
                      "tertiary": "第三窗口", "summary": "汇总"]
@@ -215,6 +232,7 @@ enum Catalog {
         case "provider_credits", "dreamina_credits", "credits", "credit": return "积分"
         case "minimax_design_media_credits": return "媒体积分"
         case "workbuddy_credits", "trae_credits", "qoder_credits": return "积分"
+        case "stepfun_credits": return "积分"
         case "zcode_credits": return "额度"
         case "tokens": return "Token"
         case "calls": return "次"
@@ -229,6 +247,21 @@ enum Catalog {
         ["claude": "Claude", "codex": "Codex", "kimi": "Kimi Code", "gemini": "Gemini", "opencode": "OpenCode",
          "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi", "zcode": "ZCode", "workbuddy": "WorkBuddy",
          "antigravity": "Antigravity"][app] ?? app
+    }
+
+    /// Model id for display: the readers prefix the vendor's id with their own
+    /// account/provider path ("account:bigmodel-coding-plan/GLM-5.3-Flash",
+    /// "kimi-code/k3"), which the vendor never prints. Only the tail is shown.
+    static func modelLabel(_ raw: String) -> String {
+        let tail = raw.split(separator: "/").last.map(String.init) ?? raw
+        return tail.isEmpty ? raw : tail
+    }
+
+    /// Key that merges the spellings of one model inside a list: prefix
+    /// removed, lowercased, "." and "-" unified — the same rule the backend's
+    /// price table matches on (glm-5.3-flash vs WorkBuddy's glm-5-3-flash).
+    static func modelKey(_ raw: String) -> String {
+        modelLabel(raw).lowercased().replacingOccurrences(of: ".", with: "-")
     }
 
     static func appTint(_ app: String) -> Color {

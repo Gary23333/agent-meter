@@ -8,6 +8,9 @@ dist/
 .build/
 .claude/
 .codex/
+# Local agent runtime state, per-machine scratch rather than project source.
+.video_agent/
+.workbuddy/
 release/*.app/
 release/*.dmg
 release/SHA256SUMS

@@ -125,6 +125,14 @@ enum Fmt {
         return f.string(from: NSNumber(value: n)) ?? String(n)
     }
 
+    /// Credit amounts arrive as fixed-point Decimal strings (backend
+    /// convention); plain numbers are accepted too.
+    static func credits(_ json: JSON?) -> Double {
+        guard let json else { return 0 }
+        if let s = json.string { return Double(s) ?? 0 }
+        return json.double ?? 0
+    }
+
     static func usd(_ n: Double) -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal

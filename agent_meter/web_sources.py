@@ -23,6 +23,7 @@ SESSION_FIELDS = {
     "zcode": {"api_key", "token", "origin", "user_agent"},
     "volcengine": {"access_key_id", "secret_access_key", "cookie", "csrf_token", "usage_url", "user_agent"},
     "mimo": {"cookie", "user_agent"},
+    "stepfun": {"cookie", "api_key", "user_agent"},
     "claude": {"cookie", "user_agent"},
     "qoder": {"cookie", "user_agent"},
     "workbuddy": {"cookie", "user_agent"},

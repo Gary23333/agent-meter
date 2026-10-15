@@ -12,7 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .ccswitch import readonly_database, summarize, validate_schema, period_bounds
-from .model import METRICS, timestamp
+from .model import METRICS, SourceError, timestamp
 
 
 def reference_ccswitch(conn,start,end,zone):
@@ -96,8 +96,10 @@ def reference_zcode_turns(conn):
 
 
 def reference_workbuddy(root,now,zone):
-    periods={p:{"requests":0,"fresh_input":0,"output":0,"cache_read":0,"cache_write":0}
+    """Totals plus the per-model split; thinking is a sub-part of output."""
+    periods={p:{"requests":0,"fresh_input":0,"output":0,"cache_read":0,"cache_write":0,"thinking_tokens":0}
              for p in ("all","today")}
+    models={p:{} for p in periods}
     bounds={p:period_bounds(now,p,zone) for p in periods}
     for path in Path(root).glob("**/*.jsonl"):
         try:
@@ -109,7 +111,8 @@ def reference_workbuddy(root,now,zone):
                 if "rawUsage" not in line:continue
                 try:o=json.loads(line)
                 except ValueError:continue
-                raw=(o.get("providerData") or {}).get("rawUsage") if isinstance(o,dict) else None
+                provider=(o.get("providerData") or {}) if isinstance(o,dict) else {}
+                raw=provider.get("rawUsage")
                 ts=o.get("timestamp") if isinstance(o,dict) else None
                 if not isinstance(raw,dict) or isinstance(ts,bool) or not isinstance(ts,(int,float)):continue
                 prompt=raw.get("prompt_tokens") if isinstance(raw.get("prompt_tokens"),int) else 0
@@ -119,14 +122,91 @@ def reference_workbuddy(root,now,zone):
                 elif read or write:
                     fresh,cache_read,cache_write=max(0,prompt-(read or 0)-(write or 0)),read or 0,write or 0
                 else:fresh,cache_read,cache_write=prompt,0,0
+                output=raw.get("completion_tokens") if isinstance(raw.get("completion_tokens"),int) else 0
+                thinking=raw.get("completion_thinking_tokens") if isinstance(raw.get("completion_thinking_tokens"),int) else 0
+                model="unknown"
+                for key in ("model","requestModelName"):
+                    if isinstance(provider.get(key),str) and 0<len(provider[key])<120:model=provider[key];break
                 for p,(start,end) in bounds.items():
                     if (start is not None and ts/1000<start) or ts/1000>end:continue
                     row=periods[p]
-                    row["requests"]+=1;row["fresh_input"]+=fresh
-                    row["output"]+=raw.get("completion_tokens") if isinstance(raw.get("completion_tokens"),int) else 0
-                    row["cache_read"]+=cache_read;row["cache_write"]+=cache_write
+                    row["requests"]+=1;row["fresh_input"]+=fresh;row["output"]+=output
+                    row["cache_read"]+=cache_read;row["cache_write"]+=cache_write;row["thinking_tokens"]+=thinking
+                    target=models[p].setdefault(model,{"requests":0,"fresh_input":0,"output":0,
+                                                       "cache_read":0,"cache_write":0,"thinking_tokens":0})
+                    target["requests"]+=1;target["fresh_input"]+=fresh;target["output"]+=output
+                    target["cache_read"]+=cache_read;target["cache_write"]+=cache_write;target["thinking_tokens"]+=thinking
     for row in periods.values():
         row["total_tokens"]=row["fresh_input"]+row["output"]+row["cache_read"]+row["cache_write"]
+    return periods,models
+
+
+def reference_kimi_period(records,start,end):
+    """Independent single-loop recompute over kimi_tokens record tuples."""
+    totals={"requests":0,"fresh_input":0,"output":0,"cache_read":0,"cache_write":0}
+    models={}
+    for t,model,fresh,out,read,write in records:
+        if (start is not None and t<start) or t>end:continue
+        totals["requests"]+=1
+        target=models.setdefault(model,dict.fromkeys(("requests","fresh_input","output","cache_read","cache_write"),0))
+        target["requests"]+=1
+        for name,value in (("fresh_input",fresh),("output",out),("cache_read",read),("cache_write",write)):
+            totals[name]+=value
+            target[name]+=value
+    return totals,models
+
+
+def reference_qoder_credits(root,now,zone):
+    """Independent recomputation of the Qoder CN local credits ledger."""
+    periods={p:{"requests":0,"credits":Decimal(0),"billable_requests":0,"billable_credits":Decimal(0)}
+             for p in ("all","today")}
+    bounds={p:period_bounds(now,p,zone) for p in periods}
+    root=Path(root)
+    if not root.is_dir():
+        return None
+    seen=set()
+    for path in sorted(root.glob("**/*.jsonl")):
+        try:
+            handle=open(path,"rb")
+        except OSError:
+            continue
+        with handle:
+            for line in handle:
+                if b'"usage"' not in line:
+                    continue
+                try:
+                    o=json.loads(line,parse_float=Decimal)
+                except ValueError:
+                    continue
+                if not isinstance(o,dict):
+                    continue
+                message=o.get("message")
+                usage=message.get("usage") if isinstance(message,dict) else None
+                if not isinstance(usage,dict):
+                    continue
+                credits=usage.get("credits")
+                if isinstance(credits,bool) or not isinstance(credits,(int,Decimal)) or credits<0:
+                    continue
+                request_id=usage.get("request_id")
+                if not isinstance(request_id,str) or not request_id or request_id in seen:
+                    continue
+                seen.add(request_id)
+                ts=o.get("timestamp")
+                if not isinstance(ts,str):
+                    continue
+                try:
+                    when=datetime.fromisoformat(ts[:-1]+"+00:00" if ts.endswith("Z") else ts).timestamp()
+                except ValueError:
+                    continue
+                for p,(start,end) in bounds.items():
+                    if (start is not None and when<start) or when>end:
+                        continue
+                    row=periods[p]
+                    row["requests"]+=1
+                    row["credits"]+=Decimal(credits)
+                    if usage.get("billable") is True:
+                        row["billable_requests"]+=1
+                        row["billable_credits"]+=Decimal(credits)
     return periods
 
 
@@ -156,6 +236,26 @@ def reference_opencode_excluded(ccswitch_db,zone):
         finally:conn.close()
     except (sqlite3.Error,OSError):
         return None
+
+
+def reference_design_tokens(conn,start,end,excluded,zone):
+    """Independent recompute over the @hilo message table, session-level exclusion."""
+    row={"requests":0,"fresh_input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0}
+    sql=("SELECT time_created,json_extract(data,'$.role'),json_extract(data,'$.tokens.input'),"
+         "json_extract(data,'$.tokens.output'),json_extract(data,'$.tokens.reasoning'),"
+         "json_extract(data,'$.tokens.cache.read'),json_extract(data,'$.tokens.cache.write') FROM message")
+    params=()
+    if excluded:
+        sql+=" WHERE session_id NOT IN ("+",".join("?"*len(excluded))+")"
+        params=tuple(excluded)
+    for created,role,inp,out,reasoning,read,write in conn.execute(sql,params):
+        if role!="assistant" or inp is None:continue
+        seconds=created/1000
+        if (start is not None and seconds<start) or seconds>end:continue
+        row["requests"]+=1;row["fresh_input"]+=inp;row["output"]+=out or 0
+        row["reasoning"]+=reasoning or 0;row["cache_read"]+=read or 0;row["cache_write"]+=write or 0
+    row["total_tokens"]=sum(row[k] for k in ("fresh_input","output","reasoning","cache_read","cache_write"))
+    return row
 
 
 def reference_cli_period(records,start,end,zone):
@@ -341,11 +441,65 @@ def verify_snapshot(snapshot,config,native_reference=None):
                       {"turn_usage":turn,"model_usage_in_completed_turns":model,"drift":drift})
     wb=next((s for s in snapshot["sources"] if s["id"]=="workbuddy" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
     if wb:
-        expected=reference_workbuddy(config["workbuddy_projects_dir"],now,zone)
+        expected,model_reference=reference_workbuddy(config["workbuddy_projects_dir"],now,zone)
         for period,reference in expected.items():
-            actual=wb["metrics"]["tokens"]["value"]["periods"][period]["totals"]
-            for field,value in reference.items():
-                check("workbuddy."+period+"."+field,actual[field]==value,{"backend":actual[field],"reference":value})
+            value=wb["metrics"]["tokens"]["value"]["periods"][period]
+            for field,ref in reference.items():
+                check("workbuddy."+period+"."+field,value["totals"][field]==ref,
+                      {"backend":value["totals"][field],"reference":ref})
+            # The per-model split must reproduce the same numbers per model.
+            backend={g["model"]:g for g in value["groups"]}
+            check("workbuddy."+period+".models",set(backend)==set(model_reference[period]),
+                  {"backend":sorted(backend),"reference":sorted(model_reference[period])})
+            for model,ref in model_reference[period].items():
+                group=backend.get(model) or {}
+                for field,ref_value in ref.items():
+                    check("workbuddy."+period+".model."+model+"."+field,group.get(field)==ref_value,
+                          {"backend":group.get(field),"reference":ref_value})
+    qd=None
+    for s in snapshot["sources"]:
+        if s["id"]!="qoder":
+            continue
+        value=s["metrics"]["credits"]["value"]
+        if isinstance(value,dict) and isinstance(value.get("usage"),dict):
+            qd=s
+    if qd:
+        expected=reference_qoder_credits(config["qoder_projects_dir"],now,zone)
+        if expected is None:
+            check("qoder.credits.ledger_root_present",False,{"root":config["qoder_projects_dir"]})
+        else:
+            for period,reference in expected.items():
+                actual=qd["metrics"]["credits"]["value"]["usage"]["periods"][period]["totals"]
+                for field,value in reference.items():
+                    if isinstance(value,int):
+                        check("qoder.credits."+period+"."+field,actual[field]==value,
+                              {"backend":actual[field],"reference":value})
+                    else:
+                        check("qoder.credits."+period+"."+field,Decimal(str(actual[field]))==value,
+                              {"backend":actual[field],"reference":format(value,"f")})
+    km=next((s for s in snapshot["sources"] if s["id"]=="kimi" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
+    if km:
+        from .kimi_tokens import load_records
+        try:
+            kimi_records,_=load_records(Path(config["home"])/".kimi-code/sessions")
+        except Exception:
+            kimi_records=None
+            checks.append({"name":"kimi_local.reload","status":"fail","detail":"reference reload failed"})
+        if kimi_records is not None:
+            for period in ("today","7d","30d","all"):
+                value=km["metrics"]["tokens"]["value"]["periods"][period]
+                totals,models=reference_kimi_period(kimi_records,*period_bounds(now,period,zone))
+                for field,ref in totals.items():
+                    check("kimi."+period+"."+field,value["totals"][field]==ref,
+                          {"backend":value["totals"][field],"reference":ref})
+                backend={g["model"]:g for g in value["groups"]}
+                check("kimi."+period+".models",set(backend)==set(models),
+                      {"backend":sorted(backend),"reference":sorted(models)})
+                for model,ref in models.items():
+                    group=backend.get(model) or {}
+                    for field,ref_value in ref.items():
+                        check("kimi."+period+".model."+model+"."+field,group.get(field)==ref_value,
+                              {"backend":group.get(field),"reference":ref_value})
     oc=next((s for s in snapshot["sources"] if s["id"]=="opencode" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
     if oc:
         from .opencode_tokens import readonly_database as opencode_database
@@ -364,6 +518,69 @@ def verify_snapshot(snapshot,config,native_reference=None):
                                              set(oc["metrics"]["tokens"]["value"]["ccswitch_overlap"]["excluded_days"]),zone)
                 for field,value in reference.items():
                     check("opencode."+period+"."+field,actual[field]==value,{"backend":actual[field],"reference":value})
+    # MiniMax Design agent tokens (attached to its account source): the
+    # copied-session exclusion and the totals are recomputed independently.
+    md=next((s for s in snapshot["sources"] if s["id"]=="minimax_design" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
+    if md and "design_opencode_db" in config:
+        from .design_tokens import readonly_database as design_database, copied_session_ids
+        try:
+            excluded,_state=copied_session_ids(config["opencode_db"])
+        except SourceError:
+            excluded=None
+        overlap=md["metrics"]["tokens"]["value"]["opencode_overlap"]
+        if excluded is None:
+            check("minimax_design_local.opencode_excluded_sessions.known",overlap["state"]!="checked",
+                  {"backend":overlap["state"]})
+        else:
+            check("minimax_design_local.opencode_excluded_sessions",
+                  overlap["state"]=="checked" and overlap["excluded_sessions"]==len(excluded),
+                  {"backend":overlap["excluded_sessions"],"reference":len(excluded)})
+            with design_database(config["design_opencode_db"]) as conn:
+                for period in ("today","7d","30d","all"):
+                    actual=md["metrics"]["tokens"]["value"]["periods"][period]["totals"]
+                    reference=reference_design_tokens(conn,*period_bounds(now,period,zone),excluded,zone)
+                    for field,value in reference.items():
+                        check("minimax_design_local."+period+"."+field,actual[field]==value,
+                              {"backend":actual[field],"reference":value})
+    # Local price-table estimates: recompute every cost metric from its own
+    # token groups with an independent match + arithmetic loop ("input" is the
+    # group's fresh_input, the other three keep their names).
+    from .prices import load_prices as load_price_table, normalize_model
+    price_table=load_price_table(config.get("runtime_dir") or ".")
+    for src in snapshot["sources"]:
+        cost=src["metrics"]["cost"]
+        value=cost["value"] if isinstance(cost["value"],dict) else None
+        if cost["status"] not in {"available","partial"} or (value or {}).get("basis")!="local_price_table":
+            continue
+        tokens=src["metrics"]["tokens"]["value"]
+        for period in ("today","7d","30d","all"):
+            groups=(tokens["periods"].get(period) or {}).get("groups") or []
+            total=Decimal(0)
+            unmatched=set()
+            for g in groups:
+                pattern=None
+                key=normalize_model(str(g.get("model","")))
+                if key:
+                    if key in price_table.index:
+                        pattern=price_table.index[key]
+                    else:
+                        best=None
+                        for candidate in price_table.index:
+                            if candidate in key and (best is None or len(candidate)>len(best)):
+                                best=candidate
+                        pattern=price_table.index.get(best) if best is not None else None
+                if pattern is None or "fresh_input" not in g:
+                    unmatched.add(str(g.get("model",""))+("" if "fresh_input" in g else " (no breakdown)"))
+                    continue
+                prices=dict(zip(("input","cache_read","cache_write","output"),price_table.models[pattern]))
+                for price,field in (("input","fresh_input"),("cache_read","cache_read"),
+                                    ("cache_write","cache_write"),("output","output")):
+                    total+=Decimal(str(g.get(field,0) or 0))*Decimal(str(prices[price]))/Decimal(1000000)
+            backend=value["periods"].get(period) or {}
+            check("prices."+src["id"]+"."+period+".amount",Decimal(backend.get("amount") or 0)==total,
+                  {"backend":backend.get("amount"),"reference":format(total,"f")})
+            check("prices."+src["id"]+"."+period+".unmatched",set(backend.get("unmatched_models") or [])==unmatched,
+                  {"backend":backend.get("unmatched_models"),"reference":sorted(unmatched)})
     # Direct CLI session readers: exact recompute plus CC Switch cross-check.
     from . import cli_sessions as CS
     for prefix,source_id,loader,kwargs,cc_apps,subtract in (

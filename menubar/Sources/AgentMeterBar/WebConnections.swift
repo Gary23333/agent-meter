@@ -62,6 +62,10 @@ struct WebProvider: Identifiable {
         WebProvider(id: "mimo", loginURL: URL(string: "https://platform.xiaomimimo.com/#/console/balance")!,
                     cookieDomain: "xiaomimimo.com",
                     note: "小米 MiMo API 开放平台：账户余额（现金 / 赠送）与 Token Plan。登录小米账号后看到余额页再点「完成连接」；API Key 无权查询余额。"),
+        WebProvider(id: "stepfun", loginURL: URL(string: "https://platform.stepfun.com/plan-subscribe")!,
+                    cookieDomain: "stepfun.com",
+                    note: "阶跃星辰开放平台：账户余额与 STEP plan 用量。登录后停在「订阅 / 用量」页再点「完成连接」，App 只保留页面自己的 Oasis-Token。也可粘贴开放平台 API Key——它只能查余额，读不到 STEP plan 用量。",
+                    manual: ManualEntry(fields: [KeyField(field: "api_key", placeholder: "或粘贴开放平台 API Key（新增一个账号）")])),
     ]
 
     static func find(_ id: String) -> WebProvider? { all.first { $0.id == id } }

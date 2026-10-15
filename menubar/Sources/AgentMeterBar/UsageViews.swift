@@ -73,7 +73,7 @@ private struct PeriodSummary: View {
 
     private var hero: some View {
         let total = totals["total_tokens"].double ?? 0
-        let cost = totals["estimated_cost_usd"].double
+        let cost = headlineCost
         return HStack(alignment: .top, spacing: 10) {
             Card(tint: Color(red: 0.36, green: 0.52, blue: 1)) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -95,14 +95,18 @@ private struct PeriodSummary: View {
             Card(tint: Color(red: 0.15, green: 0.82, blue: 0.62)) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("估算费用").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Text(cost.map(Fmt.usd) ?? "—").font(theme.number(26)).monospacedDigit()
+                    Text(cost.map { Fmt.amount($0.amount, unit: $0.unit) } ?? "—")
+                        .font(theme.number(26)).monospacedDigit()
                         .foregroundStyle(theme == .neon ? AnyShapeStyle(LinearGradient(colors: [Neon.lime, Neon.cyan], startPoint: .leading, endPoint: .trailing))
                                                         : theme.figure([Color(red: 0.2, green: 0.9, blue: 0.6), Color(red: 0.2, green: 0.75, blue: 1)]))
                         .themeGlow(Neon.lime.opacity(0.6), radius: 4, theme: theme == .neon ? .neon : .minimal)
                         .contentTransition(.numericText())
-                    Text(unpricedNote).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
-                    if let note = localCostNote {
-                        Text(note).font(.system(size: 10.5)).foregroundStyle(.teal).lineLimit(1)
+                    Text(costComposition).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    if let note = unpricedNote {
+                        Text(note).font(.system(size: 10.5)).foregroundStyle(.orange)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                            .help("这些模型在本地价格表里没有匹配条目，未计入估算；可在「API 价格表（本机估算）…」里补充")
                     }
                 }
             }
@@ -110,21 +114,40 @@ private struct PeriodSummary: View {
         }
     }
 
-    private var unpricedNote: String {
-        let n = Int(totals["unpriced_detail_requests"].double ?? 0)
-        var parts = [n > 0 ? "API 等价 · \(n) 次无定价" : "API 等价估算"]
-        if data["includes_kimi"].bool == true { parts.append("不含 Kimi") }
-        return parts.joined(separator: " · ")
+    /// One headline figure: CC Switch's own USD estimate plus the price-table
+    /// estimate when that table is in USD. A CNY table is never folded into a
+    /// USD number — the composition line lists both separately. An all-zero
+    /// result stays "—": unknown prices are not zero cost.
+    private var headlineCost: (amount: Double, unit: String)? {
+        let local = data["local_cost"].object
+        let cc = totals["estimated_cost_usd"].double ?? 0
+        let localUSD = local["USD"]?.double ?? 0
+        if cc > 0 || localUSD > 0 { return (cc + localUSD, "USD") }
+        if let cny = local["CNY"]?.double, cny > 0 { return (cny, "CNY") }
+        return nil
     }
 
-    /// Price-table estimate line under the CC Switch USD estimate.
-    private var localCostNote: String? {
-        let costs = data["local_cost"].object
-        guard !costs.isEmpty else { return nil }
-        let parts = costs.sorted { $0.key < $1.key }.map { unit, value in
-            Fmt.amount(value.double ?? 0, unit: unit)
+    /// Where the estimate comes from, per source and per currency. Zero
+    /// parts stay off the line ("价格表 $0" reads like a bug, not a total).
+    private var costComposition: String {
+        let cc = totals["estimated_cost_usd"].double
+        var parts: [String] = []
+        if let cc, cc > 0 { parts.append("CC Switch " + Fmt.usd(cc)) }
+        for (unit, value) in data["local_cost"].object.sorted(by: { $0.key < $1.key }) {
+            let amount = value.double ?? 0
+            if amount > 0 { parts.append("价格表 " + Fmt.amount(amount, unit: unit)) }
         }
-        return "价格表估算 " + parts.joined(separator: " + ")
+        let n = Int(totals["unpriced_detail_requests"].double ?? 0)
+        if n > 0 { parts.append("\(n) 次无定价") }
+        return parts.isEmpty ? "API 等价估算" : parts.joined(separator: " · ")
+    }
+
+    /// Models the price table could not cost, so the number is a lower bound.
+    private var unpricedNote: String? {
+        let names = data["unpriced_models"].array.compactMap { $0.string }
+        guard !names.isEmpty else { return nil }
+        return "未计价模型：" + names.prefix(4).joined(separator: "、")
+            + (names.count > 4 ? " 等 \(names.count) 个" : "")
     }
 
     /// Donut of input / output / cache, cache hit rate in the middle.
@@ -166,19 +189,18 @@ private struct PeriodSummary: View {
     private struct AppTotal: Identifiable {
         let id: String
         var tokens: Double
-        var cost: Double
         var requests: Double
-        var priced: Bool
+        var costs: [String: Double]
     }
 
     private var appTotals: [AppTotal] {
         var map: [String: AppTotal] = [:]
         for g in data["groups"].array {
             let app = g["app"].string ?? "其他"
-            var t = map[app] ?? AppTotal(id: app, tokens: 0, cost: 0, requests: 0, priced: false)
+            var t = map[app] ?? AppTotal(id: app, tokens: 0, requests: 0, costs: [:])
             t.tokens += g["total_tokens"].double ?? 0
-            if let c = g["estimated_cost_usd"].double { t.cost += c; t.priced = true }
             t.requests += g["requests"].double ?? 0
+            for (unit, amount) in groupCost(g) { t.costs[unit, default: 0] += amount }
             map[app] = t
         }
         return map.values.sorted { $0.tokens > $1.tokens }
@@ -204,7 +226,7 @@ private struct PeriodSummary: View {
                             OpenAppButton(sourceID: provider, snapshot: snapshot, compact: true)
                             Spacer()
                             Text(Fmt.tokens(a.tokens)).font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                            Text(a.priced ? Fmt.usd(a.cost) : "—").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+                            Text(costLabel(a.costs)).font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
                                 .frame(minWidth: 54, alignment: .trailing)
                         }
                         Meter(fraction: a.tokens / max(top, 1), tint: theme.tint(Catalog.appTint(a.id)), height: 5)
@@ -214,21 +236,63 @@ private struct PeriodSummary: View {
         }
     }
 
+    private struct ModelRow: Identifiable {
+        let id: String
+        var label: String
+        var app: String
+        var tokens: Double
+        var costs: [String: Double]
+    }
+
+    /// Model ranking inside one app: the same model spelled differently
+    /// ("glm-5.3-flash" vs "glm-5-3-flash") is one row.
+    private var modelRows: [ModelRow] {
+        var map: [String: ModelRow] = [:]
+        for g in data["groups"].array {
+            let raw = g["model"].string ?? "未知模型"
+            let app = g["app"].string ?? ""
+            let key = app + "\u{1}" + Catalog.modelKey(raw)
+            var row = map[key] ?? ModelRow(id: key, label: Catalog.modelLabel(raw), app: app, tokens: 0, costs: [:])
+            row.tokens += g["total_tokens"].double ?? 0
+            for (unit, amount) in groupCost(g) { row.costs[unit, default: 0] += amount }
+            map[key] = row
+        }
+        return map.values.sorted { $0.tokens > $1.tokens }
+    }
+
+    /// What one token group costs: CC Switch prices each of its own groups;
+    /// local sources get a per-model amount from the price-table estimate.
+    private func groupCost(_ g: JSON) -> [String: Double] {
+        if let usd = g["estimated_cost_usd"].double, usd > 0 { return ["USD": usd] }
+        let entry = data["cost_index"][g["source"].string ?? ""]
+        guard let unit = entry["unit"].string,
+              let amount = entry["models"][g["model"].string ?? ""].double, amount > 0 else { return [:] }
+        return [unit: amount]
+    }
+
+    private func costLabel(_ costs: [String: Double]) -> String {
+        guard !costs.isEmpty else { return "—" }
+        return costs.sorted { $0.key < $1.key }.map { Fmt.amount($0.value, unit: $0.key) }.joined(separator: " + ")
+    }
+
     @ViewBuilder private var topModels: some View {
-        let groups = data["groups"].array.sorted { ($0["total_tokens"].double ?? 0) > ($1["total_tokens"].double ?? 0) }.prefix(5)
+        let groups = Array(modelRows.prefix(5))
         if !groups.isEmpty {
             Card {
                 Text("模型 Top \(groups.count)").font(.system(size: 12, weight: .medium))
-                ForEach(Array(groups.enumerated()), id: \.offset) { _, g in
+                ForEach(groups) { g in
                     HStack(spacing: 8) {
-                        Text(g["model"].string ?? "未知模型").font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
-                        Text(Catalog.appLabel(g["app"].string ?? ""))
+                        Text(g.label).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
+                        Text(Catalog.appLabel(g.app))
                             .font(.system(size: 9.5, weight: .medium))
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .foregroundStyle(theme.tint(Catalog.appTint(g["app"].string ?? "")))
-                            .background(Capsule().fill(theme.tint(Catalog.appTint(g["app"].string ?? "")).opacity(theme == .minimal ? 0.06 : 0.13)))
+                            .foregroundStyle(theme.tint(Catalog.appTint(g.app)))
+                            .background(Capsule().fill(theme.tint(Catalog.appTint(g.app)).opacity(theme == .minimal ? 0.06 : 0.13)))
                         Spacer()
-                        Text(Fmt.tokens(g["total_tokens"].double ?? 0)).font(.system(size: 11.5, weight: .medium)).monospacedDigit()
+                        if !g.costs.isEmpty {
+                            Text(costLabel(g.costs)).font(.system(size: 10.5)).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Text(Fmt.tokens(g.tokens)).font(.system(size: 11.5, weight: .medium)).monospacedDigit()
                     }
                 }
             }
@@ -260,6 +324,20 @@ private struct PeriodSummary: View {
 /// it never imported — so the sum has no double counting, and the tab works
 /// on machines without CC Switch at all.
 enum LocalUsage {
+    /// Per-app totals from the same merged chain the usage tab renders, so an
+    /// account card's token rows can never disagree with the tab. Keys are the
+    /// group app names; callers map provider ids ("minimax_code" → "mcode").
+    static func appTotals(_ snapshot: Snapshot, period: Period) -> [String: (tokens: Double, requests: Double)] {
+        guard let data = merged(snapshot: snapshot, period: period) else { return [:] }
+        var map: [String: (tokens: Double, requests: Double)] = [:]
+        for g in data["groups"].array {
+            let app = g["app"].string ?? "其他"
+            map[app, default: (0, 0)].tokens += g["total_tokens"].double ?? 0
+            map[app, default: (0, 0)].requests += g["requests"].double ?? 0
+        }
+        return map
+    }
+
     static func merged(snapshot: Snapshot, period: Period) -> JSON? {
         var base: JSON?
         var totals: [String: JSON] = ["requests": .number(0), "fresh_input": .number(0), "output": .number(0),
@@ -275,20 +353,52 @@ enum LocalUsage {
             for key in totals.keys {
                 totals[key] = .number((totals[key]?.double ?? 0) + (t[key].double ?? 0))
             }
-            groups += value["groups"].array
+            // Each group keeps the source it came from: CC Switch prices its own
+            // groups, the local sources are priced per model by the price table.
+            for g in value["groups"].array {
+                var o = g.object
+                o["source"] = .string(source.id)
+                groups.append(.object(o))
+            }
             if source.id != "ccswitch" {
                 included.append(source.baseID)
                 extraRequests += t["requests"].double ?? 0
             }
         }
         guard base != nil || !included.isEmpty else { return nil }
-        // Local price-table estimates, summed per currency (CC Switch's own
-        // USD estimate stays separate in estimated_cost_usd).
+        // CC Switch's own USD estimate is part of this view's total, not a
+        // separate number; local price-table amounts are kept per currency.
+        if let b = base {
+            if let cc = b["totals"]["estimated_cost_usd"].double, cc > 0 {
+                totals["estimated_cost_usd"] = .number(cc)
+            }
+            if let n = b["totals"]["unpriced_detail_requests"].double, n > 0 {
+                totals["unpriced_detail_requests"] = .number(n)
+            }
+        }
         var localCosts: [String: Double] = [:]
+        var costIndex: [String: JSON] = [:]
+        var unmatched: [String: Set<String>] = [:]
         for source in snapshot.sources {
             guard let cost = source.metric("cost")?.value, cost["basis"].string == "local_price_table" else { continue }
-            guard let unit = cost["unit"].string, let amount = cost["periods"][period.rawValue]["amount"].double else { continue }
-            localCosts[unit, default: 0] += amount
+            let window = cost["periods"][period.rawValue]
+            if let unit = cost["unit"].string, let amount = window["amount"].double {
+                localCosts[unit, default: 0] += amount
+            }
+            let models = window["models"].object
+            if !models.isEmpty {
+                costIndex[source.id] = .object(["unit": cost["unit"], "models": .object(models)])
+            }
+            unmatched[source.id] = Set(window["unmatched_models"].array.compactMap { $0.string }
+                .map { $0.replacingOccurrences(of: " (no breakdown)", with: "") }
+                .filter { !$0.isEmpty && $0 != "unknown" })
+        }
+        // Name the unpriced models by how much they actually consumed.
+        var unpriced: [String: Double] = [:]
+        for g in groups {
+            guard let source = g["source"].string, let model = g["model"].string,
+                  unmatched[source]?.contains(model) == true else { continue }
+            unpriced[Catalog.modelLabel(model), default: 0] += g["total_tokens"].double ?? 0
         }
         let fresh = totals["fresh_input"]?.double ?? 0
         let read = totals["cache_read"]?.double ?? 0
@@ -296,9 +406,10 @@ enum LocalUsage {
         totals["cache_hit_rate"] = fresh + read + write > 0 ? .number(read / (fresh + read + write)) : .null
         totals["unpriced_extra_requests"] = .number(extraRequests)
         var out: [String: JSON] = ["totals": .object(totals), "groups": .array(groups),
-                                   "includes_kimi": .bool(included.contains("kimi")),
                                    "includes_local": .array(included.map { .string($0) })]
         out["local_cost"] = .object(localCosts.mapValues { .number($0) })
+        out["cost_index"] = .object(costIndex)
+        out["unpriced_models"] = .array(unpriced.sorted { $0.value > $1.value }.prefix(8).map { .string($0.key) })
         if let periodStatus = base?["period_status"], !periodStatus.isNull {
             out["period_status"] = periodStatus
         }

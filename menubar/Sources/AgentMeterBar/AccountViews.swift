@@ -80,7 +80,13 @@ struct AccountCard: View {
 
     /// Account-side daily tokens (Codex), last 30 recorded days.
     @ViewBuilder private var dailyTokens: some View {
-        let points: [(day: Date, tokens: Double)] = (source.metric("tokens")?.value["daily_buckets"].array ?? [])
+        // The rows above use the merged chain, which carries no per-app daily
+        // series. A ledger whose days CC Switch also imported is partial here
+        // (missing days would read as zero-usage gaps), so only an
+        // overlap-free ledger is charted.
+        let overlap = source.metric("tokens")?.value["ccswitch_overlap"]["excluded_days"].array ?? []
+        let buckets = overlap.isEmpty ? source.metric("tokens")?.value["daily_buckets"].array ?? [] : []
+        let points: [(day: Date, tokens: Double)] = buckets
             .compactMap { b in
                 guard let d = Fmt.parseDay(b["date"].string), let t = b["tokens"].double else { return nil }
                 return (d, t)
@@ -176,7 +182,7 @@ struct AccountCard: View {
     /// Balances and credit buckets, then when credits next refresh.
     private var balanceRows: [InfoRow] {
         var rows: [InfoRow] = []
-        for c in source.metric("credits")?.value.rows ?? [] {
+        for c in source.metric("credits")?.creditRows ?? [] {
             rows.append(contentsOf: creditRows(c))
         }
         if let v = source.metric("credit_refresh_time")?.value, let day = Fmt.parseDay(v["date"].string) {
@@ -213,13 +219,31 @@ struct AccountCard: View {
                                 detail: Fmt.tokens(usage["total_tokens"].double ?? 0) + " · 网页端，不计入本机消耗",
                                 valueTint: brand.tint))
         }
-        // Local session history (Kimi Code): today / 30 days / all.
-        if let periods = source.metric("tokens")?.value["periods"], !periods.isNull {
+        // Local token history: the same merged chain the usage tab sums (CC
+        // Switch imports plus the direct readers, with the overlap between
+        // them already excluded), attributed per app. Reading a provider's own
+        // ledger here would show 0 for every day CC Switch imported.
+        let appKey = source.baseID == "minimax_code" ? "mcode" : source.baseID
+        let today = LocalUsage.appTotals(snapshot, period: .today)[appKey]
+        let month = LocalUsage.appTotals(snapshot, period: .month)[appKey]
+        let all = LocalUsage.appTotals(snapshot, period: .all)[appKey]
+        if today != nil || month != nil || all != nil {
+            rows.append(InfoRow(symbol: "number", title: "本机 Token 今日", value: Fmt.tokens(today?.tokens ?? 0),
+                                detail: "\(Int(today?.requests ?? 0)) 轮"))
+            rows.append(InfoRow(symbol: "calendar.badge.clock", title: "近 30 天 / 全部", value: Fmt.tokens(month?.tokens ?? 0),
+                                detail: "全部 " + Fmt.tokens(all?.tokens ?? 0)))
+        }
+        // Qoder CN local credits ledger (its logs carry credits, never token
+        // counts): account-card statistics only, never local consumption.
+        if let usage = source.metric("credits")?.value["usage"], !usage.isNull, !usage["periods"].isNull {
+            let periods = usage["periods"]
             let today = periods["today"]["totals"], month = periods["30d"]["totals"], all = periods["all"]["totals"]
-            rows.append(InfoRow(symbol: "number", title: "本机 Token 今日", value: Fmt.tokens(today["total_tokens"].double ?? 0),
-                                detail: "\(Int(today["requests"].double ?? 0)) 轮" + (today["cache_hit_rate"].double.map { " · 缓存命中 " + Fmt.percent(($0 * 1000).rounded() / 10) } ?? "")))
-            rows.append(InfoRow(symbol: "calendar.badge.clock", title: "近 30 天 / 全部", value: Fmt.tokens(month["total_tokens"].double ?? 0),
-                                detail: "全部 " + Fmt.tokens(all["total_tokens"].double ?? 0)))
+            rows.append(InfoRow(symbol: "circle.hexagongrid.fill", title: "积分消耗 今日",
+                                value: Fmt.grouped(Fmt.credits(today["credits"])),
+                                detail: "\(Int(today["requests"].double ?? 0)) 次请求 · 计费 " + Fmt.grouped(Fmt.credits(today["billable_credits"]))))
+            rows.append(InfoRow(symbol: "calendar.badge.clock", title: "积分 近 30 天 / 全部",
+                                value: Fmt.grouped(Fmt.credits(month["credits"])),
+                                detail: "全部 " + Fmt.grouped(Fmt.credits(all["credits"])) + " · 本机记录，不计入本机消耗"))
         }
         return rows
     }
