@@ -184,6 +184,7 @@
 | **小米 MiMo API** | MiMo 开放平台控制台 | 内嵌安全网页登录 / Cookie | 账户余额（现金 / 赠送）、Token Plan 本月用量 | 最多 5 账号 |
 | **阶跃星辰 (StepFun)** | 阶跃星辰开放平台 | 内嵌安全网页登录 / Cookie + 开放平台 API Key | 账户余额（充值 / 赠送）、STEP plan 5 小时 / 每周窗口或月度积分池、套餐名与到期日 | 最多 5 账号 |
 | **CC Switch** | 本机多模型路由历史 | 本机 SQLite 数据库只读事务 | 今日/7天/30天/全部 Token、缓存命中率、估算费用 | 本机聚合 |
+| **本机 Agent 会话账本** | Codex CLI、Claude Code、Gemini CLI、Antigravity、OpenCode、MiniMax Code、Kimi Code、ZCode、WorkBuddy、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 会话日志只读直读（未装 CC Switch 也可读） | 今日/7天/30天/全部 Token、按模型分组、缓存命中率、估算费用 | 本机历史 |
 
 ---
 
@@ -201,7 +202,7 @@ flowchart TD
     subgraph Core ["本机只读采集核心 (agent_meter)"]
         SRV["HTTP 本机服务 (127.0.0.1:8769)"]
         COLL["多源调度采集器 (Collector)"]
-        SNAP[".runtime/snapshot.json (Schema v3)"]
+        SNAP[".runtime/snapshot.json (Schema v4)"]
     end
 
     subgraph Sources ["数据源通道 (只读)"]
@@ -229,13 +230,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.6.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.6.0) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.6.0-macos-arm64.dmg`
+1. 从 [Releases · v0.7.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.7.0) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.7.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.6.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.7.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -251,7 +252,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.6.0，发布标签为 v0.6.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.7.0，发布标签为 v0.7.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -289,7 +290,7 @@ python3 -m agent_meter serve --start-kimi-server
 
 | 接口 | 方法 | 说明 |
 | :--- | :---: | :--- |
-| `/v1/health` | `GET` | 检查服务运行状态与 Schema 版本（当前为 3） |
+| `/v1/health` | `GET` | 检查服务运行状态与 Schema 版本（当前为 4） |
 | `/v1/snapshot` | `GET` | 获取包含全部来源与应用覆盖矩阵的完整快照（默认缓存 120 秒） |
 | `/v1/sources` | `GET` | 查询各个数据源的细分指标、提取范围及错误代码 |
 | `/v1/coverage` | `GET` | 查询 24+ 应用在十一类关键指标上的覆盖状况矩阵 |
@@ -323,7 +324,7 @@ with urlopen(req, timeout=30) as resp:
 本项目拥有严格的质量保障体系，包含完整的单元测试、契约测试与真实对账校验器：
 
 ```sh
-# 1. 运行全量单元测试（包含 233 项严格测试，零失败）
+# 1. 运行全量单元测试（包含 277 项严格测试，零失败）
 python3 -m unittest discover -v
 
 # 2. 运行真实环境对账校验（核对 CC Switch 逐条计算与后端 SQL 一致性）
@@ -335,6 +336,11 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.7.0 · 2026-10-19
+- **新增本机来源：DeepSeek Harness（dsh）Token 账本** —— 直读 `~/.dsh/sessions` 下的 zstd 压缩会话日志（CLI 与桌面端共用），兼容新旧两代格式并按 `(turn, step)` 去重；`reasoningTokens` 归入 `outputTokens` 拆分不双算，缓存写入按 0。**全部模型计入**（跨 deepseek-official、小米 MiMo、火山方舟等供应方），作为独立来源只进「本机消耗」页、不挂单一账户卡片；CC Switch 不导入 dsh，两不相加。详见[发布说明](docs/release-v0.7.md)。
+- **内置后端升级至 Python 3.14**：发布包自带标准库 zstd 解码，dsh 来源在任何机器开箱可用，无需用户安装解压工具；接口契约不变。
+- **新增研究文档**《本机候选来源复勘》：对 TRAE CN、CodeBuddy、Cursor、Cherry Studio、豆包、Kimi 家族、Qoder 家族等十多项本机数据做只读勘察并分级。
 
 ### v0.6.0 · 2026-10-15
 - **新增「重置预测」标签页（Tibo 全员重置）**：只读抓取三家第三方追踪站，汇总 ChatGPT / Codex 全员重置的 24 / 48 小时概率区间与加权中位，列出站内承诺、已知时段倒计时、各站口径与已验证的重置记录；通知只按已公告事件触发。schema 升至 4。详见[发布说明](docs/release-v0.6.md)。

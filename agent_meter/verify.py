@@ -668,6 +668,15 @@ def verify_snapshot(snapshot,config,native_reference=None):
                              records,("antigravity",),False)
         except Exception:
             checks.append({"name":"antigravity_local.reload","status":"fail","detail":"reference reload failed"})
+    # DeepSeek Harness (dsh): independent recompute over the zstd session files.
+    dsh=next((s for s in snapshot["sources"] if s["id"]=="deepseek_harness"),None)
+    if dsh is not None and dsh["metrics"]["tokens"]["status"] in {"available","partial"}:
+        from .dsh_tokens import load_dsh_sessions
+        try:
+            records,*_=load_dsh_sessions(config.get("dsh_sessions_dir"),config.get("zstd_binary"))
+            check_cli_tokens(checks,snapshot,config,"dsh_local","deepseek_harness",records,("dsh",),False)
+        except Exception:
+            checks.append({"name":"dsh_local.reload","status":"fail","detail":"reference reload failed"})
     measured=[]
     missing=[]
     for row in snapshot["coverage"]:

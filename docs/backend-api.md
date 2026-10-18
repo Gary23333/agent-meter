@@ -92,6 +92,21 @@ Codex CLI、Claude Code、Gemini CLI 与 MiniMax Code 的会话历史增加直�
 
 Antigravity 的 usage 字段是从本机数据（agy 1.3.2）解码验证的：f2=单次输入、f3=含思考的输出总量、f9=思考部分（f3−f9=f10 恒成立）；两个恒定字段（f1=1319、f6=24）未能识别，按不臆测原则不计入指标并以 `cache_semantics=unverified_constants_excluded` 声明，cache_hit_rate 为 null 而非零。数据库以 `mode=ro&immutable=1` 打开（agy 的 schema 在未检查点的 WAL 中）；活跃会话尚未落盘主库的最新几步不可见，采集为下界。本机数据显示其历史自 2026-06-17 开始，恰为 Gemini CLI 最后一次记录之日，`gemini` 与 `antigravity` 两来源互补不重叠。
 
+## DeepSeek Harness（dsh）本机会话账本
+
+DeepSeek Harness（dsh）把每个会话的账本写成 zstd 压缩的 JSONL：`~/.dsh/sessions/<编码后的项目路径>/<会话id>/session.v3.jsonl.zstd`（v3）或旧格式 `session.jsonl.zstd`。采集器 `agent_meter/dsh_tokens.py` 递归读取 `session*.jsonl.zstd`，只读 usage 字段、绝不读对话文本；解压优先用标准库 `compression.zstd`（Python ≥ 3.14，诊断记 `stdlib_compression_zstd`），否则调用 `zstd -dc`（`zstd_binary` 配置，记 `zstd_cli`），两者都不可用报 `zstd_unavailable`。
+
+两代 schema 的 usage 位置（本机 20,578 条记录验证，2026-10-18）：
+
+| 代 | usage 位置 | 模型位置 |
+| --- | --- | --- |
+| v3 | `type=="assistant/message"` 的 `data.usage`（`inputTokens/outputTokens/cacheReadTokens/reasoningTokens/totalTokens`） | `data.message.source.model` |
+| 旧 | `type=="assistant/chunk"` 的 `data.chunk.usage` 为渐进值（早期可为 0），同 (turn, step) 随后的 `assistant/message` 的 `data.usage` 是最终值（无 totalTokens） | 同文件最近一条 `type=="request/header"` 的 `data.header.config.model`，没有则 unknown |
+
+v3 的 `data.stream` 数组可能内嵌一份相同的 usage 块——只读 `data.usage`，绝不重复计数。字段拆分：`fresh_input=inputTokens`（未命中缓存的新鲜输入）、`output=outputTokens−reasoningTokens`、`reasoning=reasoningTokens`、`cache_read=cacheReadTokens`、`cache_write=0`（无该字段）。去重：同文件内按 `(turn, step)` 保留时间戳最大的一条（`last_usage_per_turn_step`，last-wins 同时覆盖 chunk+message 成对重复与渐进 0 值）；跨文件不去重（每文件独立会话）。`time` 为毫秒 epoch，换算成秒后再分桶。
+
+独立来源 `deepseek_harness`（scope `local_session_history`），分组 app 名 `dsh`。与 CC Switch 无重叠（其 app_type 不含 dsh），仍按统一模式调用 `app_imported_days` 保持诊断一致。错误码：目录不存在或没有任何 `session*.jsonl.zstd` → `dsh_sessions_not_found`（not_connected）；单文件解压/解析失败只跳过并计入 `diagnostics.skipped_session_files`，不炸整个来源。diagnostics 另有 v3/旧格式文件数与 `decompression_route`。配置项 `dsh_sessions_dir`（默认 `~/.dsh/sessions`）与 `zstd_binary`（默认 `shutil.which("zstd")`）。verify 对四个周期做独立重算对账（与 CC Switch 的交叉对账因无重叠日自动跳过）。
+
 ## 本地价格表与 API 等价估算
 
 `GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（含 2026-10-15 增补）：取有官方刊例的一侧币种，另一侧按 7.25 汇率折算并在 GET 的 `converted_patterns` 中列出（双向：仅 USD 刊例的折成 CNY，仅 CNY 刊例的国产模型折成 USD）；用户编辑过的条目移出该列表。匹配规则（2026-10-15 起先归一化再匹配）：两侧都取最后一个 `/` 之后的模型 id、转小写并把 `.` 统一成 `-`（`account:bigmodel-coding-plan/GLM-5.3-Flash`、`glm-5-3-flash`、`GLM-5.3.Flash` 都命中 `glm-5.3-flash`），归一化后精确命中优先、否则取最长子串 pattern；快照里的 `model` 字段保留原始拼写。

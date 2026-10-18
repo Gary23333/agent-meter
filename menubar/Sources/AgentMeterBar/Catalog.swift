@@ -44,6 +44,7 @@ enum Catalog {
         case "opencode": return Brand(name: "OpenCode", symbol: "terminal.fill", tint: Color(red: 0.45, green: 0.40, blue: 0.90))
         case "gemini": return Brand(name: "Gemini CLI", symbol: "diamond.fill", tint: Color(red: 0.26, green: 0.52, blue: 0.96))
         case "antigravity": return Brand(name: "Antigravity", symbol: "paperplane.fill", tint: Color(red: 0.30, green: 0.47, blue: 0.95))
+        case "deepseek_harness": return Brand(name: "DeepSeek Harness", symbol: "wrench.and.screwdriver.fill", tint: Color(red: 0.36, green: 0.52, blue: 0.98))
         default:
             if id.hasPrefix("codexbar:") {
                 let inner = brand(String(id.dropFirst("codexbar:".count)))
@@ -58,7 +59,7 @@ enum Catalog {
         return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
          "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
          "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo", "stepfun": "阶跃",
-         "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity", "reset_forecast": "预测"][id]
+         "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity", "deepseek_harness": "DS Harness", "reset_forecast": "预测"][id]
             ?? brand(id).name
     }
 
@@ -181,6 +182,8 @@ enum Catalog {
             "mcode_db_read_failed": "MiniMax Code 数据库读取失败",
             "unsupported_mcode_schema": "MiniMax Code 数据库结构不兼容",
             "agy_conversations_not_found": "未找到 Antigravity CLI 会话记录",
+            "dsh_sessions_not_found": "未找到 DeepSeek Harness 会话记录（本机未使用过 dsh）",
+            "zstd_unavailable": "缺少 zstd 解压能力（需要 Python 3.14+ 或安装 zstd 命令行工具）",
             "design_opencode_db_not_found": "未找到 MiniMax Design 本机 token 账本（本机未安装或未运行过 Design）",
             "design_opencode_db_read_failed": "MiniMax Design token 账本读取失败",
             "unsupported_design_opencode_schema": "MiniMax Design token 账本结构不兼容",
@@ -254,7 +257,7 @@ enum Catalog {
     static func appLabel(_ app: String) -> String {
         ["claude": "Claude", "codex": "Codex", "kimi": "Kimi Code", "gemini": "Gemini", "opencode": "OpenCode",
          "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi", "zcode": "ZCode", "workbuddy": "WorkBuddy",
-         "antigravity": "Antigravity"][app] ?? app
+         "antigravity": "Antigravity", "dsh": "DeepSeek Harness"][app] ?? app
     }
 
     /// Model id for display: the readers prefix the vendor's id with their own
@@ -283,6 +286,7 @@ enum Catalog {
         case "antigravity": return brand("antigravity").tint
         case "mcode": return brand("minimax_code").tint
         case "kimi": return brand("kimi").tint
+        case "dsh": return brand("deepseek_harness").tint
         default: return .purple
         }
     }

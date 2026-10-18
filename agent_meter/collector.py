@@ -25,6 +25,7 @@ from .qoder_tokens import collect_qoder_credits, merge_credits_metric
 from .web_sources import as_account_lists, collect_qoder_web, collect_trae, collect_workbuddy
 from .minimax import collect_minimax
 from .deepseek import collect_deepseek
+from .dsh_tokens import collect_dsh_sessions
 from .mimo import collect_mimo
 from .stepfun import collect_stepfun
 from .volcengine import collect_volcengine
@@ -50,6 +51,9 @@ def default_config():
             "claude_projects_dir":str(home/".claude/projects"),"gemini_dir":str(home/".gemini"),
             "mcode_db":str(home/".minimax/v2/sqlite/runtime-state.sqlite"),
             "agy_conversations_dir":str(home/".gemini/antigravity-cli/conversations"),
+            # DeepSeek Harness (dsh) session ledgers are zstd-compressed; the
+            # CLI path is only needed when the stdlib route is unavailable.
+            "dsh_sessions_dir":str(home/".dsh/sessions"),"zstd_binary":shutil.which("zstd"),
             # The design agent's embedded opencode runtime keeps its own
             # data-home; its ledger overlaps the standalone db only through
             # copied sessions, which the collector excludes by session id.
@@ -91,6 +95,7 @@ def safe_collect(source_id,scope,now,fn):
                       "qoder_sessions_not_found",
                       "codex_sessions_not_found","claude_projects_not_found","gemini_chats_not_found","mcode_db_not_found",
                       "agy_conversations_not_found","design_opencode_db_not_found",
+                      "dsh_sessions_not_found","zstd_unavailable",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
                       "claude_keychain_unavailable","web_session_missing","disabled_by_user","disabled_in_config"}
         return failed_source(source_id,scope,now,e.code,"not_connected" if e.code in disconnected else "error")
@@ -197,6 +202,7 @@ def collect(config=None,now=None):
       "opencode":("local_session_history",lambda:collect_opencode_tokens(config["opencode_db"],config["ccswitch_db"],now)),
       "gemini":("local_session_history",lambda:collect_gemini_sessions(config["gemini_dir"],config["ccswitch_db"],now)),
       "antigravity":("local_session_history",lambda:collect_antigravity_sessions(config["agy_conversations_dir"],config["ccswitch_db"],now)),
+      "deepseek_harness":("local_session_history",lambda:collect_dsh_sessions(config["dsh_sessions_dir"],config["ccswitch_db"],now,zstd_binary=config["zstd_binary"])),
       # Global-reset forecasts: third-party wording, never an account clock.
       "reset_forecast":("external_forecast",lambda:collect_reset_forecast(
           now=now,cache_path=str(runtime/CACHE_NAME),
