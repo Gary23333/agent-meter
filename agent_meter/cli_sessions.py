@@ -311,12 +311,24 @@ def _mcode_turn_models(conn):
     evidence is used — the session-level effective model is skipped because it
     reflects the current selection, not what a past row actually ran.
     """
+    models = {}
+    try:
+        # JSON1 在 SQLite 里解析，避免把整条消息（含工具输出）搬进 Python。
+        rows = conn.execute("SELECT session_id, turn_id,"
+                            " json_extract(data_json,'$.context_usage_telemetry.model') AS model"
+                            " FROM local_runtime_message_rows WHERE turn_id IS NOT NULL").fetchall()
+        for row in rows:
+            model = row["model"]
+            if isinstance(model, str) and 0 < len(model) < 120:
+                models[(row["session_id"], row["turn_id"])] = model
+        return models
+    except sqlite3.OperationalError:
+        pass   # 该 SQLite 未编译 JSON1，退回 Python 解析
     try:
         rows = conn.execute("SELECT session_id, turn_id, data_json FROM local_runtime_message_rows"
-                            " WHERE turn_id IS NOT NULL").fetchall()
+                            " WHERE turn_id IS NOT NULL AND data_json LIKE '%context_usage_telemetry%'").fetchall()
     except sqlite3.OperationalError:
         return {}
-    models = {}
     for row in rows:
         raw = row["data_json"]
         if not isinstance(raw, str) or "context_usage_telemetry" not in raw:
@@ -340,38 +352,66 @@ def mcode_request_models(path):
     enrichment, never an error.
     """
     try:
-        with _readonly_sqlite(path, "mcode_db_not_found", "mcode_db_read_failed") as conn:
-            columns = {r[1] for r in conn.execute("PRAGMA table_info(local_runtime_token_usage)")}
-            if not MCODE_COLUMNS <= columns or "id" not in columns:
-                return {}
-            turn_models = _mcode_turn_models(conn)
-            resolved = {}
-            for row in conn.execute("SELECT id, session_id, turn_id, model FROM local_runtime_token_usage"):
-                model = _model(row["model"])
-                if model == "unknown":
-                    model = turn_models.get((row["session_id"], row["turn_id"]), "unknown")
-                if model != "unknown":
-                    resolved[f"mcode:{row['session_id']}:{row['id']}"] = model
-            return resolved
+        turn_models, rows = _mcode_snapshot(path)
     except SourceError:
         return {}
+    resolved = {}
+    for row_id, session_id, turn_id, model, *_ in rows:
+        if row_id is None:
+            continue
+        name = _model(model)
+        if name == "unknown":
+            name = turn_models.get((session_id, turn_id), "unknown")
+        if name != "unknown":
+            resolved[f"mcode:{session_id}:{row_id}"] = name
+    return resolved
 
 
-def load_mcode(path):
-    with _readonly_sqlite(path, "mcode_db_not_found", "mcode_db_read_failed") as conn:
+_mcode_cache = {}   # path -> ((mtime_ns, size), (turn_models, rows))
+
+
+def _mcode_snapshot(path):
+    """Parse the runtime db once per file version.
+
+    Both readers (the direct token metric and CC Switch's request-id fill) need
+    the same 3k message rows; caching by mtime+size avoids decoding the JSON
+    payloads twice in one collection cycle.
+    """
+    p = Path(path).expanduser()
+    try:
+        st = p.stat()
+    except OSError:
+        raise SourceError("mcode_db_not_found") from None
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _mcode_cache.get(str(p))
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    with _readonly_sqlite(p, "mcode_db_not_found", "mcode_db_read_failed") as conn:
         columns = {r[1] for r in conn.execute("PRAGMA table_info(local_runtime_token_usage)")}
         if not MCODE_COLUMNS <= columns:
             raise SourceError("unsupported_mcode_schema")
         turn_models = _mcode_turn_models(conn)
-        records = []
-        for row in conn.execute("SELECT session_id, turn_id, ts, model, input_tokens, output_tokens,"
-                                " reasoning_tokens, cache_read_tokens, cache_write_tokens"
-                                " FROM local_runtime_token_usage"):
-            model = _model(row["model"])
-            if model == "unknown":
-                model = turn_models.get((row["session_id"], row["turn_id"]), "unknown")
-            records.append((row["ts"] / 1000, model, row["input_tokens"], row["output_tokens"],
-                            row["reasoning_tokens"], row["cache_read_tokens"], row["cache_write_tokens"]))
+        columns_sql = "id, session_id, turn_id, model, ts, input_tokens, output_tokens," \
+                      " reasoning_tokens, cache_read_tokens, cache_write_tokens" if "id" in columns else \
+                      "NULL, session_id, turn_id, model, ts, input_tokens, output_tokens," \
+                      " reasoning_tokens, cache_read_tokens, cache_write_tokens"
+        rows = [tuple(row) for row in conn.execute(
+            "SELECT " + columns_sql + " FROM local_runtime_token_usage")]
+    parsed = (turn_models, rows)
+    _mcode_cache[str(p)] = (stamp, parsed)
+    if len(_mcode_cache) > 4:
+        _mcode_cache.pop(next(iter(_mcode_cache)))
+    return parsed
+
+
+def load_mcode(path):
+    turn_models, rows = _mcode_snapshot(path)
+    records = []
+    for _, session_id, turn_id, model, ts, fresh, output, reasoning, cache_read, cache_write in rows:
+        name = _model(model)
+        if name == "unknown":
+            name = turn_models.get((session_id, turn_id), "unknown")
+        records.append((ts / 1000, name, fresh, output, reasoning, cache_read, cache_write))
     if any(t < 0 for t, *_ in records) or any(v < 0 for r in records for v in r[2:]):
         raise SourceError("invalid_mcode_token_counts")
     return records

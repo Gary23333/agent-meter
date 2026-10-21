@@ -17,12 +17,12 @@ enum PreviewRenderer {
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
         let snap = Snapshot(json)
-        // 4 张横版分享卡：演示快照、7 天，4 套风格各一张。
+        // 4 张竖版分享卡：演示快照、7 天，4 套风格各一张。
         if let report = ReportData.build(snapshot: snap, period: .week, now: Date()) {
             for theme in PanelTheme.allCases {
                 if let png = ShareCardRenderer.pngData(data: report, theme: theme, scale: 2) {
                     try? png.write(to: URL(fileURLWithPath: outDir)
-                        .appendingPathComponent("share-\(theme.rawValue)-landscape.png"))
+                        .appendingPathComponent("share-\(theme.rawValue)-portrait.png"))
                 }
             }
         }
@@ -64,6 +64,29 @@ enum PreviewRenderer {
             }
         }
 
+        // Report window: renders the share-card preview so a layout-time
+        // regression (the previous host-view measurement) fails this run.
+        func renderReport(_ done: @escaping () -> Void) {
+            let host = NSHostingView(rootView: ReportView().environment(store))
+            let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 900, height: 800),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: .aqua)
+            window.contentView = host
+            host.frame = NSRect(x: 0, y: 0, width: 900, height: 800)
+            window.setContentSize(NSSize(width: 900, height: 800))
+            window.orderFrontRegardless()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                host.layoutSubtreeIfNeeded()
+                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: outDir).appendingPathComponent("report-light.png"))
+                }
+                window.orderOut(nil)
+                done()
+            }
+        }
+
         // Every theme; aurora keeps the original file names, others get a prefix.
         var jobs: [(PanelTheme, Tab, NSAppearance.Name)] = []
         for theme in PanelTheme.allCases {
@@ -96,6 +119,6 @@ enum PreviewRenderer {
                 next()
             }
         }
-        next()
+        renderReport { next() }
     }
 }

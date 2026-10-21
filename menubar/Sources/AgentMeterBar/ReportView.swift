@@ -12,6 +12,8 @@ struct ReportView: View {
 
     @State private var style: PanelTheme = .aurora
     @State private var toast: String?
+    /// 分享卡自然高度（未缩放），由预览自身量出；不建宿主视图，避免布局期重入。
+    @State private var cardHeight: CGFloat = 0
 
     private var period: Period { Period(rawValue: periodRaw) ?? .today }
 
@@ -29,6 +31,8 @@ struct ReportView: View {
     }()
 
     var body: some View {
+        // 一次 body 只聚合一次：明细与预览共用同一份 ReportData。
+        let report = data
         VStack(spacing: 12) {
             header
             if store.snapshot == nil {
@@ -40,11 +44,11 @@ struct ReportView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack(alignment: .top, spacing: 16) {
-                    previewPane
-                    detailPane
+                    previewPane(report)
+                    detailPane(report)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                actionBar
+                actionBar(report)
             }
         }
         .padding(16)
@@ -75,7 +79,7 @@ struct ReportView: View {
                     .frame(width: 300)
                 }
                 Spacer()
-                Text("横版 · PNG 2× 输出")
+                Text("竖版 · PNG 2× 输出")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
@@ -90,25 +94,29 @@ struct ReportView: View {
 
     // MARK: 预览
 
-    private var previewPane: some View {
+    private func previewPane(_ data: ReportData?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("分享卡预览").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer()
-                if let data {
-                    let size = ShareCardRenderer.cardSize(data: data, theme: style)
-                    Text("横版 · \(Int(size.width * 2))×\(Int(size.height * 2))")
+                if data != nil {
+                    Text(cardHeight > 0 ? "竖版 · \(Int(ShareCard.width * 2))×\(Int(cardHeight * 2))"
+                                        : "竖版 · PNG 2×")
                         .font(.system(size: 10, design: theme.numberDesign)).foregroundStyle(.tertiary)
                 }
             }
             GeometryReader { geo in
                 if let data {
-                    let size = ShareCardRenderer.cardSize(data: data, theme: style)
-                    let scale = max(0.1, min((geo.size.width - 28) / size.width,
-                                             (geo.size.height - 28) / size.height))
+                    let availableW = max(1, geo.size.width - 28)
+                    let availableH = max(1, geo.size.height - 28)
+                    let height = cardHeight > 0 ? cardHeight : ShareCard.width * 11 / 10
+                    let scale = max(0.1, min(availableW / ShareCard.width, availableH / height))
                     ShareCard(data: data, theme: style)
-                        .scaleEffect(scale)
-                        .frame(width: size.width * scale, height: size.height * scale)
+                        .background(GeometryReader { inner in
+                            Color.clear.preference(key: CardHeightKey.self, value: inner.size.height)
+                        })
+                        .scaleEffect(scale, anchor: .topLeading)
+                        .frame(width: ShareCard.width * scale, height: height * scale, alignment: .topLeading)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.8))
@@ -123,11 +131,14 @@ struct ReportView: View {
                 }
             }
         }
+        .onPreferenceChange(CardHeightKey.self) { height in
+            if height > 0, abs(height - cardHeight) > 0.5 { cardHeight = height }
+        }
     }
 
     // MARK: 明细
 
-    private var detailPane: some View {
+    private func detailPane(_ data: ReportData?) -> some View {
         ScrollView {
             VStack(spacing: 10) {
                 if let data {
@@ -250,7 +261,7 @@ struct ReportView: View {
 
     // MARK: 底部操作
 
-    private var actionBar: some View {
+    private func actionBar(_ data: ReportData?) -> some View {
         HStack(spacing: 10) {
             if let toast {
                 Label(toast, systemImage: "checkmark.circle.fill")
@@ -304,5 +315,13 @@ struct ReportView: View {
             try? await Task.sleep(for: .seconds(3))
             if toast == message { toast = nil }
         }
+    }
+}
+
+/// 分享卡未缩放高度：预览按它算缩放比，避免在 body 里量宿主视图。
+private struct CardHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

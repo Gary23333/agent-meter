@@ -6,23 +6,23 @@ struct ShareCard: View {
     let data: ReportData
     let theme: PanelTheme
 
-    /// 横版固定宽度，高度随内容自适应。
-    static let width: CGFloat = 800
+    /// 竖版固定宽度，高度随内容自适应。
+    static let width: CGFloat = 540
 
-    private var outerPad: CGFloat { 18 }
-    private var heroSize: CGFloat { 54 }
-    private var costSize: CGFloat { 22 }
-    private var sectionSize: CGFloat { 10 }
-    private var rowSize: CGFloat { 13 }
+    private var outerPad: CGFloat { 26 }
+    private var heroSize: CGFloat { 58 }
+    private var costSize: CGFloat { 24 }
+    private var sectionSize: CGFloat { 10.5 }
+    private var rowSize: CGFloat { 12 }
     private var smallSize: CGFloat { 9.5 }
-    private var radius: CGFloat { 12 }
+    private var radius: CGFloat { 16 }
     /// 霓虹主题的等宽字体行高更高，纵向间距收紧一点，保证不压到卡片边缘。
+    private var sectionGap: CGFloat { theme == .neon ? 10 : 13 }
     private var rowGap: CGFloat { theme == .neon ? 5 : 7 }
     private var modelGap: CGFloat { theme == .neon ? 4 : 6 }
-    private var landscapeDividerPad: CGFloat { theme == .neon ? 6 : 10 }
 
     var body: some View {
-        landscapeBody
+        portraitBody
         .frame(width: Self.width, alignment: .topLeading)
         .background(cardBackground)
         .environment(\.colorScheme, theme == .neon ? .dark : .light)
@@ -36,43 +36,16 @@ struct ShareCard: View {
 
     // MARK: 版式
 
-    private var landscapeBody: some View {
+    private var portraitBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 10) {
-                    brandRow
-                    surface(pad: 16) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            heroFigures
-                            Spacer(minLength: 14)
-                            metricStrip
-                            Spacer(minLength: 16)
-                            divider
-                            compositionBlock.padding(.top, 12)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    }
-                    .frame(maxHeight: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                surface(pad: 16) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        appList
-                        Spacer(minLength: 10)
-                        divider.padding(.vertical, landscapeDividerPad)
-                        modelList
-                        Spacer(minLength: 10)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Spacer().frame(height: 8)
+            brandRow.padding(.bottom, 18)
+            surface(pad: 18) { heroBlock }
+            Spacer().frame(height: 14)
+            surface(pad: 18) { detailBlock }
+            Spacer(minLength: 10)
             footerRow
         }
-        .padding(.horizontal, 26)
+        .padding(.horizontal, 28)
         .padding(.vertical, outerPad)
     }
 
@@ -80,12 +53,12 @@ struct ShareCard: View {
 
     private var brandRow: some View {
         HStack(spacing: 10) {
-            mark(size: 26)
+            mark(size: 30)
             HStack(spacing: 4) {
                 Text("AgentMeter")
-                    .font(.system(size: 12, weight: theme == .minimal ? .medium : .bold, design: theme.numberDesign))
+                    .font(.system(size: 13, weight: theme == .minimal ? .medium : .bold, design: theme.numberDesign))
                 Text("· 用量报告")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 12, weight: .regular))
             }
             .foregroundStyle(ink)
             Spacer(minLength: 8)
@@ -104,13 +77,20 @@ struct ShareCard: View {
             Spacer(minLength: 6)
             Text("费用为 API 等价估算")
         }
-        .font(.system(size: 8.5))
+        .font(.system(size: 9))
         .foregroundStyle(faint)
         .lineLimit(1)
         .minimumScaleFactor(0.7)
     }
 
     // MARK: 主数字
+
+    private var heroBlock: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            heroFigures
+            metricStrip
+        }
+    }
 
     private var heroFigures: some View {
         VStack(alignment: .leading, spacing: 11) {
@@ -194,7 +174,7 @@ struct ShareCard: View {
                 .foregroundStyle(muted)
                 .lineLimit(1)
             Text(value)
-                .font(.system(size: 12.5, weight: theme == .minimal ? .regular : .semibold, design: theme.numberDesign))
+                .font(.system(size: 14, weight: theme == .minimal ? .regular : .semibold, design: theme.numberDesign))
                 .monospacedDigit()
                 .foregroundStyle(ink)
                 .lineLimit(1)
@@ -210,14 +190,26 @@ struct ShareCard: View {
 
     // MARK: 明细
 
+    private var detailBlock: some View {
+        VStack(alignment: .leading, spacing: sectionGap) {
+            compositionBlock
+            divider
+            appList
+            divider
+            modelList
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var compositionBlock: some View {
         VStack(alignment: .leading, spacing: 7) {
             sectionTitle("构成", trailing: data.totalTokens > 0 ? "共 \(Fmt.tokens(data.totalTokens))" : nil)
             if data.totalTokens > 0 {
-                compositionBar.frame(height: 9)
-                VStack(alignment: .leading, spacing: 4) {
+                compositionBar.frame(height: 10)
+                HStack(spacing: 10) {
                     ForEach(parts) { part in
-                        legendItem(part, showsTokens: true)
+                        legendItem(part, showsTokens: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             } else {
@@ -272,7 +264,7 @@ struct ShareCard: View {
                             .monospacedDigit()
                             .foregroundStyle(ink)
                     }
-                    fractionBar(app.fraction, tint: theme.tint(app.tint), height: 3.5)
+                    fractionBar(app.fraction, tint: theme.tint(app.tint), height: 4)
                 }
             }
         }
@@ -678,29 +670,31 @@ enum ShareCardRenderer {
         let pixels: CGSize
     }
 
-    /// 卡片实际逻辑尺寸：宽度固定，高度用宿主视图量出内容的理想高度。
-    static func cardSize(data: ReportData, theme: PanelTheme) -> CGSize {
+    /// 卡片实际逻辑尺寸：只在导出时用（菜单动作，不在 SwiftUI 更新周期内），
+    /// 供 1x 兜底路线定框；正常路径由 ImageRenderer 自己量高。
+    private static func hostingSize(data: ReportData, theme: PanelTheme) -> CGSize {
         let host = NSHostingView(rootView: ShareCard(data: data, theme: theme))
         host.layoutSubtreeIfNeeded()
         return host.fittingSize
     }
 
     static func render(data: ReportData, theme: PanelTheme, scale: CGFloat = 2) -> Rendered? {
-        let size = cardSize(data: data, theme: theme)
-        guard size.width > 0, size.height > 0 else { return nil }
         let card = ShareCard(data: data, theme: theme)
         let renderer = ImageRenderer(content: card)
         renderer.scale = scale
         renderer.isOpaque = true
-        renderer.proposedSize = ProposedViewSize(size)
+        // 宽度固定、高度交给卡片自身理想高度：proposedSize 的高度留 nil。
+        renderer.proposedSize = ProposedViewSize(width: ShareCard.width, height: nil)
         if let cg = renderer.cgImage {
             let rep = NSBitmapImageRep(cgImage: cg)
-            rep.size = size
+            rep.size = CGSize(width: CGFloat(cg.width) / scale, height: CGFloat(cg.height) / scale)
             if let png = rep.representation(using: .png, properties: [:]) {
-                return Rendered(png: png, pixels: CGSize(width: size.width * scale, height: size.height * scale))
+                return Rendered(png: png, pixels: CGSize(width: cg.width, height: cg.height))
             }
         }
         // 1x 兜底：与 PreviewRenderer 使用的宿主视图路线一致。
+        let size = hostingSize(data: data, theme: theme)
+        guard size.width > 0, size.height > 0 else { return nil }
         let host = NSHostingView(rootView: card)
         host.frame = NSRect(origin: .zero, size: size)
         host.layoutSubtreeIfNeeded()
