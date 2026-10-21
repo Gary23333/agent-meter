@@ -71,12 +71,11 @@ struct ReportView: View {
             }
             HStack(alignment: .bottom, spacing: 14) {
                 control("分享卡风格") {
-                    Picker("分享卡风格", selection: $style) {
-                        ForEach(PanelTheme.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 300)
+                    // 用应用自己的分段控件（纯 SwiftUI 手势），避免窗口里
+                    // AppKit 桥接的 SegmentedControl 点击失效。
+                    PillTabs(items: PanelTheme.allCases, title: { $0.label },
+                             selection: $style, small: true)
+                        .frame(width: 300)
                 }
                 Spacer()
                 Text("竖版 · PNG 2× 输出")

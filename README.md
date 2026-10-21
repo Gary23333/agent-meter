@@ -240,8 +240,8 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.8.2](https://github.com/Gary23333/agent-meter/releases/tag/v0.8.2) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.8.2-macos-arm64.dmg`
+1. 从 [Releases · v0.8.3](https://github.com/Gary23333/agent-meter/releases/tag/v0.8.3) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.8.3-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
@@ -262,7 +262,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.8.2，发布标签为 v0.8.2；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.8.3，发布标签为 v0.8.3；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -346,6 +346,10 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.8.3 · 2026-10-21
+- **修复分享卡风格点不动**：报告窗口改回 `NSHostingController` 挂载，系统桥接控件的点击恢复；风格切换换成纯 SwiftUI 的 `PillTabs`。详见[发布说明](docs/release-v0.8.3.md)。
+- **打开即可切换风格**：窗口打开时立即抢焦点，并在后续两轮补激活，不再需要等约 2 秒；实测点击到预览刷新约 186–189ms。
 
 ### v0.8.2 · 2026-10-21
 - **修复点击分享崩溃**：报告窗口此前在 `body` 里创建 `NSHostingView` 量高度，触发 SwiftUI/AttributeGraph 布局期断言；改为纯 SwiftUI 测量与 `ImageRenderer` 自适应高度。详见[发布说明](docs/release-v0.8.2.md)。
