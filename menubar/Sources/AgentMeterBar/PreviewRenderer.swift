@@ -17,6 +17,16 @@ enum PreviewRenderer {
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
         let snap = Snapshot(json)
+        // 4 张横版分享卡：演示快照、7 天，4 套风格各一张。
+        if let report = ReportData.build(snapshot: snap, period: .week, now: Date()) {
+            for theme in PanelTheme.allCases {
+                if let png = ShareCardRenderer.pngData(data: report, theme: theme, scale: 2) {
+                    try? png.write(to: URL(fileURLWithPath: outDir)
+                        .appendingPathComponent("share-\(theme.rawValue)-landscape.png"))
+                }
+            }
+        }
+
         // Dry-run alert rules now and at later times so expiry rules are exercised.
         var report = ""
         for days in [0.0, 10, 11.5, 13.2] {

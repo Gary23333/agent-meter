@@ -24,8 +24,13 @@ struct UsageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PillTabs(items: Period.allCases, title: { $0.label },
-                     selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
+            HStack(spacing: 6) {
+                PillTabs(items: Period.allCases, title: { $0.label },
+                         selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
+                IconButton(symbol: "square.and.arrow.up", help: "生成用量报告与分享图") {
+                    ReportWindow.show()
+                }
+            }
 
             if let data = LocalUsage.merged(snapshot: snapshot, period: period) {
                 PeriodSummary(data: data, history: snapshot.history, snapshot: snapshot, now: now)

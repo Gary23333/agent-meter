@@ -132,7 +132,6 @@
 
 <p align="center">
   <img src="docs/images/forecast-themes-light.png" alt="Tibo 重置器四套主题对比（浅色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
-  <img src="docs/images/forecast-themes-dark.png" alt="Tibo 重置器四套主题对比（深色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
 </p>
 <p align="center"><sub>从左到右：极简 · 原生 · 极光 · 霓虹（演示数据，非真实预测）</sub></p>
 
@@ -145,6 +144,17 @@
 </p>
 
 </details>
+
+### 8. 🖼️ 用量报告与一键分享图（Usage Report）
+- **本机消耗页一键打开报告窗口**：时间段筛选与本机消耗页共用，今日 / 7 天 / 30 天 / 全部即时联动；总览、Token 构成、按应用 / 模型 Top 排行口径逐位一致，只含本机消耗、不含账户余额。
+- **四套风格横版分享卡**：极简、原生、极光、霓虹，宽度固定、高度随内容自适应；一键复制 2x PNG 到剪贴板，或直接保存为图片，适合分享到微信 / 飞书 / 小红书。
+- **口径标注**：页脚标明「数据来自本机账本 · 只读聚合 · 不含对话内容」「费用为 API 等价估算」，不含凭据与对话正文。
+
+<p align="center">
+  <img src="docs/images/share-aurora-landscape.png" alt="用量报告分享卡：极光风格横版，展示 Token 总量、估算费用、Top 应用与模型，使用演示数据" width="49%" />
+  <img src="docs/images/share-neon-landscape.png" alt="用量报告分享卡：霓虹风格横版，使用演示数据" width="49%" />
+</p>
+<p align="center"><sub>左：极光 · 右：霓虹（演示数据，非真实消耗）</sub></p>
 
 ---
 
@@ -230,8 +240,8 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.7.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.7.0) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.7.0-macos-arm64.dmg`
+1. 从 [Releases · v0.8.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.8.0) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.8.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
@@ -252,7 +262,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.7.0，发布标签为 v0.7.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.8.0，发布标签为 v0.8.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -336,6 +346,9 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.8.0 · 2026-10-21
+- **新增「用量报告与分享」**：本机消耗页时间段筛选旁新增分享按钮，打开独立报告窗口；周期与本机消耗页联动，明细口径逐位一致，只含本机消耗、不含账户余额；四套风格横版分享卡高度自适应，一键复制 2x PNG 到剪贴板或保存为图片。详见[发布说明](docs/release-v0.8.md)。
 
 ### v0.7.0 · 2026-10-19
 - **新增本机来源：DeepSeek Harness（dsh）Token 账本** —— 直读 `~/.dsh/sessions` 下的 zstd 压缩会话日志（CLI 与桌面端共用），兼容新旧两代格式并按 `(turn, step)` 去重；`reasoningTokens` 归入 `outputTokens` 拆分不双算，缓存写入按 0。**全部模型计入**（跨 deepseek-official、小米 MiMo、火山方舟等供应方），作为独立来源只进「本机消耗」页、不挂单一账户卡片；CC Switch 不导入 dsh，两不相加。详见[发布说明](docs/release-v0.7.md)。
