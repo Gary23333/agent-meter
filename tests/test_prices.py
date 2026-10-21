@@ -97,6 +97,13 @@ class PriceTableTests(unittest.TestCase):
             self.assertEqual(table.match("claude-opus-4-8"), "claude-opus-4-8")
             self.assertEqual(table.match("claude-fable-5-1"), "claude-fable-5-1")
             self.assertEqual(table.match("MiniMax-M2.7"), "minimax-m2.7")
+            # M3.1 Flash has official list prices in both currencies, and the
+            # longer pattern wins over the older minimax-m3 substring.
+            self.assertEqual(table.match("MiniMax-M3.1-Flash"), "minimax-m3.1-flash")
+            self.assertEqual(table.match("minimax/MiniMax-M3.1-Flash-Preview"), "minimax-m3.1-flash")
+            self.assertEqual(cny.match("MiniMax-M3.1-Flash"), "minimax-m3.1-flash")
+            self.assertNotIn("minimax-m3.1-flash", cny.converted)
+            self.assertNotIn("minimax-m3.1-flash", table.converted)
             self.assertEqual(cny.match("claude-fable-5-1"), "claude-fable-5-1")
 
     def test_collector_attaches_estimates(self):

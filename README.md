@@ -240,8 +240,8 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.8.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.8.0) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.8.0-macos-arm64.dmg`
+1. 从 [Releases · v0.8.1](https://github.com/Gary23333/agent-meter/releases/tag/v0.8.1) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.8.1-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
@@ -262,7 +262,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.8.0，发布标签为 v0.8.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.8.1，发布标签为 v0.8.1；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -346,6 +346,10 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.8.1 · 2026-10-21
+- **修复 MiniMax Code 模型识别与计费**：MiniMax Code 用量表的 `model` 为空、CC Switch 又记为 `unknown`，现按会话消息的逐轮 telemetry 还原每次请求的模型，并通过 `mcode:<session>:<row id>` 精确回填，直读与本通道两处口径一致。详见[发布说明](docs/release-v0.8.1.md)。
+- **新增 MiniMax M3.1 Flash 定价**：USD 0.15 / 0.015 / 0.60，CNY 1 / 0.1 / 4（每百万 token），`-Preview` 同档；CC Switch 已给出的非零费用保持不变。
 
 ### v0.8.0 · 2026-10-21
 - **新增「用量报告与分享」**：本机消耗页时间段筛选旁新增分享按钮，打开独立报告窗口；周期与本机消耗页联动，明细口径逐位一致，只含本机消耗、不含账户余额；四套风格横版分享卡高度自适应，一键复制 2x PNG 到剪贴板或保存为图片。详见[发布说明](docs/release-v0.8.md)。

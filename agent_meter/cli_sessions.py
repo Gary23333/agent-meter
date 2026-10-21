@@ -303,15 +303,75 @@ MCODE_COLUMNS = {"ts", "model", "input_tokens", "output_tokens", "reasoning_toke
                  "cache_read_tokens", "cache_write_tokens"}
 
 
+def _mcode_turn_models(conn):
+    """Model per (session, turn) for the MiniMax Code desktop runtime.
+
+    Its usage table leaves `model` NULL; each assistant message row records the
+    model that answered in `context_usage_telemetry.model`. Only that per-turn
+    evidence is used — the session-level effective model is skipped because it
+    reflects the current selection, not what a past row actually ran.
+    """
+    try:
+        rows = conn.execute("SELECT session_id, turn_id, data_json FROM local_runtime_message_rows"
+                            " WHERE turn_id IS NOT NULL").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    models = {}
+    for row in rows:
+        raw = row["data_json"]
+        if not isinstance(raw, str) or "context_usage_telemetry" not in raw:
+            continue
+        try:
+            telemetry = json.loads(raw).get("context_usage_telemetry")
+        except (AttributeError, ValueError):
+            continue
+        model = telemetry.get("model") if isinstance(telemetry, dict) else None
+        if isinstance(model, str) and 0 < len(model) < 120:
+            models[(row["session_id"], row["turn_id"])] = model
+    return models
+
+
+def mcode_request_models(path):
+    """request_id -> model for CC Switch rows whose model column is unknown.
+
+    CC Switch writes MiniMax Code proxy rows as `mcode:<session>:<row id>` with
+    model "unknown"; the runtime db resolves each row the same way `load_mcode`
+    does. Read-only and silent: an absent or unreadable db just means no
+    enrichment, never an error.
+    """
+    try:
+        with _readonly_sqlite(path, "mcode_db_not_found", "mcode_db_read_failed") as conn:
+            columns = {r[1] for r in conn.execute("PRAGMA table_info(local_runtime_token_usage)")}
+            if not MCODE_COLUMNS <= columns or "id" not in columns:
+                return {}
+            turn_models = _mcode_turn_models(conn)
+            resolved = {}
+            for row in conn.execute("SELECT id, session_id, turn_id, model FROM local_runtime_token_usage"):
+                model = _model(row["model"])
+                if model == "unknown":
+                    model = turn_models.get((row["session_id"], row["turn_id"]), "unknown")
+                if model != "unknown":
+                    resolved[f"mcode:{row['session_id']}:{row['id']}"] = model
+            return resolved
+    except SourceError:
+        return {}
+
+
 def load_mcode(path):
     with _readonly_sqlite(path, "mcode_db_not_found", "mcode_db_read_failed") as conn:
         columns = {r[1] for r in conn.execute("PRAGMA table_info(local_runtime_token_usage)")}
         if not MCODE_COLUMNS <= columns:
             raise SourceError("unsupported_mcode_schema")
-        records = [(row["ts"] / 1000, _model(row["model"]), row["input_tokens"], row["output_tokens"],
-                    row["reasoning_tokens"], row["cache_read_tokens"], row["cache_write_tokens"])
-                   for row in conn.execute("SELECT ts, model, input_tokens, output_tokens, reasoning_tokens,"
-                                           " cache_read_tokens, cache_write_tokens FROM local_runtime_token_usage")]
+        turn_models = _mcode_turn_models(conn)
+        records = []
+        for row in conn.execute("SELECT session_id, turn_id, ts, model, input_tokens, output_tokens,"
+                                " reasoning_tokens, cache_read_tokens, cache_write_tokens"
+                                " FROM local_runtime_token_usage"):
+            model = _model(row["model"])
+            if model == "unknown":
+                model = turn_models.get((row["session_id"], row["turn_id"]), "unknown")
+            records.append((row["ts"] / 1000, model, row["input_tokens"], row["output_tokens"],
+                            row["reasoning_tokens"], row["cache_read_tokens"], row["cache_write_tokens"]))
     if any(t < 0 for t, *_ in records) or any(v < 0 for r in records for v in r[2:]):
         raise SourceError("invalid_mcode_token_counts")
     return records

@@ -113,7 +113,17 @@ def rollup_bounds(start, end, zone=DISPLAY_ZONE):
     return lo, hi
 
 
-def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE):
+def _register_mcode_resolver(conn, models):
+    """Expose the runtime db's per-row model to SQL (read-only connections
+    cannot hold a temp table, so a scalar function carries the map)."""
+    def resolve(app_type, model, request_id):
+        if app_type == "mcode" and model in (None, "", "unknown"):
+            return models.get(request_id)
+        return None
+    conn.create_function("mcode_model", 3, resolve, deterministic=True)
+
+
+def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE, price_table=None, mcode_models=None):
     detail_conditions = [effective_filter("l")]
     params = []
     for expr, value in (("l.created_at >= ?", start), ("l.created_at <= ?", end)):
@@ -137,8 +147,16 @@ def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE):
         roll_conditions.append("1=0")
     roll_where = " AND ".join(roll_conditions) or "1=1"
     group = "app, provider_id, model"
+    # MiniMax Code proxy rows carry model "unknown"; the runtime db knows the
+    # per-turn model, so resolve it here instead of leaving the group unnamed.
+    model_expr = "COALESCE(NULLIF(l.pricing_model,''), NULLIF(l.model,''))"
+    if mcode_models:
+        _register_mcode_resolver(conn, mcode_models)
+        model_expr = ("COALESCE(NULLIF(l.pricing_model,''),"
+                      " mcode_model(l.app_type, l.model, l.request_id),"
+                      " NULLIF(l.model,''), 'unknown')")
     detail_sql = f"""SELECT {folded_app('l')} AS app, l.provider_id,
-       COALESCE(NULLIF(l.pricing_model,''),l.model) AS model,
+       {model_expr} AS model,
        COUNT(*) AS requests, SUM(CASE WHEN l.status_code BETWEEN 200 AND 299 THEN 1 ELSE 0 END) AS successes,
        SUM({fresh_input_sql('l')}) AS fresh_input, SUM(l.output_tokens) AS output,
        SUM(l.cache_read_tokens) AS cache_read, SUM(l.cache_creation_tokens) AS cache_write,
@@ -170,6 +188,16 @@ def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE):
                 target[dest] += integer(row[src])
             target[kind + "_requests"] += row["requests"]
             target["estimated_cost_usd"] += Decimal(row["cost"])
+    # Rows CC Switch could not price (unknown model) get an API-equivalent
+    # estimate once the model is resolved, but only in USD so the source's
+    # unit stays consistent; CC Switch's own non-zero estimates are kept.
+    if price_table is not None and price_table.currency == "USD":
+        for row in groups.values():
+            if row["app"] != "mcode" or row["estimated_cost_usd"] != 0:
+                continue
+            pattern = price_table.match(row["model"])
+            if pattern:
+                row["estimated_cost_usd"] = price_table.cost_for(row, pattern)
     totals = {k: sum(r[k] for r in groups.values()) for k in
               ("requests", "successful_requests", "fresh_input", "output", "cache_read", "cache_write", "unpriced_detail_requests")}
     totals["estimated_cost_usd"] = format(sum((r["estimated_cost_usd"] for r in groups.values()), Decimal(0)), "f")
@@ -198,10 +226,16 @@ def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE):
             "cost_kind": "api_equivalent_estimate_not_bill"}
 
 
-def collect_ccswitch(path, now, zone=DISPLAY_ZONE):
+def collect_ccswitch(path, now, zone=DISPLAY_ZONE, mcode_db=None, price_table=None):
     with readonly_database(path) as conn:
         version = validate_schema(conn)
-        periods = {p: summarize(conn, *period_bounds(now, p, zone), zone=zone) for p in ("today", "7d", "30d", "all")}
+        resolved = {}
+        if mcode_db:
+            from .cli_sessions import mcode_request_models
+            resolved = mcode_request_models(mcode_db)
+        periods = {p: summarize(conn, *period_bounds(now, p, zone), zone=zone,
+                                price_table=price_table, mcode_models=resolved)
+                   for p in ("today", "7d", "30d", "all")}
         last_sync = conn.execute("SELECT MAX(last_synced_at) FROM session_log_sync").fetchone()[0]
         out = source("ccswitch", "local_imported_history", now)
         out["metrics"]["tokens"] = metric({"periods": periods})

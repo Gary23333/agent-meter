@@ -1,3 +1,5 @@
+import json
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime
@@ -6,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from agent_meter.ccswitch import collect_ccswitch, readonly_database, rollup_bounds, summarize, validate_schema
 from agent_meter.model import SourceError
+from agent_meter.prices import PriceTable
 from agent_meter.verify import reference_ccswitch
 from tests.support import database, insert
 
@@ -64,6 +67,35 @@ class CCSwitchTests(unittest.TestCase):
         insert(self.c,'proxy',input_tokens=100,created_at=1000,model='unknown',data_source=None)
         insert(self.c,'session',input_tokens=100,created_at=1000,model='other',data_source='codex_session')
         self.assertEqual(self.totals()['requests'],1)
+
+    def test_mcode_unknown_model_resolved_and_priced(self):
+        # CC Switch stores MiniMax Code proxy rows with model "unknown"; the
+        # runtime db's per-turn telemetry supplies the name, and the local
+        # price table fills the missing (zero) estimate.
+        mcode = Path(self.tmp.name) / "runtime-state.sqlite"
+        conn = sqlite3.connect(mcode)
+        conn.execute("CREATE TABLE local_runtime_token_usage(id INTEGER PRIMARY KEY, session_id TEXT, agent_name TEXT,"
+                     " framework_type TEXT, turn_id TEXT, model TEXT, ts INTEGER, input_tokens INTEGER,"
+                     " output_tokens INTEGER, reasoning_tokens INTEGER, cache_read_tokens INTEGER,"
+                     " cache_write_tokens INTEGER, cost_usd REAL, raw TEXT)")
+        conn.execute("CREATE TABLE local_runtime_message_rows(id INTEGER PRIMARY KEY, session_id TEXT, turn_id TEXT,"
+                     " role TEXT, data_json TEXT)")
+        conn.execute("INSERT INTO local_runtime_message_rows(session_id,turn_id,role,data_json) VALUES('s','t','assistant',?)",
+                     (json.dumps({"context_usage_telemetry": {"model": "MiniMax-M3.1-Flash"}}),))
+        conn.execute("INSERT INTO local_runtime_token_usage(id,session_id,turn_id,model,ts,input_tokens,output_tokens,"
+                     " reasoning_tokens,cache_read_tokens,cache_write_tokens)"
+                     " VALUES(7,'s','t',NULL,1000,1000000,1000000,0,0,0)")
+        conn.commit()
+        conn.close()
+        now = int(datetime(2026, 10, 21, 12, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp())
+        insert(self.c, "mcode:s:7", app_type="mcode", model="unknown", input_tokens=1000000,
+               output_tokens=1000000, created_at=now - 60, total_cost_usd="0")
+        out = collect_ccswitch(self.path, now, ZoneInfo("Asia/Shanghai"), str(mcode),
+                               PriceTable("USD", {}, set()))
+        groups = out["metrics"]["tokens"]["value"]["periods"]["all"]["groups"]
+        group = next(g for g in groups if g["app"] == "mcode")
+        self.assertEqual(group["model"], "MiniMax-M3.1-Flash")
+        self.assertAlmostEqual(float(group["estimated_cost_usd"]), 0.75, places=6)
 
     def test_rollups_full_days_only(self):
         zone=ZoneInfo('Asia/Shanghai')

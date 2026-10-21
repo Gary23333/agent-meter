@@ -180,6 +180,22 @@ class McodeTests(unittest.TestCase):
         conn.close()
         return db
 
+    def test_turn_telemetry_supplies_missing_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self.db(tmp, rows=3)
+            conn = sqlite3.connect(db)
+            conn.execute("UPDATE local_runtime_token_usage SET model=NULL, turn_id='t' || id")
+            conn.execute("CREATE TABLE local_runtime_message_rows(id INTEGER PRIMARY KEY, session_id TEXT,"
+                         " turn_id TEXT, role TEXT, data_json TEXT)")
+            conn.executemany("INSERT INTO local_runtime_message_rows(session_id,turn_id,role,data_json)"
+                             " VALUES('s',?,'assistant',?)",
+                             [("t1", json.dumps({"context_usage_telemetry": {"model": "MiniMax-M3.1-Flash"}})),
+                              ("t2", json.dumps({"context_usage_telemetry": {"model": "MiniMax-M3.1-Flash-Preview"}}))])
+            conn.commit()
+            conn.close()
+            models = [r[1] for r in load_mcode(db)]
+            self.assertEqual(models, ["MiniMax-M3.1-Flash", "MiniMax-M3.1-Flash-Preview", "unknown"])
+
     def test_rows_as_is_and_schema_guard(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = self.db(tmp, rows=3)

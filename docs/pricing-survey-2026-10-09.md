@@ -25,6 +25,7 @@
 | claude-haiku-4-5 | claude-haiku-4-5-20251001 | $1 / $0.10 / $5 | [Anthropic 定价](https://platform.claude.com/docs/en/about-claude/pricing) |
 | mimo-v2.5-pro | mimo-v2.5-pro | $0.435 / $0.0036 / $0.87；CNY 刊例 3/0.025/6 元 | [MiMo 定价](https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go)、[调价公告](https://mimo.mi.com/docs/zh-CN/news/latest/v2.5-price-update) |
 | minimax-m3 | MiniMax-M3 | $0.30 / – / $1.20（≤512k 永久五折价） | [MiniMax 定价](https://platform.minimax.io/docs/pricing/overview) |
+| minimax-m3.1-flash | MiniMax-M3.1-Flash / -Preview | $0.15 / $0.015 / $0.60；CNY 刊例 1/0.1/4 元 | [MiniMax 按量计费](https://platform.minimaxi.com/docs/guides/pricing-paygo)（2026-10-21 发布） |
 
 CNY 默认值规则：有国内刊例的用刊例；仅 USD 刊例的按 7.25 汇率折算并在配置页标"折算"。峰谷价（DeepSeek）默认取谷时价，可在配置页改。
 

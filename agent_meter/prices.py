@@ -53,6 +53,8 @@ DEFAULTS_USD = {
     "claude-haiku-4-5": (1, 0.10, 0, 5),
     "mimo-v2.5-pro": (0.435, 0.0036, 0, 0.87),
     "minimax-m3": (0.30, 0, 0, 1.20),
+    # 2026-10-21: M3.1 Flash launched at $0.15 / $0.60 with $0.015 cache read.
+    "minimax-m3.1-flash": (0.15, 0.015, 0, 0.60),
 }
 # CN list prices where published; the rest are USD x 7.25 (flagged converted).
 # The 2026-10-15 additions are official CNY list prices with no official USD
@@ -67,6 +69,7 @@ DEFAULTS_CNY_PUBLISHED = {
     "step-5-preview": (7, 0.7, 0, 20),
     "mimo-v2.6-pro": (3, 0.025, 0, 6),
     "mimo-v2.6-flash": (1, 0.02, 0, 2),
+    "minimax-m3.1-flash": (1, 0.1, 0, 4),
 }
 FX_FALLBACK = Decimal("7.25")
 PRICE_KEYS = ("input", "cache_read", "cache_write", "output")

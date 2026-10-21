@@ -172,8 +172,13 @@ def collect(config=None,now=None):
     web={p:lst[0] for p,lst in accounts.items()}
     # Switches from the app (e.g. Claude off), also in memory only.
     user_off=set((config.get("preferences") or {}).get("disabled_sources") or [])
+    # Optional API-equivalent price table; CC Switch uses it only to price rows
+    # whose own estimate is missing (unknown model), everything else is untouched.
+    from .prices import estimate_source_cost, load_prices
+    table=load_prices(config["runtime_dir"])
     jobs={
-      "ccswitch":("local_imported_history",lambda:collect_ccswitch(config["ccswitch_db"],now,ZoneInfo(config["ccswitch_timezone"]))),
+      "ccswitch":("local_imported_history",lambda:collect_ccswitch(config["ccswitch_db"],now,ZoneInfo(config["ccswitch_timezone"]),
+                                                                   config["mcode_db"],table)),
       "codex":("account",lambda:collect_codex(config["codex_binary"],now,timeout,str(runtime))),
       # claude.ai web login (shared with the desktop app) first, else Claude Code's Keychain login.
       "claude":("account",lambda:collect_claude_web(web["claude"],now,timeout) if "claude" in web
@@ -299,8 +304,6 @@ def collect(config=None,now=None):
     # Optional API-equivalent cost estimates from the local price table.
     # CC Switch and CodexBar keep their own estimates; a provider-billed cost
     # (DeepSeek web usage) is never overwritten.
-    from .prices import estimate_source_cost, load_prices
-    table=load_prices(config["runtime_dir"])
     for src in sources:
         if src["id"] in {"ccswitch","deepseek_api"} or src["id"].startswith("codexbar:"):continue
         tokens=src["metrics"]["tokens"]
