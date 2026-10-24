@@ -69,7 +69,15 @@ struct TiboPalette {
                                outline: ink, eye: ink, cheek: Color(nsColor: .systemPink).opacity(0.45),
                                mouth: Color(red: 0.75, green: 0.25, blue: 0.28), badge: .white,
                                sparkles: [Color(nsColor: .systemYellow), Color(nsColor: .systemOrange)], glow: nil, line: 1.8)
-        case .aurora:
+        case .titanium:
+            let ink = Color(red: 0.06, green: 0.09, blue: 0.13)
+            return TiboPalette(skin: Color(red: 0.92, green: 0.82, blue: 0.72), hair: Color(red: 0.24, green: 0.34, blue: 0.43),
+                               hairLine: Color.white.opacity(0.55), shirt: Color(red: 0.32, green: 0.55, blue: 0.68),
+                               pants: Color(red: 0.12, green: 0.18, blue: 0.25), outline: ink, eye: ink,
+                               cheek: Color(red: 0.90, green: 0.42, blue: 0.42).opacity(0.48), mouth: Color(red: 0.65, green: 0.20, blue: 0.24),
+                               badge: .white, sparkles: [Color(red: 0.56, green: 0.76, blue: 0.88), Color.white],
+                               glow: Color(red: 0.40, green: 0.62, blue: 0.78).opacity(0.42), line: 1.6)
+        case .porcelain, .aurora:
             let ink = Color(red: 0.16, green: 0.14, blue: 0.34)
             return TiboPalette(skin: Color(red: 1.0, green: 0.89, blue: 0.82), hair: Color(red: 0.46, green: 0.40, blue: 0.98),
                                hairLine: ink, shirt: Color(red: 0.20, green: 0.82, blue: 0.80),
@@ -79,7 +87,7 @@ struct TiboPalette {
                                sparkles: [Color(red: 0.70, green: 0.36, blue: 0.98), Color(red: 0.18, green: 0.80, blue: 0.98),
                                           Color(red: 1.0, green: 0.62, blue: 0.40)],
                                glow: Color(red: 0.55, green: 0.40, blue: 1.0).opacity(scheme == .dark ? 0.55 : 0.3), line: 1.8)
-        case .neon:
+        case .neon, .prism:
             return TiboPalette(skin: Neon.ink, hair: Neon.magenta.opacity(0.28), hairLine: Neon.magenta,
                                shirt: Neon.cyan.opacity(0.16), pants: Neon.violet.opacity(0.35), outline: Neon.cyan,
                                eye: Neon.cyan, cheek: Neon.magenta.opacity(0.7), mouth: Neon.magenta, badge: Neon.lime,
@@ -262,6 +270,7 @@ private struct TiboArt {
 /// pooled 48-hour median, two knobs and a ticket strip with the next window.
 struct ResetterMachine: View {
     var percent: Double?
+    var horizon = "48h"
     var secondary: String?
     var ticket: String
     var pressed: Bool
@@ -274,11 +283,12 @@ struct ResetterMachine: View {
         let s = MachineStyle.make(theme, scheme)
         VStack(spacing: 0) {
             top(s)
-            ZStack(alignment: .bottom) {
-                bodyBox(s)
-            }
+            bodyBox(s)
             ticketStrip(s)
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: pressed)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Tibo 重置预测，\(horizon == "24h" ? "24" : "48") 小时中位概率 \(percent.map { Fmt.trim($0) + "%" } ?? "未知")，\(ticket)")
         .onAppear {
             guard !reduceMotion, !PanelView.expandForPreview else { return }
             withAnimation(.easeInOut(duration: pressed ? 0.45 : 1.2).repeatForever(autoreverses: true)) { pulse = true }
@@ -323,7 +333,7 @@ struct ResetterMachine: View {
     }
 
     private func bodyBox(_ s: MachineStyle) -> some View {
-        let shape = RoundedRectangle(cornerRadius: theme == .neon ? 8 : 18, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: theme.isLuminous ? 9 : 18, style: .continuous)
         return HStack(spacing: 8) {
             screen(s)
             VStack(spacing: 7) {
@@ -336,25 +346,32 @@ struct ResetterMachine: View {
         .padding(9)
         .background(shape.fill(s.body))
         .overlay(shape.strokeBorder(s.rim, lineWidth: s.line))
+        .overlay(alignment: .top) {
+            Capsule().fill(Color.white.opacity(theme == .minimal ? 0 : 0.24))
+                .frame(height: 1).padding(.horizontal, 20).padding(.top, 4)
+        }
         .overlay(alignment: .topLeading) {
-            // Two rivets give it the toy-box look.
             HStack { rivet(s); Spacer(); rivet(s) }.padding(.horizontal, 6).padding(.top, 4)
         }
+        .shadow(color: s.buttonGlow.opacity(theme.is3D ? 0.18 : 0.08), radius: theme.is3D ? 8 : 3, y: pressed ? 2 : 5)
+        .offset(y: pressed ? 2 : 0)
     }
 
     private func screen(_ s: MachineStyle) -> some View {
         let lit = Int(((percent ?? 0) / 10).rounded())
+        let shape = RoundedRectangle(cornerRadius: theme.isLuminous ? 5 : 10, style: .continuous)
         return VStack(alignment: .leading, spacing: 4) {
-            Text("48 小时内全员重置")
-                .font(.system(size: 9.5, weight: .medium, design: theme == .neon ? .monospaced : .rounded))
+            Text("\(horizon == "24h" ? "24" : "48") 小时内全员重置")
+                .font(.system(size: 9.5, weight: .medium, design: theme.isLuminous ? .monospaced : .rounded))
                 .foregroundStyle(s.screenDim)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(percent.map { Fmt.trim($0) + "%" } ?? "--%")
                     .font(theme.number(28)).monospacedDigit()
                     .foregroundStyle(s.screenText)
                     .lineLimit(1).minimumScaleFactor(0.7)
+                    .contentTransition(.numericText())
                 if let secondary {
-                    Text(secondary).font(.system(size: 9.5, design: theme == .neon ? .monospaced : .rounded))
+                    Text(secondary).font(.system(size: 9.5, design: theme.isLuminous ? .monospaced : .rounded))
                         .foregroundStyle(s.screenDim).lineLimit(1)
                 }
             }
@@ -368,16 +385,21 @@ struct ResetterMachine: View {
         }
         .padding(.horizontal, 9).padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: theme == .neon ? 4 : 10, style: .continuous).fill(s.screen))
-        .overlay(RoundedRectangle(cornerRadius: theme == .neon ? 4 : 10, style: .continuous)
-            .strokeBorder(s.outline.opacity(0.7), lineWidth: s.line * 0.75))
+        .background(shape.fill(s.screen))
+        .overlay(shape.strokeBorder(s.outline.opacity(0.7), lineWidth: s.line * 0.75))
+        .overlay(alignment: .topLeading) {
+            shape.stroke(Color.white.opacity(0.10), lineWidth: 2).blur(radius: 1).padding(1)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 2, y: -1)
     }
 
     private func knob(_ s: MachineStyle, angle: Double) -> some View {
         Circle().fill(s.plate)
+            .overlay(Circle().fill(RadialGradient(colors: [.white.opacity(0.42), .clear], center: .topLeading, startRadius: 0, endRadius: 18)))
             .overlay(Circle().strokeBorder(s.outline, lineWidth: s.line * 0.8))
             .overlay(Capsule().fill(s.outline).frame(width: 1.8, height: 6).offset(y: -3).rotationEffect(.degrees(angle)))
             .frame(width: 17, height: 17)
+            .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
     }
 
     private func rivet(_ s: MachineStyle) -> some View {
@@ -456,6 +478,27 @@ private struct MachineStyle {
                                 screenDim: .secondary, ledColors: [Color.accentColor], button: AnyShapeStyle(red), buttonGlow: red,
                                 plate: Color(nsColor: .controlBackgroundColor), light: Color(nsColor: .systemGreen),
                                 label: .secondary, paper: Color(nsColor: .textBackgroundColor), paperText: .secondary)
+        case .porcelain:
+            let ink = Color(red: 0.20, green: 0.26, blue: 0.36)
+            let coral = Color(red: 0.91, green: 0.48, blue: 0.45)
+            let blue = Color(red: 0.40, green: 0.60, blue: 0.78)
+            return MachineStyle(body: AnyShapeStyle(LinearGradient(colors: [Color(red: 0.96, green: 0.96, blue: 0.94), Color(red: 0.72, green: 0.77, blue: 0.84)], startPoint: .topLeading, endPoint: .bottomTrailing)),
+                                rim: AnyShapeStyle(LinearGradient(colors: [.white, blue.opacity(0.55)], startPoint: .top, endPoint: .bottom)),
+                                outline: ink.opacity(0.58), line: 1.0, screen: Color(red: 0.08, green: 0.12, blue: 0.19),
+                                screenText: AnyShapeStyle(Color(red: 0.62, green: 0.90, blue: 0.91)), screenDim: Color.white.opacity(0.58),
+                                ledColors: [blue, Color(red: 0.55, green: 0.78, blue: 0.72), coral],
+                                button: AnyShapeStyle(LinearGradient(colors: [Color(red: 1.0, green: 0.68, blue: 0.60), coral], startPoint: .top, endPoint: .bottom)),
+                                buttonGlow: coral, plate: Color(red: 0.82, green: 0.85, blue: 0.88), light: Color(red: 0.40, green: 0.78, blue: 0.60),
+                                label: ink.opacity(0.65), paper: Color(red: 0.91, green: 0.90, blue: 0.85), paperText: ink.opacity(0.72))
+        case .titanium:
+            let edge = Color(red: 0.50, green: 0.68, blue: 0.80)
+            return MachineStyle(body: AnyShapeStyle(LinearGradient(colors: [Color(red: 0.28, green: 0.32, blue: 0.36), Color(red: 0.07, green: 0.09, blue: 0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)),
+                                rim: AnyShapeStyle(LinearGradient(colors: [Color.white.opacity(0.55), edge, Color.black], startPoint: .topLeading, endPoint: .bottomTrailing)),
+                                outline: Color.white.opacity(0.30), line: 1.0, screen: Color(red: 0.025, green: 0.04, blue: 0.055),
+                                screenText: AnyShapeStyle(LinearGradient(colors: [.white, edge], startPoint: .top, endPoint: .bottom)), screenDim: Color.white.opacity(0.52),
+                                ledColors: [edge, Color.white], button: AnyShapeStyle(LinearGradient(colors: [Color(red: 0.48, green: 0.68, blue: 0.78), Color(red: 0.16, green: 0.29, blue: 0.39)], startPoint: .top, endPoint: .bottom)),
+                                buttonGlow: edge, plate: Color(red: 0.18, green: 0.22, blue: 0.26), light: Color(red: 0.35, green: 0.90, blue: 0.68),
+                                label: Color.white.opacity(0.5), paper: Color(red: 0.09, green: 0.12, blue: 0.15), paperText: Color.white.opacity(0.68))
         case .aurora:
             let violet = Color(red: 0.70, green: 0.36, blue: 0.98), indigo = Color(red: 0.40, green: 0.45, blue: 1.0)
             let mint = Color(red: 0.20, green: 0.88, blue: 0.70), cyan = Color(red: 0.18, green: 0.80, blue: 0.98)
@@ -472,7 +515,7 @@ private struct MachineStyle {
                                 buttonGlow: pink, plate: Color(red: 0.86, green: 0.86, blue: 0.98), light: mint,
                                 label: indigo, paper: dark ? Color(red: 0.16, green: 0.16, blue: 0.28) : .white,
                                 paperText: dark ? Color.white.opacity(0.8) : Color(red: 0.25, green: 0.24, blue: 0.45))
-        case .neon:
+        case .neon, .prism:
             return MachineStyle(body: AnyShapeStyle(Color.black.opacity(0.6)), rim: AnyShapeStyle(Neon.rim), outline: Neon.cyan, line: 1.2,
                                 screen: Color.black.opacity(0.8), screenText: AnyShapeStyle(Neon.cyan), screenDim: Neon.cyan.opacity(0.6),
                                 ledColors: [Neon.lime, Neon.yellow, Neon.orange, Neon.magenta], button: AnyShapeStyle(Neon.magenta),
@@ -511,8 +554,8 @@ struct SpeechBubble: View {
         switch theme {
         case .minimal: return AnyShapeStyle(Color(nsColor: .textBackgroundColor))
         case .native: return AnyShapeStyle(Color(nsColor: .textBackgroundColor))
-        case .aurora: return AnyShapeStyle(Color.white.opacity(scheme == .dark ? 0.1 : 0.8))
-        case .neon: return AnyShapeStyle(Color.black.opacity(0.7))
+        case .porcelain, .aurora, .titanium: return AnyShapeStyle(Color.white.opacity(scheme == .dark ? 0.1 : 0.8))
+        case .neon, .prism: return AnyShapeStyle(Color.black.opacity(0.7))
         }
     }
 
@@ -520,10 +563,10 @@ struct SpeechBubble: View {
         switch theme {
         case .minimal: return AnyShapeStyle(Color.primary)
         case .native: return AnyShapeStyle(Color(nsColor: .separatorColor))
-        case .aurora: return AnyShapeStyle(LinearGradient(colors: [Color(red: 0.40, green: 0.45, blue: 1.0).opacity(0.6),
+        case .porcelain, .aurora, .titanium: return AnyShapeStyle(LinearGradient(colors: [Color(red: 0.40, green: 0.45, blue: 1.0).opacity(0.6),
                                                                    Color(red: 0.70, green: 0.36, blue: 0.98).opacity(0.35)],
                                                           startPoint: .leading, endPoint: .trailing))
-        case .neon: return AnyShapeStyle(Neon.magenta)
+        case .neon, .prism: return AnyShapeStyle(Neon.magenta)
         }
     }
 }

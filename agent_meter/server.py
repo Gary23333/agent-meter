@@ -67,9 +67,12 @@ def make_server(service,token,port=8769):
                 self.send_json(200,{"status":"ok","schema_version":SCHEMA_VERSION});return
             if route.path=="/v1/prices":
                 from .prices import load_prices
+                from .model_catalog import catalog_status
                 table=load_prices(service.config["runtime_dir"])
                 self.send_json(200,{"currency":table.currency,
                                     "models":{p:dict(zip(("input","cache_read","cache_write","output"),v)) for p,v in table.models.items()},
+                                    "aliases":table.aliases,"catalog":table.catalog,
+                                    "sync":catalog_status(service.config["runtime_dir"]),
                                     "converted_patterns":sorted(table.converted)})
                 return
             if route.path not in {"/v1/snapshot","/v1/coverage","/v1/sources"}:
@@ -84,9 +87,15 @@ def make_server(service,token,port=8769):
 
         def do_POST(self):
             if not self.authorized():return
-            if self.path!="/v1/refresh":self.send_json(404,{"error":"not_found"});return
+            if self.path not in {"/v1/refresh","/v1/prices/sync"}:self.send_json(404,{"error":"not_found"});return
             if self.headers.get("Content-Length","0")!="0" or self.headers.get("Transfer-Encoding"):
                 self.send_json(400,{"error":"body_not_allowed"});self.close_connection=True;return
+            if self.path=="/v1/prices/sync":
+                from .model_catalog import sync_catalog
+                result=sync_catalog(service.config["runtime_dir"],force=True)
+                service.reload_prices()
+                self.send_json(200 if result["status"]!="error" else 502,result)
+                return
             try:self.send_json(200,service.get(force=True))
             except Exception:self.send_json(500,{"error":"collection_failed"})
 
@@ -113,15 +122,17 @@ def make_server(service,token,port=8769):
                 try:
                     from .prices import PRICE_KEYS, save_prices
                     from .model import SourceError
-                    if not isinstance(body,dict) or set(body)-{"currency","models"} \
-                            or body.get("currency") not in {"USD","CNY"} or not isinstance(body.get("models"),dict):
+                    if not isinstance(body,dict) or set(body)-{"currency","models","aliases"} \
+                            or body.get("currency") not in {"USD","CNY"} or not isinstance(body.get("models"),dict) \
+                            or not isinstance(body.get("aliases",{}),dict):
                         raise ValueError()
                     for pattern,row in body["models"].items():
                         if not isinstance(pattern,str) or not 0<len(pattern)<=120 or not isinstance(row,dict) \
-                                or set(row)-set(PRICE_KEYS) or len(body["models"])>300:
+                                or set(row)-set(PRICE_KEYS) or len(body["models"])>500:
                             raise ValueError()
-                    saved=save_prices(service.config["runtime_dir"],body["currency"],body["models"])
-                    service.set_prices(body["currency"],body["models"])
+                    aliases=body.get("aliases",{})
+                    saved=save_prices(service.config["runtime_dir"],body["currency"],body["models"],aliases)
+                    service.set_prices(body["currency"],body["models"],aliases)
                     self.send_json(200,saved);return
                 except (ValueError, SourceError):
                     self.send_json(400,{"error":"invalid_prices"});return

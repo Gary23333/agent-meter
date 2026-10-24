@@ -67,11 +67,32 @@ struct Card<Content: View>: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
                 .shadow(color: .black.opacity(scheme == .dark ? 0.25 : 0.05), radius: 2, y: 1)
+        case .porcelain, .titanium:
+            dimensional(stack)
         case .aurora:
             aurora(stack)
-        case .neon:
+        case .neon, .prism:
             neon(stack)
         }
+    }
+
+    private func dimensional(_ stack: some View) -> some View {
+        let porcelain = theme == .porcelain
+        let edge = tint ?? theme.accent[0]
+        let shape = RoundedRectangle(cornerRadius: porcelain ? 17 : 13, style: .continuous)
+        let fill = LinearGradient(colors: porcelain
+                                  ? [Color.white.opacity(0.90), Color(red: 0.82, green: 0.85, blue: 0.90).opacity(0.82)]
+                                  : [Color(red: 0.20, green: 0.24, blue: 0.29), Color(red: 0.075, green: 0.095, blue: 0.12)],
+                                  startPoint: .topLeading, endPoint: .bottomTrailing)
+        return stack
+            .padding(13)
+            .background(shape.fill(fill))
+            .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(porcelain ? 0.95 : 0.42), edge.opacity(0.28), Color.black.opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+            .overlay(alignment: .top) {
+                Capsule().fill(Color.white.opacity(porcelain ? 0.60 : 0.15)).frame(height: 1).padding(.horizontal, 22).padding(.top, 4)
+            }
+            .shadow(color: porcelain ? Color.white.opacity(0.85) : Color.white.opacity(0.06), radius: 2, y: -1)
+            .shadow(color: porcelain ? Color(red: 0.25, green: 0.32, blue: 0.43).opacity(0.20) : Color.black.opacity(0.55), radius: porcelain ? 11 : 15, x: 0, y: porcelain ? 7 : 10)
     }
 
     private func aurora(_ stack: some View) -> some View {
@@ -191,7 +212,7 @@ struct Meter: View {
                     Capsule().fill(Color.primary.opacity(0.1))
                     Capsule().fill(tint).frame(width: max(height, width))
                 }
-            case .aurora:
+            case .porcelain, .aurora, .titanium:
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.08))
                     Capsule()
@@ -199,7 +220,7 @@ struct Meter: View {
                         .frame(width: max(height, width))
                         .shadow(color: tint.opacity(0.6), radius: 4)
                 }
-            case .neon:
+            case .neon, .prism:
                 ledBar(size: g.size)
             }
         }
@@ -262,7 +283,7 @@ struct Ring: View {
                 Circle().trim(from: 0, to: progress)
                     .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-            case .aurora:
+            case .porcelain, .aurora, .titanium:
                 Circle().stroke(Color.primary.opacity(0.08), lineWidth: lineWidth)
                 Circle().trim(from: 0, to: progress)
                     .stroke(AngularGradient(colors: [accent, tint, tint], center: .center,
@@ -270,7 +291,7 @@ struct Ring: View {
                             style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .shadow(color: tint.opacity(0.7), radius: lineWidth * 0.9)
-            case .neon:
+            case .neon, .prism:
                 neonRing(tint: tint, accent: accent, progress: progress)
             }
             if showsValue { VStack(spacing: -1) {
@@ -433,10 +454,10 @@ struct IconButton: View {
             EmptyView()
         case .native:
             Circle().fill(Color.primary.opacity(hovering ? 0.1 : 0.05))
-        case .aurora:
+        case .porcelain, .aurora, .titanium:
             Circle().fill(.ultraThinMaterial)
                 .overlay(Circle().strokeBorder(Color.primary.opacity(hovering ? 0.25 : 0.1), lineWidth: 0.6))
-        case .neon:
+        case .neon, .prism:
             RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.black.opacity(0.5))
                 .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Neon.cyan.opacity(hovering ? 1 : 0.55), lineWidth: 1))
                 .shadow(color: Neon.cyan.opacity(hovering ? 0.9 : 0.4), radius: hovering ? 8 : 4)
@@ -477,8 +498,8 @@ struct PillTabs<T: Hashable & Identifiable>: View {
         switch theme {
         case .minimal: return selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary)
         case .native: return selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
-        case .aurora: return selected ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary)
-        case .neon: return selected ? AnyShapeStyle(Color.black) : AnyShapeStyle(Neon.cyan.opacity(0.75))
+        case .porcelain, .aurora, .titanium: return selected ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary)
+        case .neon, .prism: return selected ? AnyShapeStyle(Color.black) : AnyShapeStyle(Neon.cyan.opacity(0.75))
         }
     }
 
@@ -493,12 +514,12 @@ struct PillTabs<T: Hashable & Identifiable>: View {
                 .fill(Color(nsColor: .controlBackgroundColor))
                 .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
                 .matchedGeometryEffect(id: "pill", in: ns)
-        case .aurora:
+        case .porcelain, .aurora, .titanium:
             Capsule()
                 .fill(LinearGradient(colors: theme.accent, startPoint: .leading, endPoint: .trailing))
                 .shadow(color: Color(red: 0.5, green: 0.4, blue: 1).opacity(0.55), radius: 6)
                 .matchedGeometryEffect(id: "pill", in: ns)
-        case .neon:
+        case .neon, .prism:
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(LinearGradient(colors: [Neon.cyan, Neon.lime], startPoint: .leading, endPoint: .trailing))
                 .shadow(color: Neon.cyan.opacity(0.9), radius: 6)
@@ -513,10 +534,10 @@ struct PillTabs<T: Hashable & Identifiable>: View {
             EmptyView()
         case .native:
             RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06))
-        case .aurora:
+        case .porcelain, .aurora, .titanium:
             Capsule().fill(.ultraThinMaterial)
                 .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.6))
-        case .neon:
+        case .neon, .prism:
             RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.black.opacity(0.55))
                 .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Neon.rim, lineWidth: 1))
         }

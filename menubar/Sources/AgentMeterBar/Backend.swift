@@ -117,14 +117,26 @@ struct BackendClient {
         return json
     }
 
-    func putPrices(currency: String, models: [String: [String: Double]]) async throws -> JSON {
+    func putPrices(currency: String, models: [String: [String: Double]], aliases: [String: String]) async throws -> JSON {
         var r = try request("v1/prices", method: "PUT", timeout: 10)
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try JSONSerialization.data(withJSONObject: ["currency": currency, "models": models])
+        r.httpBody = try JSONSerialization.data(withJSONObject: ["currency": currency, "models": models, "aliases": aliases])
         let (_, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else { throw BackendError.http(http.statusCode, nil) }
         return .null
+    }
+
+    /// Refresh model names and public list prices. Daily throttling and stale
+    /// fallback are owned by the backend; failures never clear the local table.
+    func syncPrices() async throws -> JSON {
+        let r = try request("v1/prices/sync", method: "POST", timeout: 25)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse,
+              let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, json["last_error"].string) }
+        return json
     }
 
     func snapshot(force: Bool) async throws -> Snapshot {

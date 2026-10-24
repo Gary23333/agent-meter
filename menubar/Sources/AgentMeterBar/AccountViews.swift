@@ -340,10 +340,10 @@ struct ResetCardStrip: View {
         case .native:
             RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.04))
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.6) : Color(nsColor: .separatorColor), lineWidth: 0.5))
-        case .aurora:
+        case .porcelain, .aurora, .titanium:
             RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(urgent ? 0.06 : 0.1))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.5) : tint.opacity(0.25), lineWidth: 0.6))
-        case .neon:
+        case .neon, .prism:
             RoundedRectangle(cornerRadius: 3, style: .continuous).fill(edge.opacity(0.1))
                 .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(edge.opacity(0.85), lineWidth: 1))
                 .shadow(color: edge.opacity(0.6), radius: 5)

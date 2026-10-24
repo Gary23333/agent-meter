@@ -94,7 +94,7 @@ struct OpenAppButton: View {
             case .native:
                 base.foregroundStyle(hovering ? .white : tint)
                     .background(Capsule().fill(hovering ? tint : tint.opacity(0.12)))
-            case .aurora, .neon:
+            case .porcelain, .aurora, .titanium, .neon, .prism:
                 base.foregroundStyle(hovering ? (theme == .neon ? .black : .white) : tint)
                     .background(Capsule().fill(hovering ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.14))))
                     .overlay(Capsule().strokeBorder(tint.opacity(theme == .neon ? 0.8 : 0.35), lineWidth: theme == .neon ? 1 : 0.6))

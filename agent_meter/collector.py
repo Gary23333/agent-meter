@@ -368,10 +368,14 @@ class SnapshotService:
             self.config["observations"]=observations
             self._invalidate()
 
-    def set_prices(self,currency,models):
-        """Persist the price table; the next read re-estimates costs."""
+    def set_prices(self,currency,models,aliases=None):
+        """Persist prices and preview-model bindings; then re-estimate costs."""
         from .prices import save_prices
-        save_prices(self.config["runtime_dir"],currency,models)
+        save_prices(self.config["runtime_dir"],currency,models,aliases)
+        self.reload_prices()
+
+    def reload_prices(self):
+        """Invalidate snapshots after a catalogue sync without rewriting edits."""
         with self.lock:
             self._invalidate()
 

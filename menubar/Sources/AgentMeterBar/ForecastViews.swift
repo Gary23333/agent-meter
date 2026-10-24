@@ -107,16 +107,16 @@ struct ForecastTone {
         switch theme {
         case .minimal: return .primary
         case .native: return Color(nsColor: .systemPurple)
-        case .aurora: return Color(red: 0.70, green: 0.36, blue: 0.98)
-        case .neon: return Neon.violet
+        case .porcelain, .aurora, .titanium: return Color(red: 0.70, green: 0.36, blue: 0.98)
+        case .neon, .prism: return Neon.violet
         }
     }
     var link: Color {
         switch theme {
         case .minimal: return .primary
         case .native: return Color(nsColor: .linkColor)
-        case .aurora: return Color(red: 0.40, green: 0.45, blue: 1.0)
-        case .neon: return Neon.cyan
+        case .porcelain, .aurora, .titanium: return Color(red: 0.40, green: 0.45, blue: 1.0)
+        case .neon, .prism: return Neon.cyan
         }
     }
     /// Published values get the accent; model-only values stay muted.
@@ -124,8 +124,8 @@ struct ForecastTone {
         switch theme {
         case .minimal: return .primary
         case .native: return .accentColor
-        case .aurora: return Color(red: 0.40, green: 0.45, blue: 1.0)
-        case .neon: return Neon.cyan
+        case .porcelain, .aurora, .titanium: return Color(red: 0.40, green: 0.45, blue: 1.0)
+        case .neon, .prism: return Neon.cyan
         }
     }
     var band: AnyShapeStyle {
@@ -135,7 +135,7 @@ struct ForecastTone {
         default: return AnyShapeStyle(theme.figure(theme.accent).opacity(0.75))
         }
     }
-    var chip: Color { theme == .neon ? Neon.cyan.opacity(0.14) : Color.secondary.opacity(0.12) }
+    var chip: Color { theme.isLuminous ? theme.accent[0].opacity(0.14) : Color.secondary.opacity(0.12) }
 }
 
 extension ForecastCopy {
@@ -177,19 +177,22 @@ private struct TiboHeroCard: View {
     let targets: [JSON]
     let now: Date
     @Environment(\.panelTheme) private var theme
+    @Environment(UsageStore.self) private var store
+    @AppStorage("forecastHorizon") private var horizon = "48h"
 
     var body: some View {
         let mood = TiboMood.from(forecast: forecast, targets: targets, now: now)
         let horizons = forecast["ensemble"]["horizons"].object
         let median48 = horizons["48h"]?["weighted_median"].double
         let median24 = horizons["24h"]?["weighted_median"].double
+        let selected = horizon == "24h" ? median24 : median48
         let line = speech(mood, median48: median48, horizons: horizons)
         Card(tint: theme.accent[0]) {
             HStack(alignment: .center, spacing: 8) {
                 QSticker(symbol: "arrow.counterclockwise")
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Tibo 重置器")
-                        .font(.system(size: 13.5, weight: .heavy, design: theme == .neon ? .monospaced : .rounded))
+                        .font(.system(size: 13.5, weight: .heavy, design: theme.isLuminous ? .monospaced : .rounded))
                         .foregroundStyle(theme.figure(theme.accent))
                     Text("ChatGPT / Codex 全员重置 · 第三方预测")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
@@ -200,17 +203,23 @@ private struct TiboHeroCard: View {
             SpeechBubble(title: line.0, detail: line.1)
             HStack(alignment: .bottom, spacing: 6) {
                 TiboChibi(mood: mood).frame(width: 96, height: 120)
-                ResetterMachine(percent: median48,
-                                secondary: median24.map { "24h " + Fmt.trim($0) + "%" },
+                ResetterMachine(percent: selected, horizon: horizon,
+                                secondary: (horizon == "24h" ? median48 : median24).map { (horizon == "24h" ? "48h " : "24h ") + Fmt.trim($0) + "%" },
                                 ticket: ForecastCopy.ticket(targets, now: now),
                                 pressed: mood.pressing)
             }
             .padding(.top, -4)
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Picker("观察窗", selection: $horizon) {
+                    Text("24h").tag("24h"); Text("48h").tag("48h")
+                }
+                .pickerStyle(.segmented).frame(width: 108).controlSize(.small)
                 Label("\(Int(forecast["ensemble"]["n_sources"].double ?? 0)) 家可用",
                       systemImage: "antenna.radiowaves.left.and.right")
                 if let at = source.observedAt { Text("抓取 " + Fmt.ago(at, now: now)) }
-                Text("每 \(Int(forecast["refresh_minutes"].double ?? 45)) 分钟抓一次")
+                Spacer(minLength: 0)
+                IconButton(symbol: "arrow.clockwise", help: "立即刷新预测与全部用量", spinning: store.isBusy) { store.refresh() }
+                    .disabled(store.isBusy)
             }
             .font(.system(size: 10.5)).foregroundStyle(.secondary)
             if let disclaimer = forecast["disclaimer"].string {
@@ -463,14 +472,23 @@ private struct CountdownRow: View {
 private struct SourcesCard: View {
     let rows: [JSON]
     let now: Date
+    @State private var expanded = false
 
     var body: some View {
         Card {
-            QSectionTitle(symbol: "antenna.radiowaves.left.and.right", text: "各站口径", trailing: "公布值 / 站内模型值")
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                SourceRow(row: row, now: now)
-                if row != rows.last { Divider().opacity(0.4) }
+            DisclosureGroup(isExpanded: $expanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        SourceRow(row: row, now: now)
+                        if row != rows.last { Divider().opacity(0.4) }
+                    }
+                }
+                .padding(.top, 8)
+            } label: {
+                QSectionTitle(symbol: "antenna.radiowaves.left.and.right", text: "各站口径",
+                              trailing: expanded ? "收起" : "\(rows.count) 家 · 展开")
             }
+            .tint(.secondary)
         }
     }
 }
@@ -562,14 +580,27 @@ private struct SourceRow: View {
 private struct HistoryCard: View {
     let events: [JSON]
     let now: Date
+    @State private var expanded = false
 
     var body: some View {
         Card {
-            QSectionTitle(symbol: "checkmark.seal.fill", text: "已验证重置记录", trailing: events.isEmpty ? nil : "近 \(min(events.count, 12)) 条")
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+            } label: {
+                HStack {
+                    QSectionTitle(symbol: "checkmark.seal.fill", text: "已验证重置记录",
+                                  trailing: events.isEmpty ? nil : (expanded ? "收起" : "\(events.count) 条 · 展开"))
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(events.count <= 3)
             if events.isEmpty {
                 Text("各站时间线都没抓到。").font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            ForEach(Array(events.prefix(12).enumerated()), id: \.offset) { _, event in
+            ForEach(Array(events.prefix(expanded ? 12 : 3).enumerated()), id: \.offset) { _, event in
                 HistoryRow(event: event, now: now)
             }
         }

@@ -133,6 +133,12 @@ final class UsageStore {
         await pushPreferences()
         await fetch(force: false)
         startLoops()
+        loops.append(Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.syncModelCatalog()
+                try? await Task.sleep(for: .seconds(6 * 60 * 60))
+            }
+        })
         // Saved website logins load in the background; a Keychain prompt
         // (e.g. after a rebuild) then delays only those sources.
         let stored = await ConnectionManager.shared.storedSessions()
@@ -165,6 +171,21 @@ final class UsageStore {
             if !backend.isOwned { throw BackendError.startFailed }
         }
         throw BackendError.startFailed
+    }
+
+    /// Keep model ids and public prices current without touching user edits.
+    /// A failed sync is silent here: the last good catalogue remains usable,
+    /// and the price window exposes its staleness when the user wants detail.
+    private func syncModelCatalog() async {
+        guard let client else { return }
+        do {
+            let result = try await client.syncPrices()
+            if result["status"].string == "updated" {
+                await fetch(force: true)
+            }
+        } catch {
+            NSLog("AgentMeterBar model catalogue sync: %@", String(describing: error))
+        }
     }
 
     private func startLoops() {

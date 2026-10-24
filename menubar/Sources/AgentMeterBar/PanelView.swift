@@ -70,7 +70,7 @@ struct PanelView: View {
         return "采集于 \(Fmt.timeSeconds(t)) · \(Fmt.ago(t, now: store.now))" + (s.servedFromCache ? " · 缓存" : "")
     }
 
-    /// Quick switcher between the four styles, plainest first.
+    /// Quick switcher between the seven styles, plainest first.
     private var themeMenu: some View {
         Menu {
             Picker("界面风格", selection: Binding(get: { store.theme }, set: { t in withAnimation(.easeInOut(duration: 0.25)) { store.theme = t } })) {
@@ -83,12 +83,12 @@ struct PanelView: View {
             Image(systemName: "paintpalette")
                 .font(.system(size: 12, weight: .semibold))
                 .frame(width: 26, height: 26)
-                .foregroundStyle(store.theme == .neon ? AnyShapeStyle(Neon.magenta) : AnyShapeStyle(.secondary))
+                .foregroundStyle(store.theme.isLuminous ? AnyShapeStyle(store.theme.accent[0]) : AnyShapeStyle(.secondary))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("切换界面风格：极简 · 原生 · 极光 · 霓虹")
+        .help("切换界面风格：极简 · 原生 · 瓷白 · 极光 · 钛影 · 霓虹 · 棱镜")
     }
 
     private var settingsMenu: some View {
@@ -216,12 +216,12 @@ private struct HeaderLogo: View {
             BrandMark(outer: Color.white, inner: Color.white, trackOpacity: 0.3)
                 .frame(width: 28, height: 28)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.accentColor))
-        case .aurora:
+        case .porcelain, .aurora, .titanium:
             BrandMark(outer: Color.white, inner: Brand.mint)
                 .frame(width: 32, height: 32)
                 .background(RoundedRectangle(cornerRadius: 7.2, style: .continuous).fill(Brand.plate))
                 .shadow(color: Color(red: 0.55, green: 0.4, blue: 1).opacity(0.8), radius: 8)
-        case .neon:
+        case .neon, .prism:
             ZStack {
                 Hexagon().fill(Color.black.opacity(0.6))
                 Hexagon().stroke(Neon.rim, lineWidth: 1.5)
@@ -244,10 +244,10 @@ private struct HeaderTitle: View {
             Text("Agent 用量").font(.system(size: 14, weight: .medium)).kerning(0.5)
         case .native:
             Text("Agent 用量").font(.system(size: 14, weight: .semibold))
-        case .aurora:
+        case .porcelain, .aurora, .titanium:
             Text("Agent 用量").font(.system(size: 15, weight: .heavy, design: .rounded))
                 .foregroundStyle(LinearGradient(colors: [.primary, Color(red: 0.6, green: 0.5, blue: 1)], startPoint: .leading, endPoint: .trailing))
-        case .neon:
+        case .neon, .prism:
             // Chromatic aberration: magenta and cyan ghosts behind the white title.
             let title = Text("AGENT//用量").font(.system(size: 15, weight: .heavy, design: .monospaced)).kerning(1)
             ZStack {

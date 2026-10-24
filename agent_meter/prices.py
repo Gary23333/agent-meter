@@ -18,16 +18,28 @@ list price stays unmatched (unknown ≠ zero) and is named in the estimate's
 unmatched_models so the user can add it in the price table.
 """
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 
-from .model import SourceError, decimal_string, metric
+from .model import SourceError, metric
+from .model_catalog import load_catalog
 
-# pattern -> per-1M price (input, cache_read, cache_write, output)
+# Built-in fallback: per-1M price (input, cache_read, cache_write, output).
+# The live catalogue refreshes these without replacing user overrides.
 DEFAULTS_USD = {
     "glm-5.3-flash": (0.15, 0.03, 0, 0.50),
-    "glm-5.3": (1.10, 0, 0, 3.90),
-    "k3": (3.00, 0.30, 0, 15.00),
+    "glm-5.3": (1.40, 0.26, 0, 4.40),
+    "k3": (3.00, 0.30, 3.00, 15.00),
+    "kimi-k3.1-pro": (2.00, 0.20, 2.00, 10.00),
+    "kimi-k3.1-pro-highspeed": (4.00, 0.20, 4.00, 20.00),
+    "kimi-k2.7-code": (0.95, 0.19, 0, 4.00),
+    "kimi-k2.7-code-highspeed": (1.90, 0.38, 0, 8.00),
+    "kimi-k2.6": (0.95, 0.16, 0, 4.00),
+    "gpt-6.1-sol": (2.00, 0.10, 2.50, 10.00),
+    "gpt-6-sol": (2.00, 0.20, 2.50, 10.00),
+    "gpt-6-luna": (0.10, 0.01, 0.125, 0.50),
+    "gpt-6-astra": (10.00, 1.00, 12.50, 50.00),
     "deepseek-v4-pro": (0.66, 0.022, 0, 1.98),
     "deepseek-v4.1-flash": (0.15, 0.003, 0, 0.60),
     "deepseek-v4-flash": (0.15, 0.003, 0, 0.60),
@@ -36,24 +48,21 @@ DEFAULTS_USD = {
     "gemini-3.8-flash": (0.75, 0.075, 0, 3.75),
     "gemini-3.6-flash": (0.75, 0.075, 0, 3.75),
     "gemini-3-flash": (0.30, 0.075, 0, 2.50),
-    "gemini-3.1-pro": (2.00, 0.50, 0, 12.00),
-    "claude-opus-5-5": (4, 0.20, 0, 20),
-    "claude-opus-5": (5, 0.50, 0, 25),
-    # 2026-10-15 additions (survey update in docs/pricing-survey-2026-10-09.md):
-    # opus-4-8 launched at the opus-5 rate; fable-5.1 cut cache reads to 0.25
-    # (75% below fable-5, so fable-5 reads at 1.00); M2.7 publishes cache
-    # write; mimo-v2.6-pro keeps the v2.5-pro USD rate.
-    "claude-opus-4-8": (5, 0.50, 0, 25),
-    "claude-fable-5": (10, 1.00, 0, 50),
-    "claude-fable-5-1": (10, 0.25, 0, 50),
+    "gemini-3.1-pro": (2.00, 0.20, 0, 12.00),
+    "claude-opus-5-5": (4, 0.20, 5.00, 20),
+    "claude-sonnet-5-5": (2, 0.10, 2.50, 10),
+    "claude-haiku-5-5": (0.10, 0.01, 0.125, 0.50),
+    "claude-opus-5": (5, 0.50, 6.25, 25),
+    "claude-opus-4-8": (5, 0.50, 6.25, 25),
+    "claude-fable-5": (10, 1.00, 12.50, 50),
+    "claude-fable-5-1": (10, 0.25, 12.50, 50),
     "minimax-m2.7": (0.30, 0.06, 0.375, 1.20),
     "mimo-v2.6-pro": (0.435, 0.0036, 0, 0.87),
-    "claude-sonnet-5": (2, 0.10, 0, 10),
-    "claude-haiku-5": (0.10, 0.01, 0, 0.50),
-    "claude-haiku-4-5": (1, 0.10, 0, 5),
+    "claude-sonnet-5": (2, 0.20, 2.50, 10),
+    "claude-haiku-5": (0.10, 0.01, 0.125, 0.50),
+    "claude-haiku-4-5": (1, 0.10, 1.25, 5),
     "mimo-v2.5-pro": (0.435, 0.0036, 0, 0.87),
-    "minimax-m3": (0.30, 0, 0, 1.20),
-    # 2026-10-21: M3.1 Flash launched at $0.15 / $0.60 with $0.015 cache read.
+    "minimax-m3": (0.30, 0.06, 0, 1.20),
     "minimax-m3.1-flash": (0.15, 0.015, 0, 0.60),
 }
 # CN list prices where published; the rest are USD x 7.25 (flagged converted).
@@ -115,25 +124,39 @@ def converted_patterns(currency):
 
 
 class PriceTable:
-    def __init__(self, currency, user_models, converted):
+    def __init__(self, currency, user_models, converted, aliases=None, runtime_dir=None):
         self.currency = currency
-        self.models = dict(default_prices(currency))
-        self.models.update(user_models or {})
-        # Normalized pattern -> the pattern as stored (user entries are
-        # inserted last, so they win a collision on the normalized form).
+        self.catalog = load_catalog(runtime_dir) if runtime_dir else {}
+        synced = {}
+        for model_id, item in self.catalog.items():
+            values = tuple((item.get("prices") or {}).get(key, 0) for key in PRICE_KEYS)
+            if currency == "CNY":
+                values = tuple(float(round(Decimal(v) * FX_FALLBACK, 4)) for v in values)
+            synced[model_id] = values
+        self.synced_patterns = set(synced)
+        self.models = {**default_prices(currency), **synced, **(user_models or {})}
+        self.aliases = dict(aliases or {})
         self.index = {}
         for pattern in self.models:
             key = normalize_model(pattern)
             if key:
                 self.index[key] = pattern
-        # Entries that are pure FX conversions (unless the user edited them).
-        self.converted = converted_patterns(currency) - set(user_models or {})
+        self.converted = ((converted_patterns(currency) | (self.synced_patterns if currency == "CNY" else set()))
+                          - set(user_models or {}))
 
     def match(self, model):
-        """Longest matching pattern (exact first, then substring), or None."""
+        """Exact user binding first, then longest catalogue/local pattern."""
         key = normalize_model(model)
         if not key:
             return None
+        bound = self.aliases.get(key)
+        if bound and normalize_model(bound) != key:
+            target_key = normalize_model(bound)
+            if target_key in self.index:
+                return self.index[target_key]
+            for candidate in self.index:
+                if candidate in target_key:
+                    return self.index[candidate]
         if key in self.index:
             return self.index[key]
         best = None
@@ -141,6 +164,10 @@ class PriceTable:
             if candidate in key and (best is None or len(candidate) > len(best)):
                 best = candidate
         return self.index[best] if best is not None else None
+
+    def binding_for(self, model):
+        target = self.aliases.get(normalize_model(model))
+        return target if target and self.match(model) else None
 
     def cost_for(self, group, pattern):
         """Decimal cost of one {fresh_input, cache_read, cache_write, output} group."""
@@ -151,6 +178,21 @@ class PriceTable:
         for key, tokens in values.items():
             total += Decimal(str(tokens)) * Decimal(str(prices[key])) / Decimal(1000000)
         return total
+
+
+def _clean_aliases(value):
+    if not isinstance(value, dict):
+        return {}
+    clean = {}
+    for model, target in value.items():
+        if not isinstance(model, str) or not isinstance(target, str):
+            raise ValueError("invalid_model_binding")
+        model, target = model.strip(), target.strip()
+        key = normalize_model(model)
+        if not key or not target or len(model) > 120 or len(target) > 120 or normalize_model(target) == key:
+            raise ValueError("invalid_model_binding")
+        clean[key] = target
+    return clean
 
 
 def load_prices(runtime_dir):
@@ -171,12 +213,13 @@ def load_prices(runtime_dir):
                     raise ValueError()
                 clean[key] = value
             models[pattern] = tuple(clean[k] for k in PRICE_KEYS)
-        return PriceTable(data["currency"], models, set(data.get("converted", [])))
+        return PriceTable(data["currency"], models, set(data.get("converted", [])),
+                          _clean_aliases(data.get("aliases", {})), runtime_dir)
     except (OSError, ValueError, json.JSONDecodeError):
-        return PriceTable("USD", {}, set())
+        return PriceTable("USD", {}, set(), runtime_dir=runtime_dir)
 
 
-def save_prices(runtime_dir, currency, models):
+def save_prices(runtime_dir, currency, models, aliases=None):
     if currency not in CURRENCIES:
         raise SourceError("invalid_price_currency")
     clean = {}
@@ -190,11 +233,24 @@ def save_prices(runtime_dir, currency, models):
                 raise SourceError("invalid_price_table")
             row[key] = value
         clean[pattern] = row
+    path = Path(runtime_dir) / "prices.json"
+    if aliases is None:
+        aliases = _clean_aliases(_read_existing_aliases(path))
+    else:
+        aliases = _clean_aliases(aliases)
     from .collector import atomic_json
-    payload = {"currency": currency, "models": clean,
+    payload = {"currency": currency, "models": clean, "aliases": aliases,
                "converted": sorted(converted_patterns(currency) & set(clean))}
-    atomic_json(Path(runtime_dir) / "prices.json", payload)
-    return {"currency": currency, "models": clean}
+    atomic_json(path, payload)
+    return {"currency": currency, "models": clean, "aliases": aliases}
+
+
+def _read_existing_aliases(path):
+    try:
+        data = json.loads(Path(path).read_text())
+        return data.get("aliases", {}) if isinstance(data, dict) else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
 
 
 def estimate_source_cost(tokens_metric, table):
@@ -211,36 +267,38 @@ def estimate_source_cost(tokens_metric, table):
         return None
     out_periods = {}
     unmatched_all = set()
+    bound_all = {}
     any_group = False
     for period, data in periods.items():
         groups = data.get("groups") if isinstance(data, dict) else None
         if not isinstance(groups, list) or not groups:
-            # A period with no rows (e.g. archive-only history has no today)
-            # simply costs nothing; it does not block the other periods.
-            out_periods[period] = {"amount": "0", "models": {}, "unmatched_models": []}
+            out_periods[period] = {"amount": "0", "models": {}, "unmatched_models": [], "bound_models": {}}
             continue
         total = Decimal(0)
         models = {}
         unmatched = set()
+        bound = {}
         for group in groups:
             model = str(group.get("model", ""))
             pattern = table.match(model)
             if pattern is None or "fresh_input" not in group:
-                # No price, or no per-component breakdown (e.g. an archived
-                # totals-only row): both stay unpriced rather than costing zero.
                 unmatched.add(model + ("" if "fresh_input" in group else " (no breakdown)"))
                 continue
             any_group = True
             amount = table.cost_for(group, pattern)
             total += amount
             models[model] = models.get(model, Decimal(0)) + amount
+            target = table.binding_for(model)
+            if target:
+                bound[model] = target
         unmatched_all |= unmatched
+        bound_all.update(bound)
         out_periods[period] = {"amount": format(total, "f"),
                                "models": {name: format(amount, "f") for name, amount in models.items()},
-                               "unmatched_models": sorted(unmatched)}
+                               "unmatched_models": sorted(unmatched), "bound_models": bound}
     if not any_group:
         return None
     status = "partial" if unmatched_all else "available"
     return metric({"unit": table.currency, "kind": "estimate", "basis": "local_price_table",
                    "fx_note": "converted_at_7.25" if table.currency == "CNY" and table.converted else None,
-                   "periods": out_periods}, status=status)
+                   "bound_models": bound_all, "periods": out_periods}, status=status)

@@ -18,9 +18,9 @@
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
-  <img src="https://img.shields.io/badge/Tests-266%20Passed-brightgreen" alt="Tests: 266 Passed" />
+  <img src="https://img.shields.io/badge/Tests-284%20Passed-brightgreen" alt="Tests: 284 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.6.0-blue" alt="Release: v0.6.0" />
+  <img src="https://img.shields.io/badge/Release-v0.9.0-blue" alt="Release: v0.9.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -50,7 +50,7 @@
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ 点击弹出
 ┌───────────────────────────────────▼────────────────────────────────────┐
-│ ✦ 四套界面风格面板：极简 · 原生 · 极光 · 霓虹 (AgentMeterBar)          │
+│ ✦ 七套界面风格：极简 / 原生 / 瓷白 / 极光 / 钛影 / 霓虹 / 棱镜          │
 │ ├─ 顶部驾驶舱：每个账户一个同心圆仪表（5 小时 / 7 天合一），一键直达应用 │
 │ ├─ 账户额度：各供应商统一卡片——额度窗口、积分钱包、重置卡、续费提醒    │
 │ ├─ 重置预测：Q 版 Tibo + 重置器，三家追踪站交叉的全员重置概率与倒计时  │
@@ -74,20 +74,21 @@
 - **订阅周期提醒**：3 天内自动续费扣款提醒、7 天内会员到期（未开启自动续费）提醒；
 - **防打扰机制**：同一事件仅提醒一次，点击通知即可直接定位打开面板。
 
-### 3. 🎨 四套界面风格，一键切换（SwiftUI + AppKit）
-- **从极简到绚丽**：面板标题栏的调色板按钮或设置菜单「界面风格」随时切换，立即生效并记住选择：
-  - **极简**：黑白排版，无卡片、无阴影，只在额度紧张时出现颜色；
-  - **原生**：macOS 系统实色卡片与系统色，干净克制；
+### 3. 🎨 七套界面风格，一键切换（SwiftUI + AppKit）
+- **从克制到炫技**：面板标题栏的调色板按钮或设置菜单「界面风格」随时切换，立即生效并记住选择：
+  - **极简 / 原生**：黑白排版或 macOS 系统卡片，适合长时间专注使用；
+  - **瓷白**：柔和陶瓷质感与克制的浅浮雕；
   - **极光**（默认）：流光底色、毛玻璃卡片与品牌色微光；
-  - **霓虹**：赛博深色、彩虹描边与 HUD 角标、分段 LED 进度条，背景光效由 Core Animation 驱动，打开面板几乎不增加 CPU；
+  - **钛影**：深色拉丝金属、机械式立体层次；
+  - **霓虹 / 棱镜**：赛博光效或全息晶体，提供更强的空间感与视觉表现；
 - **统一的供应商卡片**：各来源按同一顺序展示「额度窗口 → 积分钱包 → 积分更新 → 重置卡 → 续费 → Token」，额度窗口从短到长排列，倒计时按紧急程度而非品牌色着色；
 - **Swift Charts 消耗分布图**：将输入、输出、缓存命中等构成以环形图直观呈现，深色/浅色模式自适应。
 
 <p align="center">
-  <img src="docs/images/themes-light.png" alt="四套界面风格对比（浅色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
-  <img src="docs/images/themes-dark.png" alt="四套界面风格对比（深色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
+  <img src="docs/images/themes-light.png" alt="七套界面风格对比（浅色模式），使用演示数据" width="100%" />
+  <img src="docs/images/themes-dark.png" alt="七套界面风格对比（深色模式），使用演示数据" width="100%" />
 </p>
-<p align="center"><sub>从左到右：极简 · 原生 · 极光 · 霓虹（霓虹固定深色）</sub></p>
+<p align="center"><sub>从左到右：极简 · 原生 · 瓷白 · 极光 · 钛影 · 霓虹 · 棱镜（钛影、霓虹、棱镜固定深色）</sub></p>
 
 <p align="center">
   <img src="docs/images/accounts-dark.png" alt="账户额度深色界面：演示额度、重置卡和积分" width="48%" />
@@ -120,20 +121,26 @@
 - **增量会话**：毫秒级解析 **Kimi Code** 本机 `~/.kimi-code/sessions/**/wire.jsonl`，提取唯一 `turn` 作用域真实 Token；
 - **严密去重**：明确区分 CC Switch 路由的 `kimi-for-coding` 与独立的 Kimi Code 桌面端，相加绝不重叠；对缺少定价的记录或下界统计明确标注，绝不捏造虚假账单。
 
-### 6. 🎨 创作类工具专属指标支持（Creative Metering）
+### 6. 🧠 模型目录自动同步与体验模型计费绑定
+- **自动更新模型名称与刊例价**：从公开 `models.dev` 目录同步主流供应商的模型 ID、名称、发布日期及输入、输出、缓存读写的每百万 Token 单价；启动后自动同步，每 6 小时检查，目录本身按 24 小时节流，也可在「模型与计费」窗口手动同步。
+- **本地修改不被覆盖**：内置价、同步目录价与用户价格分层合并，用户自定义优先；同步失败保留上次成功目录，未返回有效价格的体验模型不会被自动当成免费。
+- **超前体验期也能估算**：可将无法计价的模型或内部代号绑定到现有模型，沿用其四项 Token 单价；绑定关系会写入估算结果，正式价格发布后可随时替换。
+- **口径透明**：所有金额均为 API 等价估算而非订阅账单；未知不等于零，不同账户与币种不混算。
+
+### 7. 🎨 创作类工具专属指标支持（Creative Metering）
 - **MiniMax Design**：读取当前个人 Media Plan 钱包余额，精准追踪积分包失效时间与次月积分刷新倒计时；
 - **即梦 (Dreamina)**：内置隐藏 Web 监控视图，定期在后台拦截自身发出的安全查询响应，直观展现会员等级、积分明细与续费倒计时。
 
-### 7. 🔮 Tibo 全员重置预测 + Q 版重置器（Reset Forecast）
+### 8. 🔮 Tibo 全员重置预测 + Q 版重置器（Reset Forecast）
 - **独立的「重置预测」标签页**：只读抓取三家第三方追踪站（Will Codex Reset、Tibo Radar、Codex Reset Monitor）公布的 ChatGPT / Codex 全员重置概率，给出 24 / 48 小时**区间 + 加权中位**，并标出各站「接近 / 分歧」；
-- **Q 版 Tibo 与重置器**：大头小身的 Tibo 会随数据换表情——犯困（概率低）、等待、手按按钮（站内挂着承诺）、拍下按钮（公告时段进行中）、星星眼庆祝（追踪站刚记录到落地）；旁边的复古「重置器」屏幕显示 48 小时中位与 LED 进度条，出票口打印下一个已知时段的倒计时；
-- **四套主题各有造型**：极简为黑白线稿，原生用系统色，极光是粉彩渐变与微光，霓虹是发光线框；
+- **更易用的重置器**：可切换 24 / 48 小时观察窗、立即刷新；机身、屏幕和旋钮具有立体层次，各站口径默认折叠，历史记录默认 3 条并可展开；
+- **七套主题各有造型**：从黑白线稿、系统色到陶瓷、钛金属与全息发光效果，整页颜色与组件跟随主题；
 - **口径克制**：只汇总各站自己公布的数值，不写入账户重置时间、不进菜单栏行情条；通知只在**已公告**的时段开始 / 结束或追踪站记录到落地时触发，概率永远不弹通知；可在设置菜单一键关闭联网抓取。
 
 <p align="center">
-  <img src="docs/images/forecast-themes-light.png" alt="Tibo 重置器四套主题对比（浅色模式）：极简、原生、极光、霓虹，使用演示数据" width="100%" />
+  <img src="docs/images/forecast-themes-light.png" alt="Tibo 重置器七套主题对比，使用演示数据" width="100%" />
 </p>
-<p align="center"><sub>从左到右：极简 · 原生 · 极光 · 霓虹（演示数据，非真实预测）</sub></p>
+<p align="center"><sub>从左到右：极简 · 原生 · 瓷白 · 极光 · 钛影 · 霓虹 · 棱镜（演示数据，非真实预测）</sub></p>
 
 <details>
 <summary>查看完整的重置预测页</summary>
@@ -145,16 +152,17 @@
 
 </details>
 
-### 8. 🖼️ 用量报告与一键分享图（Usage Report）
+### 9. 🖼️ 用量报告与一键分享图（Usage Report）
 - **本机消耗页一键打开报告窗口**：时间段筛选与本机消耗页共用，今日 / 7 天 / 30 天 / 全部即时联动；总览、Token 构成、按应用 / 模型 Top 排行口径逐位一致，只含本机消耗、不含账户余额。
-- **四套风格竖版分享卡**：极简、原生、极光、霓虹，宽度固定、高度随内容自适应；一键复制 2x PNG 到剪贴板，或直接保存为图片，适合分享到微信 / 飞书 / 小红书。
+- **七套风格竖版分享卡**：极简、原生、瓷白、极光、钛影、霓虹、棱镜，宽度固定、高度随内容自适应；一键复制 2x PNG 到剪贴板，或直接保存为图片，适合分享到微信 / 飞书 / 小红书。
 - **口径标注**：页脚标明「数据来自本机账本 · 只读聚合 · 不含对话内容」「费用为 API 等价估算」，不含凭据与对话正文。
 
 <p align="center">
-  <img src="docs/images/share-aurora-portrait.png" alt="用量报告分享卡：极光风格竖版，展示 Token 总量、估算费用、Top 应用与模型，使用演示数据" width="32%" />
-  <img src="docs/images/share-neon-portrait.png" alt="用量报告分享卡：霓虹风格竖版，使用演示数据" width="32%" />
+  <img src="docs/images/share-porcelain-portrait.png" alt="瓷白风格竖版用量分享卡，使用演示数据" width="32%" />
+  <img src="docs/images/share-titanium-portrait.png" alt="钛影风格竖版用量分享卡，使用演示数据" width="32%" />
+  <img src="docs/images/share-prism-portrait.png" alt="棱镜风格竖版用量分享卡，使用演示数据" width="32%" />
 </p>
-<p align="center"><sub>左：极光 · 右：霓虹（演示数据，非真实消耗）</sub></p>
+<p align="center"><sub>瓷白 · 钛影 · 棱镜（演示数据，非真实消耗）</sub></p>
 
 ---
 
@@ -204,7 +212,7 @@
 flowchart TD
     subgraph macOS UI ["macOS 原生前端 (SwiftUI / AppKit)"]
         MB["菜单栏股票行情 (Ticker)"]
-        PN["四风格面板 (PanelView)"]
+        PN["七主题面板 (PanelView)"]
         KC["macOS 钥匙串 (Keychain)"]
         WV["即梦隐藏 Web 监听 (WKWebView)"]
     end
@@ -240,13 +248,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.8.3](https://github.com/Gary23333/agent-meter/releases/tag/v0.8.3) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.8.3-macos-arm64.dmg`
+1. 从 [Releases · v0.9.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.0) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.9.0-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [发布说明](docs/release-v0.7.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.0 发布说明](docs/release-v0.9.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -262,7 +270,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.8.3，发布标签为 v0.8.3；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.0，发布标签为 v0.9.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -305,6 +313,8 @@ python3 -m agent_meter serve --start-kimi-server
 | `/v1/sources` | `GET` | 查询各个数据源的细分指标、提取范围及错误代码 |
 | `/v1/coverage` | `GET` | 查询 24+ 应用在十一类关键指标上的覆盖状况矩阵 |
 | `/v1/refresh` | `POST` | 强制穿透缓存立即采集最新数据并返回快照 |
+| `/v1/prices` | `GET` / `PUT` | 读取或保存自定义价格与体验模型绑定；响应包含同步目录状态 |
+| `/v1/prices/sync` | `POST` | 立即同步公开模型名称和刊例价，保留用户价格与旧目录回退 |
 | `/v1/web-sessions` | `PUT` | 前端将钥匙串中的凭据/Cookie 传入后端内存使用 |
 | `/v1/observations` | `PUT` | 前端将网页抓取到的白名单结构化指标同步至后端内存 |
 
@@ -334,7 +344,7 @@ with urlopen(req, timeout=30) as resp:
 本项目拥有严格的质量保障体系，包含完整的单元测试、契约测试与真实对账校验器：
 
 ```sh
-# 1. 运行全量单元测试（包含 277 项严格测试，零失败）
+# 1. 运行全量单元测试（包含 284 项严格测试，零失败；dsh 建议 Python 3.14）
 python3 -m unittest discover -v
 
 # 2. 运行真实环境对账校验（核对 CC Switch 逐条计算与后端 SQL 一致性）
@@ -346,6 +356,11 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.9.0 · 2026-10-24
+- **模型目录自动同步与体验模型绑定**：软件内更新主流模型名称与四项 Token 刊例价，自定义价格优先；未定价模型可绑定现有模型进行 API 等价估算。详见[发布说明](docs/release-v0.9.md)。
+- **新增瓷白、钛影、棱镜三套 3D 主题**：总计七套风格，覆盖主面板、重置器与竖版分享卡。
+- **重置器体验升级**：24 / 48 小时观察窗、立即刷新、立体机身与屏幕、折叠来源口径及可展开历史记录。
 
 ### v0.8.3 · 2026-10-21
 - **修复分享卡风格点不动**：报告窗口改回 `NSHostingController` 挂载，系统桥接控件的点击恢复；风格切换换成纯 SwiftUI 的 `PillTabs`。详见[发布说明](docs/release-v0.8.3.md)。

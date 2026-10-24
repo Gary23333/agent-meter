@@ -106,6 +106,34 @@ class PriceTableTests(unittest.TestCase):
             self.assertNotIn("minimax-m3.1-flash", table.converted)
             self.assertEqual(cny.match("claude-fable-5-1"), "claude-fable-5-1")
 
+    def test_preview_model_binding_and_persistence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            save_prices(tmp, "USD", {}, {"kimi-k3.1-pro-preview": "kimi-k3.1-pro"})
+            table = load_prices(tmp)
+            self.assertEqual(table.match("kimi-code/kimi-k3.1-pro-preview"), "kimi-k3.1-pro")
+            self.assertEqual(table.binding_for("kimi-code/kimi-k3.1-pro-preview"), "kimi-k3.1-pro")
+            tokens = metric({"periods": {"all": {"groups": [
+                {"model": "kimi-k3.1-pro-preview", "fresh_input": 1_000_000,
+                 "cache_read": 1_000_000, "cache_write": 0, "output": 1_000_000}
+            ]}}})
+            cost = estimate_source_cost(tokens, table)
+            self.assertEqual(cost["status"], "available")
+            self.assertEqual(cost["value"]["periods"]["all"]["amount"], "12.2")
+            self.assertEqual(cost["value"]["bound_models"],
+                             {"kimi-k3.1-pro-preview": "kimi-k3.1-pro"})
+            # Legacy saves retain bindings instead of silently deleting them.
+            save_prices(tmp, "USD", {"custom": {"input": 1, "output": 2}})
+            self.assertIn("kimi-k3-1-pro-preview", load_prices(tmp).aliases)
+
+    def test_latest_builtin_models(self):
+        table = PriceTable("USD", {}, set())
+        self.assertEqual(table.match("gpt-6.1-sol-2026-09-29"), "gpt-6.1-sol")
+        self.assertEqual(table.match("claude-sonnet-5-5"), "claude-sonnet-5-5")
+        self.assertEqual(table.match("claude-haiku-5-5"), "claude-haiku-5-5")
+        self.assertEqual(table.match("kimi-k3.1-pro"), "kimi-k3.1-pro")
+        self.assertEqual(table.models["gpt-6.1-sol"], (2.0, 0.1, 2.5, 10.0))
+        self.assertEqual(table.models["claude-sonnet-5-5"], (2, 0.1, 2.5, 10))
+
     def test_collector_attaches_estimates(self):
         from agent_meter.collector import collect
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,19 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// Four panel styles, from the plainest to the loudest. Components read the
+/// Seven panel styles, from the plainest to the loudest. Components read the
 /// theme from the environment and pick their own look; data views only ask
 /// for tokens (tint, number font, glow) so the layout stays identical.
 enum PanelTheme: String, CaseIterable, Identifiable {
-    case minimal, native, aurora, neon
+    case minimal, native, porcelain, aurora, titanium, neon, prism
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .minimal: return "极简"
         case .native: return "原生"
+        case .porcelain: return "瓷白"
         case .aurora: return "极光"
+        case .titanium: return "钛影"
         case .neon: return "霓虹"
+        case .prism: return "棱镜"
         }
     }
 
@@ -21,8 +24,11 @@ enum PanelTheme: String, CaseIterable, Identifiable {
         switch self {
         case .minimal: return "黑白排版，无卡片无阴影"
         case .native: return "macOS 系统风格，实色卡片"
+        case .porcelain: return "柔和陶瓷，克制的浅浮雕"
         case .aurora: return "毛玻璃与彩色光斑"
+        case .titanium: return "拉丝金属，深色机械层次"
         case .neon: return "赛博霓虹，动态光效"
+        case .prism: return "全息晶体，炫彩空间光影"
         }
     }
 
@@ -30,42 +36,41 @@ enum PanelTheme: String, CaseIterable, Identifiable {
         switch self {
         case .minimal: return "circle"
         case .native: return "macwindow"
+        case .porcelain: return "cube"
         case .aurora: return "sparkles"
+        case .titanium: return "cube.fill"
         case .neon: return "bolt.fill"
+        case .prism: return "diamond.fill"
         }
     }
 
-    /// Neon is designed for a dark room; the other three follow the system.
-    var forcedScheme: ColorScheme? { self == .neon ? .dark : nil }
-
-    /// Multiplier for coloured shadows.
-    var glow: CGFloat {
-        switch self {
-        case .minimal, .native: return 0
-        case .aurora: return 1
-        case .neon: return 1.7
-        }
-    }
-
+    var is3D: Bool { self == .porcelain || self == .titanium || self == .prism }
+    var isLuminous: Bool { self == .neon || self == .prism }
+    var forcedScheme: ColorScheme? { isLuminous || self == .titanium ? .dark : nil }
     var numberDesign: Font.Design {
         switch self {
         case .minimal, .native: return .default
-        case .aurora: return .rounded
-        case .neon: return .monospaced
+        case .porcelain, .aurora, .titanium: return .rounded
+        case .neon, .prism: return .monospaced
+        }
+    }
+    var glow: CGFloat {
+        switch self {
+        case .minimal, .native: return 0
+        case .porcelain: return 0.35
+        case .aurora, .titanium: return 1
+        case .neon, .prism: return 1.7
         }
     }
 
-    /// Font for headline figures (token totals, ring percentages).
     func number(_ size: CGFloat) -> Font {
         switch self {
         case .minimal: return .system(size: size, weight: .light, design: .default)
         case .native: return .system(size: size, weight: .semibold, design: .default)
-        case .aurora: return .system(size: size, weight: .heavy, design: .rounded)
-        case .neon: return .system(size: size * 0.92, weight: .bold, design: .monospaced)
+        case .porcelain, .aurora, .titanium: return .system(size: size, weight: .heavy, design: .rounded)
+        case .neon, .prism: return .system(size: size * 0.92, weight: .bold, design: .monospaced)
         }
     }
-
-    // MARK: Colour
 
     func health(_ remaining: Double) -> Color {
         switch self {
@@ -77,9 +82,9 @@ enum PanelTheme: String, CaseIterable, Identifiable {
             if remaining < 20 { return Color(nsColor: .systemRed) }
             if remaining < 50 { return Color(nsColor: .systemOrange) }
             return Color(nsColor: .systemGreen)
-        case .aurora:
+        case .porcelain, .aurora, .titanium:
             return healthTint(remaining)
-        case .neon:
+        case .neon, .prism:
             if remaining < 20 { return Neon.red }
             if remaining < 50 { return Neon.yellow }
             return Neon.lime
@@ -89,45 +94,51 @@ enum PanelTheme: String, CaseIterable, Identifiable {
     func healthAccent(_ remaining: Double) -> Color {
         switch self {
         case .minimal, .native: return health(remaining)
-        case .aurora: return healthTintAccent(remaining)
-        case .neon:
+        case .porcelain, .aurora, .titanium: return healthTintAccent(remaining)
+        case .neon, .prism:
             if remaining < 20 { return Neon.magenta }
             if remaining < 50 { return Neon.orange }
             return Neon.cyan
         }
     }
 
-    /// Brand / series colour as this theme shows it (minimal drops colour).
     func tint(_ color: Color) -> Color {
         self == .minimal ? (color == .secondary ? .secondary : .primary) : color
     }
 
-    /// Fill for a headline figure that would otherwise be a gradient.
     func figure(_ colors: [Color]) -> AnyShapeStyle {
         switch self {
         case .minimal: return AnyShapeStyle(Color.primary)
         case .native: return AnyShapeStyle(colors.first ?? .primary)
+        case .porcelain:
+            return AnyShapeStyle(LinearGradient(colors: [Color(red: 0.24, green: 0.35, blue: 0.55), Color(red: 0.54, green: 0.42, blue: 0.66)], startPoint: .top, endPoint: .bottom))
         case .aurora: return AnyShapeStyle(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
+        case .titanium:
+            return AnyShapeStyle(LinearGradient(colors: [.white, Color(red: 0.48, green: 0.68, blue: 0.82)], startPoint: .top, endPoint: .bottom))
         case .neon: return AnyShapeStyle(LinearGradient(colors: [Neon.cyan, Neon.magenta], startPoint: .leading, endPoint: .trailing))
+        case .prism:
+            return AnyShapeStyle(LinearGradient(colors: [Neon.cyan, Color(red: 0.62, green: 0.46, blue: 1), Neon.magenta, Neon.yellow], startPoint: .topLeading, endPoint: .bottomTrailing))
         }
     }
 
-    /// Colour for the n-th part of a breakdown (donut, legend).
     func series(_ color: Color, index: Int) -> Color {
         switch self {
         case .minimal: return Color.primary.opacity([0.85, 0.55, 0.32, 0.16][index % 4])
-        case .neon: return [Neon.cyan, Neon.magenta, Neon.lime, Neon.yellow][index % 4]
+        case .neon, .prism: return [Neon.cyan, Neon.magenta, Neon.lime, Neon.yellow][index % 4]
+        case .titanium: return color
         default: return color
         }
     }
 
-    /// Main accent pair for highlights (selected tab, logo).
     var accent: [Color] {
         switch self {
         case .minimal: return [.primary, .primary]
         case .native: return [.accentColor, .accentColor]
+        case .porcelain: return [Color(red: 0.48, green: 0.60, blue: 0.76), Color(red: 0.72, green: 0.58, blue: 0.69)]
         case .aurora: return [Color(red: 0.40, green: 0.45, blue: 1.0), Color(red: 0.70, green: 0.36, blue: 0.98)]
+        case .titanium: return [Color(red: 0.56, green: 0.72, blue: 0.84), Color(red: 0.31, green: 0.44, blue: 0.57)]
         case .neon: return [Neon.magenta, Neon.cyan]
+        case .prism: return [Neon.cyan, Neon.magenta]
         }
     }
 }
@@ -182,9 +193,64 @@ struct ThemeBackground: View {
         switch theme {
         case .minimal: Color(nsColor: .textBackgroundColor)
         case .native: Color(nsColor: .windowBackgroundColor)
+        case .porcelain, .titanium, .prism: DimensionalBackground(theme: theme)
         case .aurora: AuroraBackground()
         case .neon: NeonBackground()
         }
+    }
+}
+
+/// Static, code-rendered depth: radial-lit spheres, a horizon and soft contact
+/// shadows. It is deterministic enough for ImageRenderer and cheap in a panel.
+struct DimensionalBackground: View {
+    let theme: PanelTheme
+
+    var body: some View {
+        ZStack {
+            base
+            if theme == .porcelain {
+                orb(Color(red: 0.77, green: 0.85, blue: 0.96), x: -155, y: -230, size: 260)
+                orb(Color(red: 0.94, green: 0.80, blue: 0.82), x: 165, y: 180, size: 220)
+            } else if theme == .titanium {
+                orb(Color(red: 0.24, green: 0.39, blue: 0.52), x: 160, y: -250, size: 290)
+                orb(Color(red: 0.10, green: 0.14, blue: 0.20), x: -160, y: 230, size: 250)
+            } else {
+                orb(Neon.cyan.opacity(0.8), x: -155, y: -210, size: 280)
+                orb(Neon.magenta.opacity(0.75), x: 165, y: 40, size: 260)
+                orb(Neon.violet.opacity(0.8), x: -90, y: 280, size: 240)
+            }
+            VStack {
+                Spacer()
+                Ellipse().fill(Color.black.opacity(theme == .porcelain ? 0.07 : 0.30))
+                    .frame(width: 340, height: 54).blur(radius: 20).offset(y: 30)
+            }
+        }
+        .clipped()
+    }
+
+    private var base: some View {
+        switch theme {
+        case .porcelain:
+            return AnyView(LinearGradient(colors: [Color(red: 0.96, green: 0.97, blue: 0.99), Color(red: 0.84, green: 0.87, blue: 0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        case .titanium:
+            return AnyView(LinearGradient(colors: [Color(red: 0.055, green: 0.07, blue: 0.09), Color(red: 0.12, green: 0.15, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        default:
+            return AnyView(ZStack {
+                Color(red: 0.025, green: 0.02, blue: 0.07)
+                AngularGradient(colors: [Neon.cyan, Neon.violet, Neon.magenta, Neon.cyan], center: .center)
+                    .opacity(0.18).blur(radius: 45)
+            })
+        }
+    }
+
+    private func orb(_ color: Color, x: CGFloat, y: CGFloat, size: CGFloat) -> some View {
+        Circle()
+            .fill(RadialGradient(colors: [Color.white.opacity(theme == .porcelain ? 0.82 : 0.52), color, color.opacity(0.12)],
+                                 center: .init(x: 0.32, y: 0.25), startRadius: 2, endRadius: size * 0.55))
+            .frame(width: size, height: size)
+            .shadow(color: color.opacity(0.35), radius: 24, x: 8, y: 18)
+            .offset(x: x, y: y)
+            .allowsHitTesting(false)
     }
 }
 
@@ -336,7 +402,7 @@ struct ThemeDivider: View {
 
     var body: some View {
         switch theme {
-        case .neon:
+        case .neon, .prism:
             Rectangle()
                 .fill(LinearGradient(colors: [Neon.magenta.opacity(0), Neon.magenta, Neon.cyan, Neon.cyan.opacity(0)],
                                      startPoint: .leading, endPoint: .trailing))
@@ -344,6 +410,8 @@ struct ThemeDivider: View {
                 .shadow(color: Neon.magenta.opacity(0.8), radius: 4)
         case .minimal:
             Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 0.5)
+        case .porcelain:
+            Rectangle().fill(LinearGradient(colors: [.white, Color.black.opacity(0.10)], startPoint: .top, endPoint: .bottom)).frame(height: 1)
         default:
             Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
         }
@@ -351,13 +419,12 @@ struct ThemeDivider: View {
 }
 
 extension View {
-    /// Coloured shadow scaled by the theme's glow (none for flat themes).
-    /// Neon stacks a tight core glow under a wide halo.
     @ViewBuilder func themeGlow(_ color: Color, radius: CGFloat, y: CGFloat = 0, theme: PanelTheme) -> some View {
         switch theme {
         case .minimal, .native: self
-        case .aurora: shadow(color: color, radius: radius, y: y)
-        case .neon: shadow(color: color, radius: radius * 0.6, y: y).shadow(color: color.opacity(0.7), radius: radius * 1.8)
+        case .porcelain: shadow(color: color.opacity(0.45), radius: radius * 0.7, y: y + 1)
+        case .aurora, .titanium: shadow(color: color, radius: radius, y: y)
+        case .neon, .prism: shadow(color: color, radius: radius * 0.6, y: y).shadow(color: color.opacity(0.7), radius: radius * 1.8)
         }
     }
 }

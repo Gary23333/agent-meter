@@ -17,7 +17,7 @@ enum PreviewRenderer {
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
         let snap = Snapshot(json)
-        // 4 张竖版分享卡：演示快照、7 天，4 套风格各一张。
+        // 7 张竖版分享卡：演示快照、7 天，7 套风格各一张。
         if let report = ReportData.build(snapshot: snap, period: .week, now: Date()) {
             for theme in PanelTheme.allCases {
                 if let png = ShareCardRenderer.pngData(data: report, theme: theme, scale: 2) {

@@ -1,4 +1,4 @@
-"""Join the four themed previews into docs/images/themes-{dark,light}.png (accounts)
+"""Join the seven themed previews into docs/images/themes-{dark,light}.png (accounts)
 and docs/images/forecast-themes-{dark,light}.png (Tibo resetter card).
 
 Needs Pillow (`python3 -m pip install pillow`); input comes from the App's
@@ -19,7 +19,9 @@ shift = {"forecast": {"minimal": -30}}
 
 for (tab, prefix, (top, height)), (mode, backdrop) in ((s, m) for s in sheets
                                                         for m in (("dark", (24, 24, 28)), ("light", (232, 232, 236)))):
-    names = [f"minimal-{tab}-{mode}", f"native-{tab}-{mode}", f"{tab}-{mode}", f"neon-{tab}-{mode}"]
+    names = [f"{theme}-{tab}-{mode}" for theme in ("minimal", "native", "porcelain")]
+    names += [f"{tab}-{mode}"]  # Aurora keeps the original unprefixed filenames.
+    names += [f"{theme}-{tab}-{mode}" for theme in ("titanium", "neon", "prism")]
     panels = [Image.open(rendered / f"{n}.png").convert("RGB") for n in names]
     tops = [top + shift.get(tab, {}).get(n.split("-")[0], 0) for n in names]
     panels = [p.crop((0, t, p.width, min(t + height, p.height))) for p, t in zip(panels, tops)]
