@@ -9,7 +9,7 @@ struct AccountsView: View {
         VStack(alignment: .leading, spacing: 10) {
             if snapshot.accountSources.isEmpty {
                 Card {
-                    Text("暂时没有可显示的账户额度。").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("暂时没有可显示的账户额度。").font(.system(size: 12)).themeForeground(.secondary)
                 }
             }
             ForEach(snapshot.accountSources) { AccountCard(source: $0, snapshot: snapshot, now: now) }
@@ -35,7 +35,7 @@ struct InactiveRow: View {
             BrandBadge(brand: brand, size: 22, icon: AppLauncher.icon(for: source.baseID, in: snapshot)).saturation(0.35).opacity(0.85)
             VStack(alignment: .leading, spacing: 1) {
                 Text(source.displayName).font(.system(size: 12, weight: .medium))
-                Text(Catalog.reason(source.reason)).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Text(Catalog.reason(source.reason)).font(.system(size: 10.5)).themeForeground(.secondary)
             }
             Spacer()
             OpenAppButton(sourceID: source.baseID, snapshot: snapshot, compact: true)
@@ -97,7 +97,7 @@ struct AccountCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("近 \(points.count) 个活跃日 · \(source.metric("tokens")?.value["coverage"].string == "kimi_code_local_sessions" ? "本机" : "账户") Token")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 10.5)).themeForeground(.secondary)
                     Spacer()
                     Text(Fmt.tokens(points.reduce(0) { $0 + $1.tokens }))
                         .font(.system(size: 11, weight: .bold, design: theme.numberDesign)).foregroundStyle(tint)
@@ -127,7 +127,7 @@ struct AccountCard: View {
             BrandBadge(brand: brand, size: 30, icon: AppLauncher.icon(for: source.baseID, in: snapshot))
             VStack(alignment: .leading, spacing: 1) {
                 Text(source.displayName).font(.system(size: 13.5, weight: theme == .minimal ? .semibold : .bold))
-                Text(subtitle).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                Text(subtitle).font(.system(size: 10.5)).themeForeground(.secondary).lineLimit(1)
             }
             Spacer()
             if source.status != "available" {
@@ -282,24 +282,26 @@ struct QuotaBar: View {
     let quota: JSON
     let now: Date
     @Environment(\.panelTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
         let remaining = quota["remaining_percent"].double ?? 0
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(Catalog.bucketLabel(quota)).font(.system(size: 12, weight: .medium))
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(Catalog.bucketLabel(quota)).font(theme.font(12, weight: .medium)).themeForeground()
                 if let used = quota["used"].double, let limit = quota["limit"].double {
                     let fmt: (Double) -> String = quota["unit"].string == "tokens" ? Fmt.tokens : Fmt.trim
-                    Text("\(fmt(used))/\(fmt(limit))").font(.system(size: 10.5)).foregroundStyle(.tertiary).monospacedDigit()
+                    Text("\(fmt(used))/\(fmt(limit))").font(theme.font(10.5)).themeForeground(.tertiary).monospacedDigit()
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 Text("剩余 \(Fmt.percent(remaining.rounded()))")
-                    .font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                    .foregroundStyle(theme.health(remaining))
+                    .font(.system(size: 12, weight: .semibold, design: theme.numberDesign)).monospacedDigit()
+                    .foregroundStyle(theme.healthText(remaining, scheme: scheme))
             }
             Meter(fraction: remaining / 100, tint: theme.health(remaining), accent: theme.healthAccent(remaining))
             if let reset = quota["resets_at"].date {
                 Text("\(reset > now ? Fmt.countdown(to: reset, now: now) + " 重置" : "已重置，待刷新") · \(Fmt.moment(reset, now: now))")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary).monospacedDigit()
+                    .font(theme.font(10.5)).themeForeground(.secondary).monospacedDigit()
             }
         }
     }
@@ -311,42 +313,45 @@ struct ResetCardStrip: View {
     let now: Date
     let tint: Color
     @Environment(\.panelTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             ForEach(cards.indices, id: \.self) { i in
                 let exp = cards[i]["expires_at"].date
                 let days = exp.map { Int($0.timeIntervalSince(now) / 86400) }
                 let urgent = (days ?? 99) < 7
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("第 \(i + 1) 张").font(.system(size: 9.5)).foregroundStyle(.secondary)
-                    Text(exp.map { Fmt.day($0, now: now) } ?? "未知").font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                    Text(days.map { $0 >= 0 ? "\($0) 天后到期" : "已到期" } ?? "").font(.system(size: 9.5))
-                        .foregroundStyle(urgent ? Color.orange : Color.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("第 \(i + 1) 张").font(theme.font(9.5, weight: .medium)).themeForeground(.tertiary)
+                    Text(exp.map { Fmt.day($0, now: now) } ?? "未知")
+                        .font(.system(size: 11, weight: .semibold, design: theme.numberDesign))
+                        .themeForeground().monospacedDigit()
+                    Text(days.map { $0 >= 0 ? "\($0) 天后到期" : "已到期" } ?? "")
+                        .font(theme.font(9.5, weight: .medium))
+                        .foregroundStyle(urgent ? Color.orange : theme.textColor(.secondary, scheme: scheme))
                 }
-                .padding(.horizontal, 8).padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 9).padding(.vertical, 7)
+                .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
                 .background { chip(urgent: urgent) }
             }
         }
     }
 
     @ViewBuilder private func chip(urgent: Bool) -> some View {
-        let edge = urgent ? (theme == .neon ? Neon.orange : Color.orange) : tint
+        let edge = urgent ? (theme.isLuminous ? Neon.orange : Color.orange) : tint
         switch theme {
         case .minimal:
-            // Just a leading rule; orange only when it is close to expiring.
-            Rectangle().fill(urgent ? Color.orange : Color.primary.opacity(0.15)).frame(width: 1)
+            Rectangle().fill(urgent ? Color.orange : Color.primary.opacity(0.18)).frame(width: 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .native:
-            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.6) : Color(nsColor: .separatorColor), lineWidth: 0.5))
+            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.045))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.55) : Color(nsColor: .separatorColor), lineWidth: 0.5))
         case .porcelain, .aurora, .titanium:
-            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(urgent ? 0.06 : 0.1))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.5) : tint.opacity(0.25), lineWidth: 0.6))
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint.opacity(urgent ? 0.07 : 0.10))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(urgent ? Color.orange.opacity(0.48) : tint.opacity(0.22), lineWidth: 0.6))
         case .neon, .prism:
-            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(edge.opacity(0.1))
-                .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(edge.opacity(0.85), lineWidth: 1))
-                .shadow(color: edge.opacity(0.6), radius: 5)
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(edge.opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(edge.opacity(0.48), lineWidth: 0.7))
         }
     }
 }

@@ -44,7 +44,7 @@ struct PanelView: View {
             VStack(alignment: .leading, spacing: 1) {
                 HeaderTitle()
                 Text(statusLine).font(.system(size: 10.5, design: store.theme == .neon ? .monospaced : .default))
-                    .foregroundStyle(.secondary).lineLimit(1)
+                    .themeForeground(.secondary).lineLimit(1)
             }
             Spacer()
             themeMenu
@@ -165,7 +165,7 @@ struct PanelView: View {
             VStack(spacing: 12) {
                 Image(systemName: "bolt.horizontal.circle").font(.system(size: 34)).foregroundStyle(.orange)
                 Text("无法读取用量").font(.system(size: 14, weight: .semibold))
-                Text(error).font(.system(size: 11.5)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Text(error).font(.system(size: 11.5)).themeForeground(.secondary).multilineTextAlignment(.center)
                 Button("重试") { store.refresh() }.controlSize(.regular)
             }
             .padding(28)
@@ -175,8 +175,8 @@ struct PanelView: View {
             VStack(spacing: 12) {
                 ProgressView().controlSize(.regular)
                 Text(store.phase == .starting ? "正在启动本机后端…" : "正在读取账户额度与本机记录…")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                Text("首次采集通常需要几秒").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    .font(.system(size: 12)).themeForeground(.secondary)
+                Text("首次采集通常需要几秒").font(.system(size: 10.5)).themeForeground(.tertiary)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 300)
@@ -198,7 +198,7 @@ struct PanelView: View {
             Text("北京时间")
         }
         .font(.system(size: 10.5))
-        .foregroundStyle(.secondary)
+        .themeForeground(.secondary)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -278,7 +278,7 @@ struct ErrorBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text("刷新失败，显示上次数据。\(message)").font(.system(size: 11)).foregroundStyle(.secondary)
+            Text("刷新失败，显示上次数据。\(message)").font(.system(size: 11)).themeForeground(.secondary)
             Spacer(minLength: 0)
         }
         .padding(10)
@@ -292,7 +292,7 @@ struct AppsView: View {
     var body: some View {
         let rows = snapshot.coverage.sorted { ($0.collected, $0.installed ? 1 : 0) > ($1.collected, $1.installed ? 1 : 0) }
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 legend("available", "已采集")
                 legend("partial", "部分")
                 legend("stale", "过期")
@@ -303,24 +303,25 @@ struct AppsView: View {
             .padding(.horizontal, 2)
             Card {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                    if i > 0 { Divider().opacity(0.4) }
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(row.name).font(.system(size: 12, weight: row.collected > 0 ? .medium : .regular))
-                                .foregroundStyle(row.collected > 0 ? .primary : .secondary)
+                    if i > 0 { Divider().opacity(0.28) }
+                    HStack(spacing: 7) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.name).font(.system(size: 12, weight: row.collected > 0 ? .semibold : .regular))
+                                .themeForeground(row.collected > 0 ? .primary : .secondary)
                                 .lineLimit(1)
                             Text(row.installed ? (row.version.map { "v" + $0 } ?? "已安装") : "仅有历史记录")
-                                .font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                                .font(.system(size: 9.5)).themeForeground(.tertiary)
                         }
-                        Spacer(minLength: 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         HStack(spacing: 3) {
                             ForEach(row.fields, id: \.name) { f in
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(Catalog.statusColor(f.status).opacity(f.status == "not_supported" || f.status == "not_provided" ? 0.35 : 0.9))
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(Catalog.statusColor(f.status).opacity(f.status == "not_supported" || f.status == "not_provided" ? 0.38 : 0.88))
                                     .frame(width: 7, height: 12)
                                     .help("\(f.name)：\(Catalog.statusLabel(f.status))")
                             }
                         }
+                        .frame(width: 107, alignment: .leading)
                         if row.installed, let path = row.path, path.hasSuffix(".app") {
                             Button { AppLauncher.open(.init(id: path, name: row.name, path: path, url: nil)) } label: {
                                 Image(nsImage: AppLauncher.icon(atPath: path)).resizable().frame(width: 18, height: 18)
@@ -329,14 +330,15 @@ struct AppsView: View {
                             .help("打开 " + row.name)
                         }
                         Text("\(row.collected)/\(row.fields.count)")
-                            .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
-                            .foregroundStyle(row.collected > 0 ? .primary : .tertiary)
+                            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+                            .themeForeground(row.collected > 0 ? .primary : .tertiary)
                             .frame(width: 34, alignment: .trailing)
                     }
+                    .frame(minHeight: 32)
                 }
             }
             Text("每格对应一类指标：额度、重置、重置卡、积分、Token、费用、续费、续费倒计时、续费金额、积分更新、积分更新倒计时。")
-                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                .font(.system(size: 10)).themeForeground(.tertiary)
                 .padding(.horizontal, 2)
         }
     }
@@ -345,7 +347,7 @@ struct AppsView: View {
         HStack(spacing: 4) {
             RoundedRectangle(cornerRadius: 2).fill(Catalog.statusColor(status).opacity(status == "not_supported" ? 0.35 : 0.9))
                 .frame(width: 7, height: 10)
-            Text(text).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(text).font(.system(size: 10)).themeForeground(.secondary)
         }
     }
 }
@@ -445,7 +447,7 @@ struct CockpitStrip: View {
                 .fixedSize()
             }
             Text(g.windows.first?.reset.map { Fmt.shortCountdown(to: $0, now: now, past: "待刷新") } ?? "—")
-                .font(.system(size: 9)).foregroundStyle(.secondary).monospacedDigit()
+                .font(.system(size: 9)).themeForeground(.secondary).monospacedDigit()
         }
         .frame(minWidth: 52)
     }

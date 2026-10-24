@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
   <img src="https://img.shields.io/badge/Tests-284%20Passed-brightgreen" alt="Tests: 284 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.0-blue" alt="Release: v0.9.0" />
+  <img src="https://img.shields.io/badge/Release-v0.9.1-blue" alt="Release: v0.9.1" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -81,6 +81,7 @@
   - **极光**（默认）：流光底色、毛玻璃卡片与品牌色微光；
   - **钛影**：深色拉丝金属、机械式立体层次；
   - **霓虹 / 棱镜**：赛博光效或全息晶体，提供更强的空间感与视觉表现；
+- **统一的视觉与排版基线**：七套风格共享三级文字颜色、稳定卡片底色、清晰的选中态、14px 内容内边距和固定排行数字列；霓虹与棱镜收敛强光干扰，钛影与瓷白的小字对比更清楚；
 - **统一的供应商卡片**：各来源按同一顺序展示「额度窗口 → 积分钱包 → 积分更新 → 重置卡 → 续费 → Token」，额度窗口从短到长排列，倒计时按紧急程度而非品牌色着色；
 - **Swift Charts 消耗分布图**：将输入、输出、缓存命中等构成以环形图直观呈现，深色/浅色模式自适应。
 
@@ -248,13 +249,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.9.0](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.0) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.9.0-macos-arm64.dmg`
+1. 从 [Releases · v0.9.1](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.1) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.9.1-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.0 发布说明](docs/release-v0.9.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.1 发布说明](docs/release-v0.9.1.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -270,7 +271,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.0，发布标签为 v0.9.0；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.1，发布标签为 v0.9.1；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -356,6 +357,11 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.9.1 · 2026-10-24
+- **七套主题完整视觉升级**：统一三级文字、卡片、间距、圆角、选中态和排行数字列，提升浅色与深色外观的可读性，同时保留每套主题的个性。详见[发布说明](docs/release-v0.9.1.md)。
+- **重置器与数据页优化**：24 / 48 小时观察窗、概率区间、来源与历史日期对齐；账户、应用覆盖和模型排行更易扫描。
+- **分享卡与报告同步升级**：七套竖版分享卡及报告窗口采用一致的排版与图表规范，README 演示截图同步更新。
 
 ### v0.9.0 · 2026-10-24
 - **模型目录自动同步与体验模型绑定**：软件内更新主流模型名称与四项 Token 刊例价，自定义价格优先；未定价模型可绑定现有模型进行 API 等价估算。详见[发布说明](docs/release-v0.9.md)。

@@ -37,7 +37,7 @@ struct UsageView: View {
             } else {
                 Card {
                     Label(Catalog.reason(snapshot.history?.reason ?? "database_not_found"), systemImage: "tray")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).themeForeground(.secondary)
                 }
             }
         }
@@ -81,39 +81,38 @@ private struct PeriodSummary: View {
         let cost = headlineCost
         return HStack(alignment: .top, spacing: 10) {
             Card(tint: Color(red: 0.36, green: 0.52, blue: 1)) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Token 总量").font(.system(size: 11)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("TOKEN 总量").font(theme.font(10.5, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(Fmt.tokens(total)).font(theme.number(26)).monospacedDigit()
-                            .foregroundStyle(theme.figure([Color(red: 0.45, green: 0.6, blue: 1), Color(red: 0.75, green: 0.45, blue: 1)]))
-                            .themeGlow(Neon.cyan.opacity(0.6), radius: 4, theme: theme == .neon ? .neon : .minimal)
+                        Text(Fmt.tokens(total)).font(theme.number(27)).monospacedDigit()
+                            .themeForeground()
                             .contentTransition(.numericText())
                         if data["total_is_lower_bound"].bool == true {
-                            Text("起").font(.system(size: 11, weight: .semibold)).foregroundStyle(.orange)
+                            Text("起").font(theme.font(11, weight: .semibold)).foregroundStyle(.orange)
                                 .help("部分历史已被汇总为日数据，总量为下界")
                         }
                     }
                     Text("\(Fmt.grouped(totals["requests"].double ?? 0)) 次请求")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(theme.font(10.5, weight: .medium)).themeForeground(.tertiary)
                 }
+                .frame(minHeight: 78, alignment: .topLeading)
             }
             Card(tint: Color(red: 0.15, green: 0.82, blue: 0.62)) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("估算费用").font(.system(size: 11)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("估算费用").font(theme.font(10.5, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
                     Text(cost.map { Fmt.amount($0.amount, unit: $0.unit) } ?? "—")
-                        .font(theme.number(26)).monospacedDigit()
-                        .foregroundStyle(theme == .neon ? AnyShapeStyle(LinearGradient(colors: [Neon.lime, Neon.cyan], startPoint: .leading, endPoint: .trailing))
-                                                        : theme.figure([Color(red: 0.2, green: 0.9, blue: 0.6), Color(red: 0.2, green: 0.75, blue: 1)]))
-                        .themeGlow(Neon.lime.opacity(0.6), radius: 4, theme: theme == .neon ? .neon : .minimal)
+                        .font(theme.number(27)).monospacedDigit()
+                        .themeForeground()
                         .contentTransition(.numericText())
-                    Text(costComposition).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    Text(costComposition).font(theme.font(10.5, weight: .medium)).themeForeground(.tertiary)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if let note = unpricedNote {
-                        Text(note).font(.system(size: 10.5)).foregroundStyle(.orange)
+                        Text(note).font(theme.font(10.5, weight: .medium)).foregroundStyle(.orange)
                             .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                             .help("这些模型在本地价格表里没有匹配条目，未计入估算；可在「API 价格表（本机估算）…」里补充")
                     }
                 }
+                .frame(minHeight: 78, alignment: .topLeading)
             }
             .help("按 API 价格估算，不是订阅账单")
         }
@@ -159,34 +158,37 @@ private struct PeriodSummary: View {
     private var composition: some View {
         let parts = segments.filter { $0.value > 0 }
         return Card {
-            Text("构成").font(.system(size: 12, weight: .semibold))
-            HStack(spacing: 16) {
+            SectionTitle(text: "构成", trailing: "输入 / 输出 / 缓存")
+            HStack(spacing: 18) {
                 ZStack {
                     Chart(parts) { s in
-                        SectorMark(angle: .value("Token", s.value), innerRadius: .ratio(0.68), angularInset: 1.5)
-                            .cornerRadius(3)
+                        SectorMark(angle: .value("Token", s.value), innerRadius: .ratio(0.70), angularInset: 1.2)
+                            .cornerRadius(2.5)
                             .foregroundStyle(s.color.gradient)
                     }
-                    .frame(width: 104, height: 104)
-                    .themeGlow(segments[2].color.opacity(0.45), radius: 8, theme: theme)
-                    VStack(spacing: 0) {
+                    .frame(width: 100, height: 100)
+                    .themeGlow(segments[2].color.opacity(0.24), radius: 5, theme: theme)
+                    VStack(spacing: 1) {
                         Text(totals["cache_hit_rate"].double.map { Fmt.percent(($0 * 1000).rounded() / 10) } ?? "—")
-                            .font(theme.number(16)).monospacedDigit()
-                            .foregroundStyle(segments[2].color)
-                        Text("缓存命中").font(.system(size: 9)).foregroundStyle(.secondary)
+                            .font(theme.number(17)).monospacedDigit().themeForeground()
+                        Text("缓存命中").font(theme.font(9, weight: .medium)).themeForeground(.tertiary)
                     }
                 }
-                VStack(alignment: .leading, spacing: 7) {
+                .frame(width: 104, height: 104)
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(segments) { s in
-                        HStack(spacing: 6) {
+                        HStack(spacing: 7) {
                             RoundedRectangle(cornerRadius: 2).fill(s.color.gradient).frame(width: 8, height: 8)
-                                .themeGlow(s.color, radius: 2, theme: theme)
-                            Text(s.label).font(.system(size: 11)).foregroundStyle(.secondary)
-                            Spacer(minLength: 2)
-                            Text(Fmt.tokens(s.value)).font(.system(size: 11.5, weight: theme == .minimal ? .regular : .bold, design: theme.numberDesign)).monospacedDigit()
+                            Text(s.label).font(theme.font(11, weight: .medium)).themeForeground(.secondary)
+                            Spacer(minLength: 8)
+                            Text(Fmt.tokens(s.value))
+                                .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
+                                .monospacedDigit().themeForeground()
+                                .frame(width: 64, alignment: .trailing)
                         }
                     }
                 }
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -216,23 +218,25 @@ private struct PeriodSummary: View {
         if !apps.isEmpty {
             let top = apps.first?.tokens ?? 1
             Card {
-                Text("按应用").font(.system(size: 12, weight: .semibold))
+                SectionTitle(text: "按应用", trailing: "\(apps.count) 个来源")
                 ForEach(apps) { a in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
                             // CC Switch app keys map to discovery providers ("mcode" → minimax_code).
                             let provider = a.id == "mcode" ? "minimax_code" : a.id
                             if let icon = AppLauncher.icon(for: provider, in: snapshot) {
                                 Image(nsImage: icon).resizable().frame(width: 16, height: 16)
                             } else {
-                                Circle().fill(theme.tint(Catalog.appTint(a.id))).frame(width: 7, height: 7).themeGlow(Catalog.appTint(a.id), radius: 3, theme: theme)
+                                Circle().fill(theme.tint(Catalog.appTint(a.id))).frame(width: 7, height: 7)
                             }
-                            Text(Catalog.appLabel(a.id)).font(.system(size: 12, weight: .medium))
+                            Text(Catalog.appLabel(a.id)).font(theme.font(12, weight: .medium)).themeForeground().lineLimit(1)
                             OpenAppButton(sourceID: provider, snapshot: snapshot, compact: true)
-                            Spacer()
-                            Text(Fmt.tokens(a.tokens)).font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                            Text(costLabel(a.costs)).font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
-                                .frame(minWidth: 54, alignment: .trailing)
+                            Spacer(minLength: 4)
+                            Text(Fmt.tokens(a.tokens))
+                                .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
+                                .monospacedDigit().themeForeground().frame(width: 64, alignment: .trailing)
+                            Text(costLabel(a.costs)).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary).monospacedDigit()
+                                .frame(width: 56, alignment: .trailing)
                         }
                         Meter(fraction: a.tokens / max(top, 1), tint: theme.tint(Catalog.appTint(a.id)), height: 5)
                     }
@@ -284,21 +288,24 @@ private struct PeriodSummary: View {
         let groups = Array(modelRows.prefix(5))
         if !groups.isEmpty {
             Card {
-                Text("模型 Top \(groups.count)").font(.system(size: 12, weight: .medium))
+                SectionTitle(text: "模型排行", trailing: "Top \(groups.count)")
                 ForEach(groups) { g in
-                    HStack(spacing: 8) {
-                        Text(g.label).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 6) {
+                        Text(g.label).font(theme.font(11.5, weight: .medium)).themeForeground()
+                            .lineLimit(1).truncationMode(.middle).layoutPriority(1)
                         Text(Catalog.appLabel(g.app))
-                            .font(.system(size: 9.5, weight: .medium))
-                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .font(theme.font(9, weight: .semibold))
+                            .padding(.horizontal, 5).padding(.vertical, 2)
                             .foregroundStyle(theme.tint(Catalog.appTint(g.app)))
-                            .background(Capsule().fill(theme.tint(Catalog.appTint(g.app)).opacity(theme == .minimal ? 0.06 : 0.13)))
-                        Spacer()
-                        if !g.costs.isEmpty {
-                            Text(costLabel(g.costs)).font(.system(size: 10.5)).foregroundStyle(.secondary).monospacedDigit()
-                        }
-                        Text(Fmt.tokens(g.tokens)).font(.system(size: 11.5, weight: .medium)).monospacedDigit()
+                            .background(Capsule().fill(theme.tint(Catalog.appTint(g.app)).opacity(theme == .minimal ? 0.07 : 0.12)))
+                        Spacer(minLength: 4)
+                        Text(costLabel(g.costs)).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary)
+                            .monospacedDigit().frame(width: 56, alignment: .trailing)
+                        Text(Fmt.tokens(g.tokens))
+                            .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
+                            .monospacedDigit().themeForeground().frame(width: 62, alignment: .trailing)
                     }
+                    .frame(minHeight: 21)
                 }
             }
         }
@@ -316,7 +323,8 @@ private struct PeriodSummary: View {
         if let imported = history?.lastImport { parts.append("最近导入 " + Fmt.ago(imported, now: now)) }
         if data["period_status"].string == "partial" { parts.append("部分日期仅有日汇总") }
         return Text(parts.joined(separator: " · "))
-            .font(.system(size: 10)).foregroundStyle(.tertiary)
+            .font(.system(size: 10)).themeForeground(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 2)
     }
 }

@@ -39,7 +39,7 @@ struct ReportView: View {
                 VStack(spacing: 10) {
                     ProgressView()
                     Text(store.phase == .starting ? "正在启动本机后端…" : "正在读取用量…")
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 11.5)).themeForeground(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -63,7 +63,7 @@ struct ReportView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("用量报告与分享").font(.system(size: 16, weight: .semibold))
                 Text("在本机账本上聚合，只导出 PNG")
-                    .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5)).themeForeground(.tertiary)
                 Spacer()
                 PillTabs(items: Period.allCases, title: { $0.label },
                          selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
@@ -79,14 +79,14 @@ struct ReportView: View {
                 }
                 Spacer()
                 Text("竖版 · PNG 2× 输出")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).themeForeground(.tertiary)
             }
         }
     }
 
     private func control<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 9.5)).foregroundStyle(.tertiary)
+            Text(title).font(.system(size: 9.5)).themeForeground(.tertiary)
             content()
         }
     }
@@ -96,12 +96,12 @@ struct ReportView: View {
     private func previewPane(_ data: ReportData?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("分享卡预览").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Text("分享卡预览").font(.system(size: 11, weight: .semibold)).themeForeground(.secondary)
                 Spacer()
                 if data != nil {
                     Text(cardHeight > 0 ? "竖版 · \(Int(ShareCard.width * 2))×\(Int(cardHeight * 2))"
                                         : "竖版 · PNG 2×")
-                        .font(.system(size: 10, design: theme.numberDesign)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10, design: theme.numberDesign)).themeForeground(.tertiary)
                 }
             }
             GeometryReader { geo in
@@ -124,7 +124,7 @@ struct ReportView: View {
                 } else {
                     Card {
                         Text("当前时间段没有可分享的本机消耗记录。")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).themeForeground(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
@@ -148,7 +148,7 @@ struct ReportView: View {
                     sourceCard(data)
                 } else {
                     Card {
-                        Text("暂无可统计的数据。").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("暂无可统计的数据。").font(.system(size: 12)).themeForeground(.secondary)
                     }
                 }
             }
@@ -186,7 +186,7 @@ struct ReportView: View {
             }
             if data.costParts.isEmpty {
                 Text("没有可用的价格条目，费用显示为 —。")
-                    .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5)).themeForeground(.tertiary)
             }
             if !data.unpricedModels.isEmpty {
                 Text("未计价模型：" + data.unpricedModels.joined(separator: "、"))
@@ -198,49 +198,51 @@ struct ReportView: View {
 
     private func appsCard(_ data: ReportData) -> some View {
         Card {
-            Text("Top 应用").font(.system(size: 12, weight: .semibold))
+            SectionTitle(text: "Top 应用", trailing: "\(data.apps.count) 个")
             ForEach(data.apps) { app in
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
                         Circle().fill(theme.tint(app.tint)).frame(width: 6, height: 6)
-                            .themeGlow(app.tint, radius: 3, theme: theme)
-                        Text(app.name).font(.system(size: 12, weight: .medium))
-                        Spacer()
+                        Text(app.name).font(theme.font(12, weight: .medium)).themeForeground().lineLimit(1)
+                        Spacer(minLength: 4)
                         Text(Fmt.tokens(app.tokens))
-                            .font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                        Text(app.cost).font(.system(size: 10.5)).foregroundStyle(.secondary).monospacedDigit()
-                            .frame(minWidth: 54, alignment: .trailing)
+                            .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
+                            .monospacedDigit().themeForeground().frame(width: 62, alignment: .trailing)
+                        Text(app.cost).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary).monospacedDigit()
+                            .frame(width: 52, alignment: .trailing)
                     }
                     Meter(fraction: app.fraction, tint: theme.tint(app.tint), height: 4)
                 }
             }
             if data.apps.isEmpty {
-                Text("当前时间段没有应用记录。").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("当前时间段没有应用记录。").font(.system(size: 11)).themeForeground(.secondary)
             }
         }
     }
 
     private func modelsCard(_ data: ReportData) -> some View {
         Card {
-            Text("Top 模型").font(.system(size: 12, weight: .semibold))
+            SectionTitle(text: "Top 模型", trailing: "\(data.models.count) 个")
             ForEach(data.models) { model in
-                HStack(spacing: 8) {
-                    Text(model.name).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text(model.name).font(theme.font(11.5, weight: .medium)).themeForeground()
+                        .lineLimit(1).truncationMode(.middle).layoutPriority(1)
                     Text(model.appLabel)
-                        .font(.system(size: 9.5, weight: .medium))
-                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .font(theme.font(9, weight: .semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 2)
                         .foregroundStyle(theme.tint(model.tint))
-                        .background(Capsule().fill(theme.tint(model.tint).opacity(theme == .minimal ? 0.06 : 0.13)))
-                    Spacer()
-                    if model.cost != "—" {
-                        Text(model.cost).font(.system(size: 10.5)).foregroundStyle(.secondary).monospacedDigit()
-                    }
+                        .background(Capsule().fill(theme.tint(model.tint).opacity(theme == .minimal ? 0.07 : 0.12)))
+                    Spacer(minLength: 4)
+                    Text(model.cost).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary)
+                        .monospacedDigit().frame(width: 54, alignment: .trailing)
                     Text(Fmt.tokens(model.tokens))
-                        .font(.system(size: 11.5, weight: .medium)).monospacedDigit()
+                        .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
+                        .monospacedDigit().themeForeground().frame(width: 60, alignment: .trailing)
                 }
+                .frame(minHeight: 21)
             }
             if data.models.isEmpty {
-                Text("当前时间段没有模型记录。").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("当前时间段没有模型记录。").font(.system(size: 11)).themeForeground(.secondary)
             }
         }
     }
@@ -248,9 +250,9 @@ struct ReportView: View {
     private func sourceCard(_ data: ReportData) -> some View {
         Card {
             Text("数据来源").font(.system(size: 12, weight: .semibold))
-            Text(data.sourceNote).font(.system(size: 10.5)).foregroundStyle(.secondary)
+            Text(data.sourceNote).font(.system(size: 10.5)).themeForeground(.secondary)
             Text("只读聚合本机账本，不读取对话内容；费用为 API 等价估算。")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .font(.system(size: 10.5)).themeForeground(.tertiary)
             if data.periodStatus == "partial" {
                 Text("部分日期仅有日汇总，总量与费用可能偏小。")
                     .font(.system(size: 10.5)).foregroundStyle(.orange)
@@ -266,7 +268,7 @@ struct ReportView: View {
                 Label(toast, systemImage: "checkmark.circle.fill")
                     .font(.system(size: 11)).foregroundStyle(.green)
             } else if let data {
-                Text(data.sourceNote).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+                Text(data.sourceNote).font(.system(size: 10)).themeForeground(.tertiary).lineLimit(1)
             }
             Spacer()
             Button("保存 PNG…") { save() }

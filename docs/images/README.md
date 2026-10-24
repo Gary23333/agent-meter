@@ -1,6 +1,6 @@
 # README 演示截图
 
-此目录的截图由 AgentMeter v0.9.0 自带离线预览生成，采用虚构账户、积分、额度和 Token 历史。没有读取真实账户、私有日志或登录凭据；来源名称与模型名仅用于展示界面。
+此目录的截图由 AgentMeter v0.9.1 自带离线预览生成，采用虚构账户、积分、额度和 Token 历史。没有读取真实账户、私有日志或登录凭据；来源名称与模型名仅用于展示界面。
 
 - `accounts-light.png` / `accounts-dark.png`：账户额度、重置卡、Token 趋势与积分钱包。
 - `usage-light.png` / `usage-dark.png`：本机 Token 构成、估算费用、应用和模型排行。

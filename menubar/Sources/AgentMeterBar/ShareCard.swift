@@ -10,16 +10,15 @@ struct ShareCard: View {
     static let width: CGFloat = 540
 
     private var outerPad: CGFloat { 26 }
-    private var heroSize: CGFloat { 58 }
+    private var heroSize: CGFloat { 54 }
     private var costSize: CGFloat { 24 }
-    private var sectionSize: CGFloat { 10.5 }
-    private var rowSize: CGFloat { 12 }
-    private var smallSize: CGFloat { 9.5 }
+    private var sectionSize: CGFloat { 11.5 }
+    private var rowSize: CGFloat { 12.5 }
+    private var smallSize: CGFloat { 10.5 }
     private var radius: CGFloat { 16 }
-    /// 霓虹主题的等宽字体行高更高，纵向间距收紧一点，保证不压到卡片边缘。
-    private var sectionGap: CGFloat { theme.isLuminous ? 10 : 13 }
-    private var rowGap: CGFloat { theme.isLuminous ? 5 : 7 }
-    private var modelGap: CGFloat { theme.isLuminous ? 4 : 6 }
+    private var sectionGap: CGFloat { 13 }
+    private var rowGap: CGFloat { 8 }
+    private var modelGap: CGFloat { 8 }
 
     var body: some View {
         portraitBody
@@ -27,8 +26,8 @@ struct ShareCard: View {
         .background(cardBackground)
         .environment(\.colorScheme, theme.forcedScheme ?? .light)
         .overlay {
-            if theme.isLuminous {
-                CornerBrackets(length: 18).stroke(Neon.cyan.opacity(0.65), lineWidth: 1.5).padding(12)
+            if theme == .neon {
+                CornerBrackets(length: 18).stroke(Neon.cyan.opacity(0.38), lineWidth: 1.2).padding(12)
             }
         }
         .clipShape(Rectangle())
@@ -243,26 +242,27 @@ struct ShareCard: View {
 
     private var appList: some View {
         VStack(alignment: .leading, spacing: rowGap) {
-            sectionTitle("Top 应用", trailing: "Token 占比")
+            sectionTitle("Top 应用", trailing: "Token 用量")
             if data.apps.isEmpty {
                 Text("暂无应用记录").font(.system(size: smallSize)).foregroundStyle(muted)
             }
             ForEach(Array(data.apps.prefix(4))) { app in
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
                         RoundedRectangle(cornerRadius: 1.5)
                             .fill(theme.tint(app.tint))
                             .frame(width: 6, height: 6)
                         Text(app.name)
-                            .font(.system(size: rowSize, weight: theme == .minimal ? .regular : .medium))
+                            .font(.system(size: rowSize, weight: .medium))
                             .foregroundStyle(ink)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        Spacer(minLength: 6)
+                        Spacer(minLength: 8)
                         Text(Fmt.tokens(app.tokens))
                             .font(.system(size: rowSize, weight: .semibold, design: theme.numberDesign))
                             .monospacedDigit()
                             .foregroundStyle(ink)
+                            .frame(width: 88, alignment: .trailing)
                     }
                     fractionBar(app.fraction, tint: theme.tint(app.tint), height: 4)
                 }
@@ -272,36 +272,38 @@ struct ShareCard: View {
 
     private var modelList: some View {
         VStack(alignment: .leading, spacing: modelGap) {
-            sectionTitle("Top 模型", trailing: nil)
+            sectionTitle("Top 模型", trailing: "费用 / Token")
             if data.models.isEmpty {
                 Text("暂无模型记录").font(.system(size: smallSize)).foregroundStyle(muted)
             }
             ForEach(Array(data.models.prefix(3))) { model in
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Text(model.name)
-                        .font(.system(size: rowSize))
+                        .font(.system(size: rowSize, weight: .medium))
                         .foregroundStyle(ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .layoutPriority(1)
                     Text(model.appLabel)
-                        .font(.system(size: smallSize - 1, weight: .medium))
-                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .font(.system(size: smallSize - 1, weight: .semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 2)
                         .foregroundStyle(theme.tint(model.tint))
-                        .background(Capsule().fill(theme.tint(model.tint).opacity(theme == .minimal ? 0.08 : 0.16)))
+                        .background(Capsule().fill(theme.tint(model.tint).opacity(theme == .minimal ? 0.07 : 0.12)))
                         .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if model.cost != "—" {
-                        Text(model.cost)
-                            .font(.system(size: smallSize))
-                            .monospacedDigit()
-                            .foregroundStyle(muted)
-                            .lineLimit(1)
-                    }
+                    Spacer(minLength: 5)
+                    Text(model.cost)
+                        .font(.system(size: smallSize, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(muted)
+                        .lineLimit(1)
+                        .frame(width: 60, alignment: .trailing)
                     Text(Fmt.tokens(model.tokens))
                         .font(.system(size: rowSize, weight: .semibold, design: theme.numberDesign))
                         .monospacedDigit()
                         .foregroundStyle(ink)
+                        .frame(width: 76, alignment: .trailing)
                 }
+                .frame(minHeight: 22)
             }
         }
     }
@@ -408,11 +410,11 @@ struct ShareCard: View {
         case .porcelain, .aurora, .titanium:
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.55))
+                    Capsule().fill(theme == .titanium ? Color.white.opacity(0.10) : Color.black.opacity(0.08))
                     Capsule()
-                        .fill(LinearGradient(colors: [tint.opacity(0.6), tint], startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(colors: [tint.opacity(0.65), tint], startPoint: .leading, endPoint: .trailing))
                         .frame(width: max(height, geo.size.width * f))
-                        .shadow(color: tint.opacity(0.5), radius: 3)
+                        .shadow(color: tint.opacity(0.22), radius: 2)
                 }
             }
             .frame(height: height)
@@ -423,96 +425,58 @@ struct ShareCard: View {
                 let lit = Int((Double(count) * f).rounded())
                 for i in 0..<count {
                     let rect = CGRect(x: CGFloat(i) * (cell + gap), y: 0, width: cell, height: size.height)
-                    ctx.fill(Path(rect), with: .color(i < lit ? tint : tint.opacity(0.14)))
+                    ctx.fill(Path(rect), with: .color(i < lit ? tint : tint.opacity(0.12)))
                 }
             }
             .frame(height: height)
-            .shadow(color: tint.opacity(0.5), radius: 2)
+            .shadow(color: tint.opacity(0.22), radius: 2)
         }
     }
 
     // MARK: 标题 / 分隔线
 
     private func sectionTitle(_ text: String, trailing: String?) -> some View {
-        HStack(spacing: 6) {
-            Text(theme.isLuminous ? "// " + text : text)
-                .font(.system(size: sectionSize, weight: theme == .minimal ? .medium : .bold, design: theme.numberDesign))
-                .foregroundStyle(theme.isLuminous ? AnyShapeStyle(Neon.magenta) : AnyShapeStyle(ink))
-                .kerning(theme == .minimal ? 1.1 : 0.4)
-            Spacer(minLength: 4)
+        HStack(spacing: 8) {
+            Text(theme == .neon ? "// " + text : text)
+                .font(.system(size: sectionSize, weight: .semibold, design: theme == .neon ? .monospaced : .default))
+                .foregroundStyle(ink)
+                .kerning(theme == .minimal ? 1.0 : 0.25)
+            Spacer(minLength: 6)
             if let trailing {
                 Text(trailing)
-                    .font(.system(size: smallSize - 0.5))
+                    .font(.system(size: smallSize - 0.5, weight: .medium))
                     .foregroundStyle(faint)
                     .lineLimit(1)
             }
         }
+        .frame(minHeight: 18)
     }
 
-    @ViewBuilder private var divider: some View {
-        switch theme {
-        case .neon, .prism:
-            Rectangle()
-                .fill(LinearGradient(colors: [Neon.magenta.opacity(0.1), Neon.cyan, Neon.lime.opacity(0.1)],
-                                     startPoint: .leading, endPoint: .trailing))
-                .frame(height: 1)
-                .shadow(color: Neon.cyan.opacity(0.5), radius: 3)
-        case .minimal:
-            Rectangle().fill(Color.black.opacity(0.14)).frame(height: 0.6)
-        default:
-            Rectangle().fill(Color.black.opacity(0.07)).frame(height: 0.6)
-        }
+    private var divider: some View {
+        Rectangle().fill(hairline).frame(height: 0.7)
     }
 
     // MARK: 皮肤
 
-    private var ink: Color {
-        switch theme {
-        case .minimal, .native: return Color(white: 0.10)
-        case .porcelain: return Color(red: 0.16, green: 0.20, blue: 0.28)
-        case .aurora: return Color(red: 0.12, green: 0.10, blue: 0.22)
-        case .titanium, .neon, .prism: return Color.white
-        }
-    }
-
-    private var muted: Color {
-        switch theme {
-        case .minimal: return Color(white: 0.44)
-        case .native: return Color(white: 0.43)
-        case .porcelain: return Color(red: 0.24, green: 0.29, blue: 0.38).opacity(0.72)
-        case .aurora: return Color(red: 0.18, green: 0.16, blue: 0.30).opacity(0.62)
-        case .titanium, .neon, .prism: return Color.white.opacity(0.62)
-        }
-    }
-
-    private var faint: Color {
-        switch theme {
-        case .minimal: return Color(white: 0.58)
-        case .native: return Color(white: 0.56)
-        case .porcelain: return Color(red: 0.24, green: 0.29, blue: 0.38).opacity(0.52)
-        case .aurora: return Color(red: 0.18, green: 0.16, blue: 0.30).opacity(0.42)
-        case .titanium: return Color.white.opacity(0.42)
-        case .neon, .prism: return Neon.cyan.opacity(0.45)
-        }
-    }
+    private var shareScheme: ColorScheme { theme.forcedScheme ?? .light }
+    private var ink: Color { theme.textColor(.primary, scheme: shareScheme) }
+    private var muted: Color { theme.textColor(.secondary, scheme: shareScheme) }
+    private var faint: Color { theme.textColor(.tertiary, scheme: shareScheme) }
 
     private var hairline: Color {
         switch theme {
-        case .minimal: return Color.black.opacity(0.14)
-        case .native: return Color.black.opacity(0.08)
-        case .porcelain, .aurora: return Color.white.opacity(0.65)
-        case .titanium: return Color.white.opacity(0.16)
-        case .neon, .prism: return Neon.cyan.opacity(0.28)
+        case .minimal, .native: return Color.black.opacity(0.12)
+        case .porcelain, .aurora: return Color(red: 0.16, green: 0.20, blue: 0.30).opacity(0.13)
+        case .titanium: return Color.white.opacity(0.15)
+        case .neon, .prism: return Neon.cyan.opacity(0.18)
         }
     }
 
-    private var heroStyle: AnyShapeStyle { theme.figure(theme.accent) }
+    private var heroStyle: AnyShapeStyle { AnyShapeStyle(ink) }
     private var costStyle: AnyShapeStyle {
         switch theme {
-        case .minimal: return AnyShapeStyle(Color(white: 0.22))
-        case .native: return AnyShapeStyle(Color(nsColor: .systemGreen))
-        case .neon, .prism: return AnyShapeStyle(LinearGradient(colors: [Neon.lime, Neon.cyan], startPoint: .leading, endPoint: .trailing))
-        default: return AnyShapeStyle(LinearGradient(colors: [Color(red: 0.16, green: 0.72, blue: 0.60), Color(red: 0.22, green: 0.52, blue: 0.95)], startPoint: .leading, endPoint: .trailing))
+        case .neon, .prism: return AnyShapeStyle(Neon.lime)
+        default: return AnyShapeStyle(ink)
         }
     }
 
@@ -538,21 +502,22 @@ struct ShareCard: View {
             let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
             content().padding(pad)
                 .background(shape.fill(LinearGradient(colors: theme == .porcelain
-                    ? [Color.white.opacity(0.88), Color(red: 0.83, green: 0.86, blue: 0.91).opacity(0.78)]
-                    : [Color(red: 0.19, green: 0.23, blue: 0.28), Color(red: 0.07, green: 0.09, blue: 0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.75), theme.accent[0].opacity(0.28), Color.black.opacity(0.24)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
-                .shadow(color: theme == .porcelain ? Color(red: 0.25, green: 0.32, blue: 0.43).opacity(0.22) : Color.black.opacity(0.55), radius: 14, y: 9)
+                    ? [Color.white.opacity(0.97), Color(red: 0.91, green: 0.93, blue: 0.96).opacity(0.96)]
+                    : [Color(red: 0.135, green: 0.17, blue: 0.21), Color(red: 0.065, green: 0.085, blue: 0.11)], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(theme == .porcelain ? 0.85 : 0.24), theme.accent[0].opacity(0.18), Color.black.opacity(theme == .porcelain ? 0.08 : 0.32)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8))
+                .shadow(color: theme == .porcelain ? Color(red: 0.20, green: 0.27, blue: 0.38).opacity(0.14) : Color.black.opacity(0.34), radius: 11, y: 6)
         case .aurora:
             content().padding(pad)
-                .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.white.opacity(0.55)))
-                .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(LinearGradient(colors: [Color.white.opacity(0.95), Color.white.opacity(0.30)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.9))
-                .shadow(color: Color(red: 0.45, green: 0.36, blue: 0.95).opacity(0.16), radius: 12, y: 4)
+                .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.white.opacity(0.78)))
+                .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(LinearGradient(colors: [Color.white.opacity(0.90), theme.accent[0].opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8))
+                .shadow(color: Color.black.opacity(0.09), radius: 10, y: 4)
         case .neon, .prism:
+            let shape = RoundedRectangle(cornerRadius: theme == .prism ? 14 : 8, style: .continuous)
             content().padding(pad)
-                .background(RoundedRectangle(cornerRadius: theme == .prism ? 14 : 6, style: .continuous).fill(Color.black.opacity(0.5)))
-                .overlay(RoundedRectangle(cornerRadius: theme == .prism ? 14 : 6, style: .continuous).strokeBorder(Neon.rim, lineWidth: 1))
-                .overlay(CornerBrackets(length: 9).stroke(Neon.cyan, lineWidth: 1.4).padding(-2))
-                .shadow(color: Neon.cyan.opacity(0.35), radius: 8)
+                .background(shape.fill(Color(red: 0.025, green: 0.035, blue: 0.075).opacity(0.88)))
+                .overlay(shape.strokeBorder(theme == .prism ? AnyShapeStyle(Neon.rim.opacity(0.42)) : AnyShapeStyle(Neon.cyan.opacity(0.44)), lineWidth: 0.8))
+                .overlay { if theme == .neon { CornerBrackets(length: 9).stroke(Neon.cyan.opacity(0.68), lineWidth: 1.1).padding(-1.5) } }
+                .shadow(color: .black.opacity(0.34), radius: 9, y: 5)
         }
     }
 

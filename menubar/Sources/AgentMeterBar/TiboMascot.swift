@@ -495,10 +495,10 @@ private struct MachineStyle {
             return MachineStyle(body: AnyShapeStyle(LinearGradient(colors: [Color(red: 0.28, green: 0.32, blue: 0.36), Color(red: 0.07, green: 0.09, blue: 0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)),
                                 rim: AnyShapeStyle(LinearGradient(colors: [Color.white.opacity(0.55), edge, Color.black], startPoint: .topLeading, endPoint: .bottomTrailing)),
                                 outline: Color.white.opacity(0.30), line: 1.0, screen: Color(red: 0.025, green: 0.04, blue: 0.055),
-                                screenText: AnyShapeStyle(LinearGradient(colors: [.white, edge], startPoint: .top, endPoint: .bottom)), screenDim: Color.white.opacity(0.52),
+                                screenText: AnyShapeStyle(LinearGradient(colors: [.white, edge], startPoint: .top, endPoint: .bottom)), screenDim: Color.white.opacity(0.70),
                                 ledColors: [edge, Color.white], button: AnyShapeStyle(LinearGradient(colors: [Color(red: 0.48, green: 0.68, blue: 0.78), Color(red: 0.16, green: 0.29, blue: 0.39)], startPoint: .top, endPoint: .bottom)),
                                 buttonGlow: edge, plate: Color(red: 0.18, green: 0.22, blue: 0.26), light: Color(red: 0.35, green: 0.90, blue: 0.68),
-                                label: Color.white.opacity(0.5), paper: Color(red: 0.09, green: 0.12, blue: 0.15), paperText: Color.white.opacity(0.68))
+                                label: Color.white.opacity(0.68), paper: Color(red: 0.09, green: 0.12, blue: 0.15), paperText: Color.white.opacity(0.80))
         case .aurora:
             let violet = Color(red: 0.70, green: 0.36, blue: 0.98), indigo = Color(red: 0.40, green: 0.45, blue: 1.0)
             let mint = Color(red: 0.20, green: 0.88, blue: 0.70), cyan = Color(red: 0.18, green: 0.80, blue: 0.98)
@@ -534,39 +534,39 @@ struct SpeechBubble: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.system(size: 12, weight: .bold, design: theme == .neon ? .monospaced : .rounded))
-                .foregroundStyle(theme == .neon ? AnyShapeStyle(Neon.magenta) : AnyShapeStyle(.primary))
-            Text(detail).font(.system(size: 10.5, design: theme == .neon ? .monospaced : .default))
-                .foregroundStyle(.secondary)
+                .themeForeground()
+            Text(detail).font(theme.font(10.5, weight: .medium))
+                .themeForeground(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
+        .padding(.horizontal, 11).padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(BubbleShape().fill(fill))
-        .overlay(BubbleShape().stroke(stroke, lineWidth: theme == .minimal ? 1 : 0.9))
-        .themeGlow(theme == .neon ? Neon.magenta.opacity(0.6) : Color(red: 0.55, green: 0.40, blue: 1.0).opacity(0.18),
-                   radius: 5, theme: theme)
+        .overlay(BubbleShape().stroke(stroke, lineWidth: theme == .minimal ? 1 : 0.7))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.16 : 0.05), radius: 3, y: 2)
         .padding(.bottom, 6)
     }
 
     private var fill: AnyShapeStyle {
         switch theme {
-        case .minimal: return AnyShapeStyle(Color(nsColor: .textBackgroundColor))
-        case .native: return AnyShapeStyle(Color(nsColor: .textBackgroundColor))
-        case .porcelain, .aurora, .titanium: return AnyShapeStyle(Color.white.opacity(scheme == .dark ? 0.1 : 0.8))
-        case .neon, .prism: return AnyShapeStyle(Color.black.opacity(0.7))
+        case .minimal, .native: return AnyShapeStyle(Color(nsColor: .textBackgroundColor))
+        case .porcelain: return AnyShapeStyle(Color.white.opacity(0.88))
+        case .aurora: return AnyShapeStyle(scheme == .dark ? Color.white.opacity(0.10) : Color.white.opacity(0.72))
+        case .titanium: return AnyShapeStyle(Color(red: 0.15, green: 0.19, blue: 0.24).opacity(0.82))
+        case .neon, .prism: return AnyShapeStyle(Color(red: 0.025, green: 0.035, blue: 0.075).opacity(0.86))
         }
     }
 
     private var stroke: AnyShapeStyle {
         switch theme {
-        case .minimal: return AnyShapeStyle(Color.primary)
+        case .minimal: return AnyShapeStyle(Color.primary.opacity(0.70))
         case .native: return AnyShapeStyle(Color(nsColor: .separatorColor))
-        case .porcelain, .aurora, .titanium: return AnyShapeStyle(LinearGradient(colors: [Color(red: 0.40, green: 0.45, blue: 1.0).opacity(0.6),
-                                                                   Color(red: 0.70, green: 0.36, blue: 0.98).opacity(0.35)],
-                                                          startPoint: .leading, endPoint: .trailing))
-        case .neon, .prism: return AnyShapeStyle(Neon.magenta)
+        case .porcelain, .aurora: return AnyShapeStyle(LinearGradient(colors: [theme.accent[0].opacity(0.42), theme.accent[1].opacity(0.24)], startPoint: .leading, endPoint: .trailing))
+        case .titanium: return AnyShapeStyle(Color.white.opacity(0.18))
+        case .neon: return AnyShapeStyle(Neon.magenta.opacity(0.68))
+        case .prism: return AnyShapeStyle(Neon.violet.opacity(0.48))
         }
     }
 }
@@ -595,14 +595,14 @@ struct QSticker: View {
 
     var body: some View {
         let color = tint ?? theme.accent[0]
+        let darkIcon = theme == .titanium || theme == .prism
         Image(systemName: symbol)
             .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(theme == .minimal ? Color.primary : (theme == .neon ? color : .white))
+            .foregroundStyle(theme == .minimal ? Color.primary : (theme == .neon ? color : (darkIcon ? Neon.ink : .white)))
             .frame(width: 18, height: 18)
             .background(Circle().fill(theme == .minimal || theme == .neon ? Color.clear : color))
-            .overlay(Circle().strokeBorder(theme == .minimal ? Color.primary.opacity(0.5) : color.opacity(theme == .neon ? 0.9 : 0),
-                                           lineWidth: 1))
-            .themeGlow(color.opacity(0.5), radius: 3, theme: theme)
+            .overlay(Circle().strokeBorder(theme == .minimal ? Color.primary.opacity(0.5) : color.opacity(theme == .neon ? 0.65 : 0), lineWidth: 1))
+            .themeGlow(color.opacity(0.24), radius: 2, theme: theme)
     }
 }
 
