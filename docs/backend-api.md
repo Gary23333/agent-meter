@@ -36,6 +36,12 @@
 
 余额保留钱包、单位、币种和无限额度状态，允许来源报告负余额。它不与其他公司的积分相加。token 的本机记录与账户活动汇总分别展示，生命周期总量不与每日桶重复相加。
 
+## Codex 账户读取与缓存
+
+`codex` 来源通过官方 `codex app-server` 只读调用 `account/rateLimits/read` 与 `account/usage/read`。`account/rateLimits/read` 在正常网络下也可能耗时 15–25 秒，因此使用独立配置 `codex_timeout_seconds`（默认 45，且不低于全局 `timeout_seconds`），不再用 20 秒通用超时误判。
+
+成功读取后把**归一化后的** quota / reset / credits / tokens 指标写入 `<runtime>/codex-account-cache.json`（0600），不保存 `accountId`、重置卡 ID 或原始响应。出现瞬时错误（`rpc_timeout` / `rpc_disconnected` / `rpc_request_failed`）且 24 小时内有成功值时，来源以 `stale` 返回缓存指标：`observed_at` 保留上次成功时间，`diagnostics.cached_at` 标注缓存时间，界面显示“旧数据”而不是“读取失败”。`account/usage/read` 的上游超时单独缓存：成功值 6 小时、错误 1 小时，避免每轮快照重复等待 10 秒；它只影响账户累计 Token 行，不影响本机 token 历史。
+
 ## CC Switch 统计
 
 适配数据库 schema 20，查询规则参考固定版 4.0.5，读取使用只读连接和一致事务。只查询用量列；历史统计不读取聊天正文。

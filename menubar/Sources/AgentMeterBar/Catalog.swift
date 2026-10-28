@@ -106,6 +106,10 @@ enum Catalog {
         let map: [String: String] = [
             "source_does_not_return_field": "来源未返回此项",
             "cli_not_available": "未找到命令行工具",
+            "rpc_timeout": "Codex 账户读取超时，正在使用上次数据",
+            "rpc_disconnected": "Codex 后台连接已断开，正在使用上次数据",
+            "rpc_request_failed": "Codex 服务暂时无法返回数据，正在使用上次数据",
+            "rpc_method_unavailable": "当前 Codex 版本不支持该查询",
             "database_not_found": "未找到数据库",
             "not_authenticated": "未登录或登录已失效",
             "kimi_server_not_running": "Kimi 服务未运行",

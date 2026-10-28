@@ -1,4 +1,67 @@
+import json
+from pathlib import Path
+
 from .model import SourceError, account_key, decimal_string, integer, metric, number, source, timestamp
+
+# Codex app-server talks to the provider before answering, so rate-limit reads
+# regularly take 15-25 s on a healthy connection. The account metrics are also
+# cached here: a transient timeout then shows the last good reading as stale
+# instead of turning the whole card into 读取失败. The usage profile endpoint
+# can time out upstream on its own; its result (or error) is cached for hours
+# so every snapshot does not spend 10 s on the same failing call.
+CACHE_NAME = "codex-account-cache.json"
+TRANSIENT_ERRORS = {"rpc_timeout", "rpc_disconnected", "rpc_request_failed"}
+STALE_MAX_AGE = 24 * 60 * 60
+USAGE_OK_TTL = 6 * 60 * 60
+USAGE_ERROR_TTL = 60 * 60
+
+
+def _cache_path(cwd):
+    return Path(cwd) / CACHE_NAME if cwd else None
+
+
+def _read_cache(path):
+    if path is None:
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_cache(path, data):
+    if path is None:
+        return
+    try:
+        from .collector import atomic_json
+        atomic_json(path, data)
+    except (OSError, ValueError):
+        pass
+
+
+def _cached_account(cache, now):
+    entry = cache.get("account")
+    if not isinstance(entry, dict):
+        return None
+    at, metrics = entry.get("at"), entry.get("metrics")
+    if isinstance(at, bool) or not isinstance(at, (int, float)) or not isinstance(metrics, dict):
+        return None
+    if not 0 <= now - at <= STALE_MAX_AGE:
+        return None
+    return entry
+
+
+def _cached_usage(cache, now):
+    entry = cache.get("usage")
+    if not isinstance(entry, dict):
+        return None
+    at, payload = entry.get("at"), entry.get("metric")
+    if isinstance(at, bool) or not isinstance(at, (int, float)) or not isinstance(payload, dict):
+        return None
+    ok = payload.get("status") in {"available", "partial"} and payload.get("value") is not None
+    ttl = USAGE_OK_TTL if ok else USAGE_ERROR_TTL
+    return entry if 0 <= now - at < ttl else None
 
 
 def normalize_limits(payload, now):
@@ -85,17 +148,48 @@ def normalize_usage(payload):
     return metric(value if value["lifetime_tokens"] is not None or days is not None else None)
 
 
-def collect_codex(binary, now, timeout=20, cwd=None, rpc_factory=None):
+def collect_codex(binary, now, timeout=45, cwd=None, rpc_factory=None):
     if rpc_factory is None:
         from .transport import CodexRPC
         rpc_factory = CodexRPC
-    with rpc_factory(binary, timeout=timeout, cwd=cwd) as rpc:
-        # false avoids fallback exposure or any credit redemption.
-        limits = rpc.call("account/rateLimits/read", {"excludeResetCreditDetails": False, "supportsLunaReserve": False})
-        out = normalize_limits(limits, now)
-        try:
-            out["metrics"]["tokens"] = normalize_usage(rpc.call("account/usage/read", {}))
-        except SourceError as e:
-            out["metrics"]["tokens"] = metric(status="error", reason=e.code)
-            out["status"] = "partial"
+    cache_path = _cache_path(cwd)
+    cache = _read_cache(cache_path)
+    try:
+        with rpc_factory(binary, timeout=timeout, cwd=cwd) as rpc:
+            # false avoids fallback exposure or any credit redemption.
+            limits = rpc.call("account/rateLimits/read", {"excludeResetCreditDetails": False, "supportsLunaReserve": False})
+            out = normalize_limits(limits, now)
+            usage = _cached_usage(cache, now)
+            if usage is not None:
+                out["metrics"]["tokens"] = usage["metric"]
+                out["diagnostics"]["tokens_cached_at"] = timestamp(usage["at"])
+                if usage["metric"].get("status") not in {"available", "partial"}:
+                    out["status"] = "partial"
+            else:
+                try:
+                    tokens = normalize_usage(rpc.call("account/usage/read", {}))
+                except SourceError as e:
+                    tokens = metric(status="error", reason=e.code)
+                    out["status"] = "partial"
+                out["metrics"]["tokens"] = tokens
+                cache["usage"] = {"at": now, "metric": tokens}
+            cache["account"] = {"at": now, "metrics": out["metrics"],
+                                "account_key": out.get("account_key"),
+                                "ordinary_usage_allowed": out.get("ordinary_usage_allowed")}
+            _write_cache(cache_path, cache)
+            return out
+    except SourceError as e:
+        cached = _cached_account(cache, now) if e.code in TRANSIENT_ERRORS else None
+        if cached is None:
+            raise
+        out = source("codex", "account", now, status="stale", reason=e.code)
+        out["observed_at"] = timestamp(cached["at"])
+        out["metrics"] = cached["metrics"]
+        out["account_key"] = cached.get("account_key")
+        out["ordinary_usage_allowed"] = cached.get("ordinary_usage_allowed")
+        out["diagnostics"].update({"reason": e.code, "last_error": e.code,
+                                   "cached_at": timestamp(cached["at"])})
+        usage = _cached_usage(cache, now)
+        if usage is not None:
+            out["metrics"]["tokens"] = usage["metric"]
         return out

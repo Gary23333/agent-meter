@@ -113,6 +113,72 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(out['metrics']['quota']['status'],'available')
         self.assertEqual(out['metrics']['tokens']['reason'],'rpc_timeout')
 
+    def test_codex_transient_timeout_uses_last_good_account(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            class GoodRPC:
+                def __init__(self,*a,**kw):pass
+                def __enter__(self):return self
+                def __exit__(self,*a):pass
+                def call(self,method,params):
+                    if method=='account/usage/read':return {'summary':{'lifetimeTokens':100}}
+                    return LIMITS
+            first=collect_codex('unused',NOW,cwd=tmp,rpc_factory=GoodRPC)
+            self.assertEqual(first['status'],'available')
+            class TimeoutRPC:
+                def __init__(self,*a,**kw):pass
+                def __enter__(self):return self
+                def __exit__(self,*a):pass
+                def call(self,method,params):raise SourceError('rpc_timeout')
+            second=collect_codex('unused',NOW+60,cwd=tmp,rpc_factory=TimeoutRPC)
+            self.assertEqual(second['status'],'stale')
+            self.assertEqual(second['diagnostics']['reason'],'rpc_timeout')
+            self.assertEqual(second['metrics']['quota']['status'],'available')
+            self.assertEqual(second['metrics']['tokens']['value']['lifetime_tokens'],100)
+            self.assertEqual(second['observed_at']['epoch_seconds'],NOW)
+            # The cache keeps normalized metrics only, never the raw account id.
+            raw=Path(tmp,'codex-account-cache.json').read_text()
+            self.assertNotIn('private-id',raw)
+
+    def test_codex_usage_profile_is_cached(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls=[]
+            class RPC:
+                def __init__(self,*a,**kw):pass
+                def __enter__(self):return self
+                def __exit__(self,*a):pass
+                def call(self,method,params):
+                    if method=='account/usage/read':
+                        calls.append(method)
+                        return {'summary':{'lifetimeTokens':100}}
+                    return LIMITS
+            collect_codex('unused',NOW,cwd=tmp,rpc_factory=RPC)
+            cached=collect_codex('unused',NOW+3600,cwd=tmp,rpc_factory=RPC)
+            self.assertEqual(calls,['account/usage/read'])
+            self.assertEqual(cached['metrics']['tokens']['value']['lifetime_tokens'],100)
+            collect_codex('unused',NOW+7*3600,cwd=tmp,rpc_factory=RPC)
+            self.assertEqual(len(calls),2)
+
+    def test_codex_usage_error_is_cached_briefly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls=[]
+            class RPC:
+                def __init__(self,*a,**kw):pass
+                def __enter__(self):return self
+                def __exit__(self,*a):pass
+                def call(self,method,params):
+                    if method=='account/usage/read':
+                        calls.append(method)
+                        raise SourceError('rpc_request_failed')
+                    return LIMITS
+            first=collect_codex('unused',NOW,cwd=tmp,rpc_factory=RPC)
+            second=collect_codex('unused',NOW+600,cwd=tmp,rpc_factory=RPC)
+            self.assertEqual(first['status'],'partial')
+            self.assertEqual(second['status'],'partial')
+            self.assertEqual(second['metrics']['tokens']['reason'],'rpc_request_failed')
+            self.assertEqual(calls,['account/usage/read'])
+            collect_codex('unused',NOW+3700,cwd=tmp,rpc_factory=RPC)
+            self.assertEqual(len(calls),2)
+
     def test_kimi_ratio_and_cents(self):
         p={'code':0,'data':{'kind':'ok','quota':{'usages':{'limit5h':{'usedRatio':.25,'resetAt':'2026-10-09T03:00:00+08:00'}},
            'extraUsage':{'balanceCents':125,'currency':'CNY','monthlyUsedCents':0}}}}

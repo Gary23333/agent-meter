@@ -18,9 +18,9 @@
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
-  <img src="https://img.shields.io/badge/Tests-303%20Passed-brightgreen" alt="Tests: 303 Passed" />
+  <img src="https://img.shields.io/badge/Tests-306%20Passed-brightgreen" alt="Tests: 306 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.2-blue" alt="Release: v0.9.2" />
+  <img src="https://img.shields.io/badge/Release-v0.9.3-blue" alt="Release: v0.9.3" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -251,13 +251,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.9.2](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.2) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.9.2-macos-arm64.dmg`
+1. 从 [Releases · v0.9.3](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.3) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.9.3-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.2 发布说明](docs/release-v0.9.2.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.3 发布说明](docs/release-v0.9.3.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -273,7 +273,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.2，发布标签为 v0.9.2；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.3，发布标签为 v0.9.3；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -347,7 +347,7 @@ with urlopen(req, timeout=30) as resp:
 本项目拥有严格的质量保障体系，包含完整的单元测试、契约测试与真实对账校验器：
 
 ```sh
-# 1. 运行全量单元测试（包含 303 项严格测试，零失败；dsh 建议 Python 3.14）
+# 1. 运行全量单元测试（包含 306 项严格测试，零失败；dsh 建议 Python 3.14）
 python3 -m unittest discover -v
 
 # 2. 运行真实环境对账校验（核对 CC Switch 逐条计算与后端 SQL 一致性）
@@ -359,6 +359,11 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.9.3 · 2026-10-28
+- **修复 Codex 间歇性“读取失败”**：`account/rateLimits/read` 实测需 15–25 秒，原 20 秒通用超时导致 `rpc_timeout`；Codex 改用独立 45 秒超时，并缓存最后一次成功的账户指标，瞬时失败显示“旧数据”而不是“读取失败”。详见[发布说明](docs/release-v0.9.3.md)。
+- **减少无效等待**：Codex 账户累计 Token 接口上游超时（`token usage profile fetch timed out`），成功结果缓存 6 小时、错误缓存 1 小时，不再每轮白等 10 秒。
+- **错误文案**：`rpc_timeout` / `rpc_disconnected` / `rpc_request_failed` 改为中文说明。
 
 ### v0.9.2 · 2026-10-28
 - **DeepSeek 网页消耗与峰谷定价**：账户卡新增今日 / 近 3 天 / 近 7 天金额、Token 与请求数，附近 7 日金额柱图；本机消耗新增峰谷定价卡片，按请求时间戳拆分峰/谷，DeepSeek 系峰时 ×2，拆不开的账本按谷价估算。详见[发布说明](docs/release-v0.9.2.md)。

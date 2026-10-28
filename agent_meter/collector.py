@@ -75,7 +75,7 @@ def default_config():
             "codexbar_binary":shutil.which("codexbar"),"enable_codexbar":False,
             # 即梦 is read from its web page by the app; the CLI route is opt-in.
             "enable_dreamina_cli":False,
-            "disabled_sources":[],"timeout_seconds":20,"cache_ttl_seconds":120}
+            "disabled_sources":[],"timeout_seconds":20,"codex_timeout_seconds":45,"cache_ttl_seconds":120}
 
 
 def _raise(error):
@@ -183,7 +183,7 @@ def collect(config=None,now=None):
     jobs={
       "ccswitch":("local_imported_history",lambda:collect_ccswitch(config["ccswitch_db"],now,ZoneInfo(config["ccswitch_timezone"]),
                                                                    config["mcode_db"],table)),
-      "codex":("account",lambda:collect_codex(config["codex_binary"],now,timeout,str(runtime))),
+      "codex":("account",lambda:collect_codex(config["codex_binary"],now,max(timeout,config.get("codex_timeout_seconds",45)),str(runtime))),
       # claude.ai web login (shared with the desktop app) first, else Claude Code's Keychain login.
       "claude":("account",lambda:collect_claude_web(web["claude"],now,timeout) if "claude" in web
                 else collect_claude(config["home"],now,timeout)),
