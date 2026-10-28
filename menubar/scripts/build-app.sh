@@ -46,7 +46,75 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# A stable identity (SIGN_IDENTITY) keeps Keychain "Always Allow" across
-# rebuilds; ad-hoc signing (default) changes every build and re-prompts.
-codesign --force --deep --sign "${SIGN_IDENTITY:--}" "$app" >/dev/null
+# A stable identity keeps Keychain "Always Allow" across rebuilds; ad-hoc
+# signing changes every build and re-prompts. SIGN_MODE picks the identity:
+# dev (default) = Apple Development, dist = Developer ID Application
+# (+ hardened runtime + timestamp + optional notarization), adhoc = ad-hoc.
+# SIGN_IDENTITY still overrides for backward compatibility.
+pick_sign_identity() {
+    security find-identity -v -p codesigning | awk -v pat="$1" '$0 ~ pat { print $2; exit }'
+}
+SIGN_MODE="${SIGN_MODE:-dev}"
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+    sign_id="$SIGN_IDENTITY"
+else
+    case "$SIGN_MODE" in
+        dev)
+            sign_id="${SIGN_DEV_IDENTITY:-$(pick_sign_identity 'Apple Development')}"
+            if [ -z "$sign_id" ]; then
+                echo "warning: no Apple Development certificate found, falling back to ad-hoc signing" >&2
+                sign_id="-"
+            fi
+            ;;
+        dist)
+            sign_id="${SIGN_DIST_IDENTITY:-$(pick_sign_identity 'Developer ID Application')}"
+            [ -n "$sign_id" ] || { echo "error: SIGN_MODE=dist requires a Developer ID Application certificate" >&2; exit 1; }
+            ;;
+        adhoc) sign_id="-" ;;
+        *) echo "error: invalid SIGN_MODE: $SIGN_MODE (dev | dist | adhoc)" >&2; exit 1 ;;
+    esac
+fi
+# dist pre-sign: `--deep` does NOT cover loose Mach-O under Contents/Resources
+# (the embedded PyInstaller backend), but notarization requires every binary to
+# carry Developer ID + hardened runtime + secure timestamp. Sign them one by one.
+if [ "$SIGN_MODE" = "dist" ]; then
+    echo "==> 预签 Resources 内嵌 Mach-O（后端文件多，需几分钟）..."
+    find "$app/Contents/Resources" -type f 2>/dev/null | while IFS= read -r bin; do
+        file "$bin" 2>/dev/null | grep -q "Mach-O" || continue
+        bin_ok=0
+        for attempt in 1 2 3; do
+            codesign --force --options runtime --timestamp --sign "$sign_id" "$bin" >/dev/null 2>&1 && { bin_ok=1; break; }
+            sleep 3
+        done
+        [ "$bin_ok" -eq 1 ] || echo "warning: timestamp signing failed (notarization will reject): $bin" >&2
+    done
+    # 嵌套 framework 由内向外补签（先深层后浅层）
+    find "$app/Contents/Resources" -type d -name "*.framework" 2>/dev/null \
+        | awk '{print length($0), $0}' | sort -rn | while read -r _len fw; do
+        codesign --force --options runtime --timestamp --sign "$sign_id" "$fw" >/dev/null 2>&1 \
+            || echo "warning: framework signing failed: $fw" >&2
+    done
+fi
+if [ "$SIGN_MODE" = "dist" ]; then
+    codesign --force --deep --options runtime --timestamp --sign "$sign_id" "$app" >/dev/null
+else
+    codesign --force --deep --options runtime --sign "$sign_id" "$app" >/dev/null
+fi
+
+# Optional notarization in dist mode when credentials are provided.
+if [ "$SIGN_MODE" = "dist" ]; then
+    if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+        zip_path="$(dirname "$app")/$(basename "$app" .app).zip"
+        ditto -c -k --keepParent "$app" "$zip_path"
+        xcrun notarytool submit "$zip_path" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+        xcrun stapler staple "$app"
+        rm -f "$zip_path"
+    else
+        echo "note: notarization skipped (set APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID to enable)" >&2
+    fi
+fi
 echo "$app"

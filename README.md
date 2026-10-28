@@ -18,9 +18,9 @@
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
-  <img src="https://img.shields.io/badge/Tests-284%20Passed-brightgreen" alt="Tests: 284 Passed" />
+  <img src="https://img.shields.io/badge/Tests-303%20Passed-brightgreen" alt="Tests: 303 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.1-blue" alt="Release: v0.9.1" />
+  <img src="https://img.shields.io/badge/Release-v0.9.2-blue" alt="Release: v0.9.2" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -121,11 +121,13 @@
 - **历史主库**：通过只读事务与一致性连接读取 **CC Switch (Schema 20)** 历史数据库；
 - **增量会话**：毫秒级解析 **Kimi Code** 本机 `~/.kimi-code/sessions/**/wire.jsonl`，提取唯一 `turn` 作用域真实 Token；
 - **严密去重**：明确区分 CC Switch 路由的 `kimi-for-coding` 与独立的 Kimi Code 桌面端，相加绝不重叠；对缺少定价的记录或下界统计明确标注，绝不捏造虚假账单。
+- **峰谷计价视图**：按请求时间戳把本机消耗拆成峰时 / 谷时，展示 DeepSeek 峰时 ×2 的价差影响；没有请求时刻的账本（CC Switch 日汇总）按谷价计入价格表估算，并在视图里点名说明。
 
 ### 6. 🧠 模型目录自动同步与体验模型计费绑定
 - **自动更新模型名称与刊例价**：从公开 `models.dev` 目录同步主流供应商的模型 ID、名称、发布日期及输入、输出、缓存读写的每百万 Token 单价；启动后自动同步，每 6 小时检查，目录本身按 24 小时节流，也可在「模型与计费」窗口手动同步。
 - **本地修改不被覆盖**：内置价、同步目录价与用户价格分层合并，用户自定义优先；同步失败保留上次成功目录，未返回有效价格的体验模型不会被自动当成免费。
 - **超前体验期也能估算**：可将无法计价的模型或内部代号绑定到现有模型，沿用其四项 Token 单价；绑定关系会写入估算结果，正式价格发布后可随时替换。
+- **峰谷双价**：DeepSeek 系模型默认峰时倍率 2×（北京时间工作日 09:00–12:00、14:00–18:00 峰时，周末谷时），可在「模型与计费」逐行修改；价格表单价保持谷时基准，估算自动按请求时刻选价。
 - **口径透明**：所有金额均为 API 等价估算而非订阅账单；未知不等于零，不同账户与币种不混算。
 
 ### 7. 🎨 创作类工具专属指标支持（Creative Metering）
@@ -197,13 +199,13 @@
 | **MiniMax Code** | MiniMax Coding Plan | 环境变量 / 钥匙串 API Key | 周套餐余量百分比、到期时间 | 独立账户 |
 | **MiniMax Design** | MiniMax 创作工作台 | 本机安全网关 `127.0.0.1:8001` | 个人钱包、积分包失效期、月积分刷新日、年费续费倒计时 | 个人 Media Plan |
 | **即梦 (Dreamina)** | 剪映即梦创作平台 | 内嵌隐藏 Web 视图白名单捕获 / CLI | 会员等级、积分总额、多积分包到期、续费状态 | 最多 5 账号 |
-| **DeepSeek API** | DeepSeek 开放平台 | 环境变量 / 钥匙串 API Key | 货币余额（CNY/USD 独立保留） | 独立账户 |
+| **DeepSeek API** | DeepSeek 开放平台 | 环境变量 / 钥匙串 API Key + 控制台登录（可选） | 货币余额（CNY/USD 独立保留）；网页用量今日 / 3 天 / 7 天 / 30 天（仅展示，不计入本机消耗） | 独立账户 |
 | **ZCode / 智谱 Coding Plan** | ZCode、GLM Coding Plan（中国区） | 内嵌网页登录捕获控制台凭据 / 钥匙串 API Key | 5 小时 / 每周额度（已用/总量）、周重置时间、MCP 月度次数 | 最多 5 账号 |
 | **火山方舟 Coding Plan** | 火山引擎方舟 | 内嵌控制台登录（回放页面自身的只读 `GetCodingPlanUsage`）/ 钥匙串 AccessKey 签名 | 5 小时 / 每周 / 每月额度与各自重置时间 | 最多 5 账号 |
 | **小米 MiMo API** | MiMo 开放平台控制台 | 内嵌安全网页登录 / Cookie | 账户余额（现金 / 赠送）、Token Plan 本月用量 | 最多 5 账号 |
 | **阶跃星辰 (StepFun)** | 阶跃星辰开放平台 | 内嵌安全网页登录 / Cookie + 开放平台 API Key | 账户余额（充值 / 赠送）、STEP plan 5 小时 / 每周窗口或月度积分池、套餐名与到期日 | 最多 5 账号 |
 | **CC Switch** | 本机多模型路由历史 | 本机 SQLite 数据库只读事务 | 今日/7天/30天/全部 Token、缓存命中率、估算费用 | 本机聚合 |
-| **本机 Agent 会话账本** | Codex CLI、Claude Code、Gemini CLI、Antigravity、OpenCode、MiniMax Code、Kimi Code、ZCode、WorkBuddy、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 会话日志只读直读（未装 CC Switch 也可读） | 今日/7天/30天/全部 Token、按模型分组、缓存命中率、估算费用 | 本机历史 |
+| **本机 Agent 会话账本** | Codex CLI、Claude Code、Gemini CLI、Antigravity、OpenCode、MiniMax Code、Kimi Code、Kimi 桌面端、ZCode、WorkBuddy、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 会话日志只读直读（未装 CC Switch 也可读） | 今日/7天/30天/全部 Token、按模型分组、缓存命中率、估算费用 | 本机历史 |
 
 ---
 
@@ -249,13 +251,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.9.1](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.1) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.9.1-macos-arm64.dmg`
+1. 从 [Releases · v0.9.2](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.2) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.9.2-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前使用 ad-hoc 签名，尚未做 Apple 公证；首次打开可能需要在系统设置中允许。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.1 发布说明](docs/release-v0.9.1.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.2 发布说明](docs/release-v0.9.2.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -271,7 +273,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.1，发布标签为 v0.9.1；可用 `SIGN_IDENTITY` 指定签名身份，默认 ad-hoc。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.2，发布标签为 v0.9.2；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -345,7 +347,7 @@ with urlopen(req, timeout=30) as resp:
 本项目拥有严格的质量保障体系，包含完整的单元测试、契约测试与真实对账校验器：
 
 ```sh
-# 1. 运行全量单元测试（包含 284 项严格测试，零失败；dsh 建议 Python 3.14）
+# 1. 运行全量单元测试（包含 303 项严格测试，零失败；dsh 建议 Python 3.14）
 python3 -m unittest discover -v
 
 # 2. 运行真实环境对账校验（核对 CC Switch 逐条计算与后端 SQL 一致性）
@@ -357,6 +359,11 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.9.2 · 2026-10-28
+- **DeepSeek 网页消耗与峰谷定价**：账户卡新增今日 / 近 3 天 / 近 7 天金额、Token 与请求数，附近 7 日金额柱图；本机消耗新增峰谷定价卡片，按请求时间戳拆分峰/谷，DeepSeek 系峰时 ×2，拆不开的账本按谷价估算。详见[发布说明](docs/release-v0.9.2.md)。
+- **全量官方定价复核**：更新 GLM-5.3、Gemini 3 Flash、MiniMax M3、MiMo v2.6 Flash 四项刊例，新增 8 个有官方按量价的模型；价格表支持峰时倍率，官方人民币价优先于美元折算。
+- **新增 Kimi 桌面端 Agent Token 账本** 与 MiniMax MCP 正式接入；首次使用 Developer ID 签名 + Apple 公证发布 DMG。
 
 ### v0.9.1 · 2026-10-24
 - **七套主题完整视觉升级**：统一三级文字、卡片、间距、圆角、选中态和排行数字列，提升浅色与深色外观的可读性，同时保留每套主题的个性。详见[发布说明](docs/release-v0.9.1.md)。

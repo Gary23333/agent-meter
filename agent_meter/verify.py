@@ -367,6 +367,28 @@ def verify_snapshot(snapshot,config,native_reference=None):
         for name in METRICS:
             m=src["metrics"][name]
             check(src["id"]+"."+name+".null_contract",not (m["status"]=="available" and m["value"] is None))
+        tokens=src["metrics"].get("tokens") or {}
+        token_value=tokens.get("value") if isinstance(tokens.get("value"),dict) else None
+        if token_value and token_value.get("peak_split")=="request_timestamp":
+            # A split ledger must keep peak+off-peak exactly equal to the parent,
+            # and every model group must carry the split (a partial split would
+            # silently price part of a day at the wrong rate).
+            for period,data in (token_value.get("periods") or {}).items():
+                if not isinstance(data,dict):continue
+                groups=data.get("groups") or []
+                present=[all(isinstance(g.get(k),dict) for k in ("peak","offpeak")) for g in groups]
+                check(src["id"]+".tokens."+period+".peak_split.groups_complete",all(present),
+                      {"groups":len(groups),"split":sum(present)})
+                for label,bucket in [("totals",data.get("totals") or {})]+ \
+                        [("model."+str(g.get("model")),g) for g in groups if all(isinstance(g.get(k),dict) for k in ("peak","offpeak"))]:
+                    for field,value in bucket.items():
+                        if field in {"peak","offpeak","cache_hit_rate","app","model","timezone","start","end"}:
+                            continue
+                        if isinstance(value,bool) or not isinstance(value,(int,float)):continue
+                        composed=sum(bucket[k].get(field,0) or 0 for k in ("peak","offpeak"))
+                        check(src["id"]+".tokens."+period+".peak_split."+label+"."+field,composed==value,
+                              {"peak":bucket["peak"].get(field), "offpeak":bucket["offpeak"].get(field),
+                               "reference":value})
         if src["id"]=="codex" and src["metrics"]["quota"]["value"]:
             for i,q in enumerate(src["metrics"]["quota"]["value"]):
                 check("codex.quota."+str(i)+".remaining",q["remaining_percent"]==max(0,100-q["used_percent"]))
@@ -559,6 +581,29 @@ def verify_snapshot(snapshot,config,native_reference=None):
                     for field,ref_value in ref.items():
                         check("kimi."+period+".model."+model+"."+field,group.get(field)==ref_value,
                               {"backend":group.get(field),"reference":ref_value})
+    kd=next((s for s in snapshot["sources"] if s["id"]=="kimi_desktop" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
+    if kd and "kimi_desktop_sessions_dir" in config:
+        from .kimi_tokens import load_records as load_kimi_records
+        try:
+            desktop_records,_=load_kimi_records(config["kimi_desktop_sessions_dir"])
+        except Exception:
+            desktop_records=None
+            checks.append({"name":"kimi_desktop_local.reload","status":"fail","detail":"reference reload failed"})
+        if desktop_records is not None:
+            for period in ("today","7d","30d","all"):
+                value=kd["metrics"]["tokens"]["value"]["periods"][period]
+                totals,models=reference_kimi_period(desktop_records,*period_bounds(now,period,zone))
+                for field,ref in totals.items():
+                    check("kimi_desktop."+period+"."+field,value["totals"][field]==ref,
+                          {"backend":value["totals"][field],"reference":ref})
+                backend={g["model"]:g for g in value["groups"]}
+                check("kimi_desktop."+period+".models",set(backend)==set(models),
+                      {"backend":sorted(backend),"reference":sorted(models)})
+                for model,ref in models.items():
+                    group=backend.get(model) or {}
+                    for field,ref_value in ref.items():
+                        check("kimi_desktop."+period+".model."+model+"."+field,group.get(field)==ref_value,
+                              {"backend":group.get(field),"reference":ref_value})
     oc=next((s for s in snapshot["sources"] if s["id"]=="opencode" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
     if oc:
         from .opencode_tokens import readonly_database as opencode_database
@@ -614,7 +659,8 @@ def verify_snapshot(snapshot,config,native_reference=None):
         tokens=src["metrics"]["tokens"]["value"]
         for period in ("today","7d","30d","all"):
             groups=(tokens["periods"].get(period) or {}).get("groups") or []
-            total=Decimal(0)
+            peak_total=Decimal(0)
+            offpeak_total=Decimal(0)
             unmatched=set()
             for g in groups:
                 pattern=None
@@ -628,16 +674,35 @@ def verify_snapshot(snapshot,config,native_reference=None):
                             if candidate in key and (best is None or len(candidate)>len(best)):
                                 best=candidate
                         pattern=price_table.index.get(best) if best is not None else None
-                if pattern is None or "fresh_input" not in g:
-                    unmatched.add(str(g.get("model",""))+("" if "fresh_input" in g else " (no breakdown)"))
+                split=isinstance(g.get("peak"),dict) and isinstance(g.get("offpeak"),dict)
+                breakdown="fresh_input" in g or (split and any(
+                    "fresh_input" in part for part in (g["peak"],g["offpeak"])))
+                if pattern is None or not breakdown:
+                    unmatched.add(str(g.get("model",""))+("" if breakdown else " (no breakdown)"))
                     continue
                 prices=dict(zip(("input","cache_read","cache_write","output"),price_table.models[pattern]))
-                for price,field in (("input","fresh_input"),("cache_read","cache_read"),
-                                    ("cache_write","cache_write"),("output","output")):
-                    total+=Decimal(str(g.get(field,0) or 0))*Decimal(str(prices[price]))/Decimal(1000000)
+                def amount_for(row,multiplier):
+                    cost=Decimal(0)
+                    for price,field in (("input","fresh_input"),("cache_read","cache_read"),
+                                        ("cache_write","cache_write"),("output","output")):
+                        cost+=Decimal(str(row.get(field,0) or 0))*Decimal(str(prices[price]))*multiplier/Decimal(1000000)
+                    return cost
+                if split:
+                    peak_total+=amount_for(g["peak"],
+                                           Decimal(str(price_table.peak_multipliers.get(pattern,1.0))).normalize())
+                    offpeak_total+=amount_for(g["offpeak"],Decimal(1))
+                else:
+                    offpeak_total+=amount_for(g,Decimal(1))
+            total=peak_total+offpeak_total
             backend=value["periods"].get(period) or {}
             check("prices."+src["id"]+"."+period+".amount",Decimal(backend.get("amount") or 0)==total,
                   {"backend":backend.get("amount"),"reference":format(total,"f")})
+            check("prices."+src["id"]+"."+period+".peak_amount",
+                  Decimal(backend.get("peak_amount") or 0)==peak_total,
+                  {"backend":backend.get("peak_amount"),"reference":format(peak_total,"f")})
+            check("prices."+src["id"]+"."+period+".offpeak_amount",
+                  Decimal(backend.get("offpeak_amount") or 0)==offpeak_total,
+                  {"backend":backend.get("offpeak_amount"),"reference":format(offpeak_total,"f")})
             check("prices."+src["id"]+"."+period+".unmatched",set(backend.get("unmatched_models") or [])==unmatched,
                   {"backend":backend.get("unmatched_models"),"reference":sorted(unmatched)})
     # Direct CLI session readers: exact recompute plus CC Switch cross-check.

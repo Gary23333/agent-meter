@@ -28,6 +28,7 @@ enum Catalog {
         case "codex": return Brand(name: "Codex", symbol: "chevron.left.forwardslash.chevron.right", tint: Color(red: 0.10, green: 0.66, blue: 0.52))
         case "claude": return Brand(name: "Claude Code", symbol: "staroflife.fill", tint: Color(red: 0.85, green: 0.47, blue: 0.34))
         case "kimi": return Brand(name: "Kimi Code", symbol: "moon.stars.fill", tint: Color(red: 0.24, green: 0.47, blue: 0.96))
+        case "kimi_desktop": return Brand(name: "Kimi 桌面端", symbol: "desktopcomputer", tint: Color(red: 0.18, green: 0.39, blue: 0.88))
         case "qoder": return Brand(name: "Qoder CN", symbol: "cube.fill", tint: .indigo)
         case "workbuddy": return Brand(name: "WorkBuddy", symbol: "person.2.fill", tint: Color(red: 0.13, green: 0.55, blue: 0.95))
         case "trae_cn": return Brand(name: "TRAE CN", symbol: "triangle.fill", tint: Color(red: 0.20, green: 0.80, blue: 0.55))
@@ -56,7 +57,7 @@ enum Catalog {
 
     static func shortName(_ id: String) -> String {
         let id = ConnectionManager.provider(ofSlot: id)
-        return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
+        return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "kimi_desktop": "Kimi 桌面", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
          "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
          "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo", "stepfun": "阶跃",
          "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity", "deepseek_harness": "DS Harness", "reset_forecast": "预测"][id]
@@ -183,6 +184,7 @@ enum Catalog {
             "unsupported_mcode_schema": "MiniMax Code 数据库结构不兼容",
             "agy_conversations_not_found": "未找到 Antigravity CLI 会话记录",
             "dsh_sessions_not_found": "未找到 DeepSeek Harness 会话记录（本机未使用过 dsh）",
+            "kimi_desktop_sessions_not_found": "未找到 Kimi 桌面端 Agent 会话记录（本机未用过 Agent 模式）",
             "zstd_unavailable": "缺少 zstd 解压能力（需要 Python 3.14+ 或安装 zstd 命令行工具）",
             "design_opencode_db_not_found": "未找到 MiniMax Design 本机 token 账本（本机未安装或未运行过 Design）",
             "design_opencode_db_read_failed": "MiniMax Design token 账本读取失败",
@@ -255,7 +257,7 @@ enum Catalog {
     }
 
     static func appLabel(_ app: String) -> String {
-        ["claude": "Claude", "codex": "Codex", "kimi": "Kimi Code", "gemini": "Gemini", "opencode": "OpenCode",
+        ["claude": "Claude", "codex": "Codex", "kimi": "Kimi Code", "kimi_desktop": "Kimi 桌面端", "gemini": "Gemini", "opencode": "OpenCode",
          "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi", "zcode": "ZCode", "workbuddy": "WorkBuddy",
          "antigravity": "Antigravity", "dsh": "DeepSeek Harness"][app] ?? app
     }
@@ -286,6 +288,7 @@ enum Catalog {
         case "antigravity": return brand("antigravity").tint
         case "mcode": return brand("minimax_code").tint
         case "kimi": return brand("kimi").tint
+        case "kimi_desktop": return brand("kimi_desktop").tint
         case "dsh": return brand("deepseek_harness").tint
         default: return .purple
         }

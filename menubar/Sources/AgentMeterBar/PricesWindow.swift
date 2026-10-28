@@ -9,7 +9,7 @@ enum PricesWindow {
 
     static func show() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 650),
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 650),
                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             w.title = "模型与计费"
             w.isReleasedWhenClosed = false
@@ -29,6 +29,8 @@ struct PriceRow: Identifiable {
     var cacheRead: String
     var cacheWrite: String
     var output: String
+    /// Peak-hour multiplier: the price above is the off-peak base.
+    var peakMultiplier: String
     var converted: Bool
     var synced = false
 }
@@ -69,7 +71,7 @@ struct PricesView: View {
             footer
         }
         .padding(16)
-        .frame(minWidth: 720, minHeight: 560)
+        .frame(minWidth: 800, minHeight: 560)
         .task { await load() }
     }
 
@@ -102,12 +104,16 @@ struct PricesView: View {
                 .onChange(of: currency) { _, _ in Task { await load() } }
                 Spacer()
                 Button("添加自定义价格") {
-                    rows.insert(PriceRow(id: "", input: "", cacheRead: "", cacheWrite: "", output: "", converted: false), at: 0)
+                    rows.insert(PriceRow(id: "", input: "", cacheRead: "", cacheWrite: "", output: "",
+                                         peakMultiplier: "1", converted: false), at: 0)
                 }
                 Button("保存修改") { Task { await save() } }.buttonStyle(.borderedProminent)
             }
             .controlSize(.small)
             tableHeader
+            Text("谷时=基准价，峰时=基准×倍率；峰时为北京时间工作日 09:00–12:00、14:00–18:00，周末全天谷时；无请求时刻的账本按谷价估算")
+                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
             List {
                 ForEach($rows) { $row in
                     HStack(spacing: 7) {
@@ -124,6 +130,7 @@ struct PricesView: View {
                         numField("缓存读", $row.cacheRead)
                         numField("缓存写", $row.cacheWrite)
                         numField("输出", $row.output)
+                        numField("倍率", $row.peakMultiplier, width: 64)
                         Button { rows.removeAll { $0.id == row.id } } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless).foregroundStyle(.red)
                             .help("从个人价格表移除；内置或目录条目会在下次同步后恢复")
@@ -194,14 +201,15 @@ struct PricesView: View {
             Text("缓存读").frame(width: 72, alignment: .leading)
             Text("缓存写").frame(width: 72, alignment: .leading)
             Text("输出").frame(width: 72, alignment: .leading)
+            Text("峰时倍率").frame(width: 64, alignment: .leading)
             Color.clear.frame(width: 20)
         }
         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
         .padding(.horizontal, 6)
     }
 
-    private func numField(_ hint: String, _ binding: Binding<String>) -> some View {
-        TextField(hint, text: binding).textFieldStyle(.roundedBorder).frame(width: 72)
+    private func numField(_ hint: String, _ binding: Binding<String>, width: CGFloat = 72) -> some View {
+        TextField(hint, text: binding).textFieldStyle(.roundedBorder).frame(width: width)
     }
 
     private func load() async {
@@ -220,6 +228,7 @@ struct PricesView: View {
                                 cacheRead: p["cache_read"].double.map { Fmt.trim($0) } ?? "0",
                                 cacheWrite: p["cache_write"].double.map { Fmt.trim($0) } ?? "0",
                                 output: p["output"].double.map { Fmt.trim($0) } ?? "0",
+                                peakMultiplier: p["peak_multiplier"].double.map { Fmt.trim($0) } ?? "1",
                                 converted: converted.contains(pattern), synced: catalog[pattern] != nil)
             }
             bindings = json["aliases"].object.map { ModelBindingRow(id: $0.key, target: $0.value.string ?? "") }
@@ -268,12 +277,21 @@ struct PricesView: View {
         guard let client = store.backendClient else { message = "后端未连接"; return }
         let catalogKeys = Set(rows.filter(\.synced).map(\.id))
         var models: [String: [String: Double]] = [:]
+        func num(_ s: String) -> Double { Double(s.replacingOccurrences(of: ",", with: ".")) ?? 0 }
         for row in rows where !catalogKeys.contains(row.id) {
             let pattern = row.id.trimmingCharacters(in: .whitespaces)
             guard !pattern.isEmpty else { continue }
-            func num(_ s: String) -> Double { Double(s.replacingOccurrences(of: ",", with: ".")) ?? 0 }
             models[pattern] = ["input": num(row.input), "cache_read": num(row.cacheRead),
                                "cache_write": num(row.cacheWrite), "output": num(row.output)]
+        }
+        // Multipliers are a separate table: catalogue rows skip the price
+        // override above but may still carry a peak multiplier.
+        var peakMultipliers: [String: Double] = [:]
+        for row in rows {
+            let pattern = row.id.trimmingCharacters(in: .whitespaces)
+            guard !pattern.isEmpty else { continue }
+            let multiplier = num(row.peakMultiplier)
+            peakMultipliers[pattern] = multiplier > 0 ? multiplier : 1
         }
         var aliases: [String: String] = [:]
         for row in bindings {
@@ -282,7 +300,8 @@ struct PricesView: View {
             if !id.isEmpty, !target.isEmpty { aliases[Catalog.modelKey(id)] = target }
         }
         do {
-            _ = try await client.putPrices(currency: currency, models: models, aliases: aliases)
+            _ = try await client.putPrices(currency: currency, models: models, aliases: aliases,
+                                           peakMultipliers: peakMultipliers)
             message = "已保存，正在重新估算"
             await store.fetch(force: true)
             await load()

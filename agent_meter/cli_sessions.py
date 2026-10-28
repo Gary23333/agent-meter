@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import peak
 from .ccswitch import app_imported_days, period_bounds
 from .model import SourceError, metric, source, timestamp
 
@@ -84,9 +85,17 @@ def _nonneg(value):
 # Record shape everywhere: (epoch, model, fresh_input, output, reasoning,
 # cache_read, cache_write). Keyed variants carry the dedup key up front.
 
+def _close(bucket_values):
+    """Attach total_tokens to a peak/off-peak accumulator."""
+    bucket_values["total_tokens"] = peak.total(bucket_values)
+    return bucket_values
+
+
 def _summarize(records, start, end, excluded, zone, app):
     totals = dict.fromkeys(TOKEN_KEYS, 0)
+    split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
     models = {}
+    model_splits = {}
     excluded_here = set()
     for t, model, fresh, output, reasoning, cache_read, cache_write in records:
         day = datetime.fromtimestamp(t, zone).date().isoformat()
@@ -98,16 +107,24 @@ def _summarize(records, start, end, excluded, zone, app):
         totals["requests"] += 1
         target = models.setdefault(model, dict.fromkeys(TOKEN_KEYS, 0))
         target["requests"] += 1
-        for name, value in (("fresh_input", fresh), ("output", output), ("reasoning", reasoning),
-                            ("cache_read", cache_read), ("cache_write", cache_write)):
+        values = {"fresh_input": fresh, "output": output, "reasoning": reasoning,
+                  "cache_read": cache_read, "cache_write": cache_write}
+        for name, value in values.items():
             totals[name] += value
             target[name] += value
+        side = "offpeak" if peak.is_offpeak(t) else "peak"
+        peak.add(split[side], values)
+        peak.add(model_splits.setdefault(model, {"peak": peak.bucket(), "offpeak": peak.bucket()})[side], values)
     totals["total_tokens"] = sum(totals[k] for k in TOKEN_KEYS[1:])
+    totals["peak"] = _close(split["peak"])
+    totals["offpeak"] = _close(split["offpeak"])
     denominator = totals["fresh_input"] + totals["cache_read"] + totals["cache_write"]
     totals["cache_hit_rate"] = totals["cache_read"] / denominator if denominator else None
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": totals,
-            "groups": [{"app": app, "model": m, **v, "total_tokens": sum(v[k] for k in TOKEN_KEYS[1:])}
+            "groups": [{"app": app, "model": m, **v, "total_tokens": sum(v[k] for k in TOKEN_KEYS[1:]),
+                        "peak": _close(model_splits[m]["peak"]),
+                        "offpeak": _close(model_splits[m]["offpeak"])}
                        for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])],
             "excluded_ccswitch_days": sorted(excluded_here)}
 
@@ -123,7 +140,8 @@ def _metric_value(records, now, zone, excluded, app, coverage, dedup_rule, overl
         if day in excluded:
             continue
         daily[day] = daily.get(day, 0) + fresh + output + reasoning + cache_read + cache_write
-    return {"periods": periods,
+    return {"peak_split": "request_timestamp",
+            "periods": periods,
             "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
             "coverage": coverage, "dedup_rule": dedup_rule,
             "ccswitch_overlap": {"state": overlap_state, "excluded_days": sorted(excluded)}}

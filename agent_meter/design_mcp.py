@@ -1,66 +1,63 @@
-"""MCP metadata only. This client has no tools/call or generation method."""
+"""Official HTTP MCP metadata probe; never calls tools/call or generates media."""
 import json
-import os
-import queue
-import subprocess
-import threading
-import time
-from pathlib import Path
-
+import urllib.request
+from urllib.parse import urlparse
 from .transport import MAX_BODY
 
+DEFAULT_MCP_URL = 'http://127.0.0.1:18810/mcp'
 
-def probe_design_mcp(node,entry,origin,timeout=10):
-    if not node or not entry or not Path(entry).is_file():
-        return {'connected':False,'reason':'design_mcp_not_installed'}
-    process=None
-    inbox=queue.Queue(maxsize=64)
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('MCP redirect refused')
+
+def probe_design_mcp(node=None, entry=None, origin=None, timeout=10):
+    # Keep the old signature for saved configurations. node and gateway origin are
+    # no longer transport inputs; legacy filesystem entry paths use official URL.
+    url = entry if isinstance(entry, str) and entry.startswith(('http:', 'https:')) else DEFAULT_MCP_URL
     try:
-        process=subprocess.Popen([node,entry],env=dict(os.environ,GATEWAY_URL=origin),
-            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
-        def read():
-            while True:
-                line=process.stdout.readline(MAX_BODY+1)
-                if not line:
-                    try:inbox.put(None,timeout=.1)
-                    except queue.Full:pass
-                    return
-                if len(line)>MAX_BODY:continue
-                try:inbox.put(json.loads(line),timeout=.1)
-                except (ValueError,queue.Full):continue
-        thread=threading.Thread(target=read,daemon=True);thread.start()
-        deadline=time.monotonic()+timeout
-        def send(obj):
-            process.stdin.write((json.dumps(obj)+'\n').encode());process.stdin.flush()
-        def call(i,method,params):
-            if method not in {'initialize','tools/list'}:raise ValueError()
-            send({'jsonrpc':'2.0','id':i,'method':method,'params':params})
-            while time.monotonic()<deadline:
-                obj=inbox.get(timeout=max(.01,deadline-time.monotonic()))
-                if obj is None:raise ValueError()
-                if isinstance(obj,dict) and obj.get('id')==i:
-                    if 'error' in obj:raise ValueError()
-                    return obj.get('result',{})
-            raise ValueError()
-        call(1,'initialize',{'protocolVersion':'2024-11-05','capabilities':{},
-             'clientInfo':{'name':'agent-meter-readonly','version':'0.2'}})
-        send({'jsonrpc':'2.0','method':'notifications/initialized'})
-        result=call(2,'tools/list',{})
-        items=result.get('tools')
-        if not isinstance(items,list):raise ValueError()
-        names={x.get('name') for x in items if isinstance(x,dict) and isinstance(x.get('name'),str)}
-        # Discovery does not imply a future tool's schema or billing contract is safe.
+        parsed = urlparse(url)
+        if (parsed.scheme != 'http' or parsed.hostname not in {'localhost','127.0.0.1','::1'}
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise ValueError('Only local HTTP MCP is supported')
+        headers = {'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+        def call(ident, method, params):
+            if method not in {'initialize','notifications/initialized','tools/list'}:
+                raise ValueError('Metadata methods only')
+            obj={'jsonrpc':'2.0','method':method,'params':params}
+            if ident is not None:obj['id']=ident
+            request=urllib.request.Request(url,json.dumps(obj).encode(),headers)
+            with opener.open(request,timeout=timeout) as response:
+                sid=response.headers.get('mcp-session-id')
+                if sid:headers['Mcp-Session-Id']=sid
+                raw=response.read(MAX_BODY+1)
+                if len(raw)>MAX_BODY:raise ValueError('Oversized response')
+                if ident is None:return {}
+                if 'text/event-stream' in response.headers.get('Content-Type',''):
+                    messages=[]
+                    for event in raw.decode().replace('\r\n','\n').split('\n\n'):
+                        data='\n'.join(line[5:].lstrip() for line in event.splitlines() if line.startswith('data:'))
+                        if data:messages.append(json.loads(data))
+                    msg=next(m for m in messages if m.get('id')==ident)
+                else:msg=json.loads(raw)
+                if msg.get('id')!=ident or 'error' in msg:raise ValueError('Invalid MCP response')
+                return msg.get('result',{})
+        initialized=call(1,'initialize',{'protocolVersion':'2025-03-26','capabilities':{},
+            'clientInfo':{'name':'agent-meter-readonly','version':'0.3'}})
+        headers['MCP-Protocol-Version']=initialized['protocolVersion']
+        call(None,'notifications/initialized',{})
+        items=[];params={}
+        for index in range(50):
+            result=call(index+2,'tools/list',params)
+            page=result.get('tools')
+            if not isinstance(page,list):raise ValueError('Invalid catalog')
+            items.extend(page)
+            if not result.get('nextCursor'):break
+            params={'cursor':result['nextCursor']}
+        else:raise ValueError('Too many tool pages')
+        names={x.get('name') for x in items if isinstance(x,dict)}
         financial=bool(names & {'get_credit_balance','get_wallet','get_subscription','get_renewal'})
-        return {'connected':True,'tool_count':len(items),'financial_tool_names_detected':financial,
-                'financial_collection':'local_gateway_fallback','tools_called':[]}
+        return {'connected':True,'transport':'streamable_http','tool_count':len(items),
+            'financial_tool_names_detected':financial,'financial_collection':'local_gateway_fallback','tools_called':[]}
     except Exception:
         return {'connected':False,'reason':'design_mcp_probe_failed'}
-    finally:
-        if process:
-            if process.stdin:process.stdin.close()
-            try:process.wait(timeout=.5)
-            except subprocess.TimeoutExpired:
-                process.terminate()
-                try:process.wait(timeout=1)
-                except subprocess.TimeoutExpired:process.kill();process.wait(timeout=1)
-            if process.stdout:process.stdout.close()

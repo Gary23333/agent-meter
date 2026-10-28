@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import peak
 from .ccswitch import period_bounds
 from .model import SourceError, metric, timestamp
 
@@ -125,9 +126,17 @@ def _add(totals, fresh, output, reasoning, cache_read, cache_write):
     totals["cache_write"] += cache_write
 
 
+def _close(bucket_values):
+    """Attach total_tokens to a peak/off-peak accumulator."""
+    bucket_values["total_tokens"] = peak.total(bucket_values)
+    return bucket_values
+
+
 def _summarize(rows, start, end):
     totals = _zero()
+    split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
     models = {}
+    model_splits = {}
     agents = {}
     for day, t, model, agent, fresh, output, reasoning, cache_read, cache_write in rows:
         if (start is not None and t < start * 1000) or t > end * 1000:
@@ -137,14 +146,23 @@ def _summarize(rows, start, end):
         _add(target, fresh, output, reasoning, cache_read, cache_write)
         target = agents.setdefault(agent, _zero())
         _add(target, fresh, output, reasoning, cache_read, cache_write)
+        values = {"fresh_input": fresh, "output": output, "reasoning": reasoning,
+                  "cache_read": cache_read, "cache_write": cache_write}
+        side = "offpeak" if peak.is_offpeak(t / 1000) else "peak"
+        peak.add(split[side], values)
+        peak.add(model_splits.setdefault(model, {"peak": peak.bucket(), "offpeak": peak.bucket()})[side], values)
     totals["total_tokens"] = sum(totals[k] for k in ("fresh_input", "output", "reasoning", "cache_read", "cache_write"))
+    totals["peak"] = _close(split["peak"])
+    totals["offpeak"] = _close(split["offpeak"])
     denominator = totals["fresh_input"] + totals["cache_read"] + totals["cache_write"]
     totals["cache_hit_rate"] = totals["cache_read"] / denominator if denominator else None
     keys = ("requests", "fresh_input", "output", "reasoning", "cache_read", "cache_write")
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": totals,
             "groups": [{"app": "minimax_design", "model": m, **{k: v[k] for k in keys},
-                        "total_tokens": sum(v[k] for k in keys[1:])}
+                        "total_tokens": sum(v[k] for k in keys[1:]),
+                        "peak": _close(model_splits[m]["peak"]),
+                        "offpeak": _close(model_splits[m]["offpeak"])}
                        for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])],
             "agent_groups": [{"agent": a, **{k: v[k] for k in keys},
                               "total_tokens": sum(v[k] for k in keys[1:])}
@@ -176,6 +194,7 @@ def collect_design_tokens(db_path, reference_db, now, zone=ZoneInfo("Asia/Shangh
         daily[day] = daily.get(day, 0) + fresh + output + reasoning + cache_read + cache_write
     return metric({
         "periods": periods,
+        "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
         "coverage": "minimax_design_embedded_opencode_message_db",
         "dedup_rule": "exclude_sessions_also_in_standalone_opencode_db",

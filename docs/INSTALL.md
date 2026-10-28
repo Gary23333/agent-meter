@@ -1,4 +1,4 @@
-# Agent 用量 v0.9.1 安装说明
+# Agent 用量 v0.9.2 安装说明
 
 适用系统：macOS 14 或以上，Apple Silicon（arm64）。
 
@@ -8,7 +8,7 @@
 
 应用包含 Python 后端，无需安装 Python、Xcode 或下载项目源码。各供应方的本机 CLI、桌面客户端或登录态仍需用户自行安装/连接；缺少来源时显示未接入。未知值不按零计算，不同账户余额不合计。
 
-当前发布使用 ad-hoc 签名，尚未做 Apple 公证。如果系统阻止首次打开，在「系统设置 → 隐私与安全性」中查看对应提示并允许打开。升级后钥匙串可能再次询问访问权限。
+当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开，无需在隐私与安全性中手动放行。升级后钥匙串可能再次询问访问权限。
 
 应用数据和日志位于 ~/Library/Application Support/AgentMeter/.runtime/；网页登录凭据保存在 macOS 钥匙串。删除应用不会自动删除上述数据。
 

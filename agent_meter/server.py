@@ -67,10 +67,15 @@ def make_server(service,token,port=8769):
                 self.send_json(200,{"status":"ok","schema_version":SCHEMA_VERSION});return
             if route.path=="/v1/prices":
                 from .prices import load_prices
+                from .peak import WINDOW
                 from .model_catalog import catalog_status
                 table=load_prices(service.config["runtime_dir"])
                 self.send_json(200,{"currency":table.currency,
-                                    "models":{p:dict(zip(("input","cache_read","cache_write","output"),v)) for p,v in table.models.items()},
+                                    "models":{p:{**dict(zip(("input","cache_read","cache_write","output"),v)),
+                                                 "peak_multiplier":table.peak_multipliers.get(p,1.0)}
+                                              for p,v in table.models.items()},
+                                    "peak_window":WINDOW,
+                                    "peak_multipliers":table.peak_overrides,
                                     "aliases":table.aliases,"catalog":table.catalog,
                                     "sync":catalog_status(service.config["runtime_dir"]),
                                     "converted_patterns":sorted(table.converted)})
@@ -122,17 +127,20 @@ def make_server(service,token,port=8769):
                 try:
                     from .prices import PRICE_KEYS, save_prices
                     from .model import SourceError
-                    if not isinstance(body,dict) or set(body)-{"currency","models","aliases"} \
+                    if not isinstance(body,dict) or set(body)-{"currency","models","aliases","peak_multipliers"} \
                             or body.get("currency") not in {"USD","CNY"} or not isinstance(body.get("models"),dict) \
-                            or not isinstance(body.get("aliases",{}),dict):
+                            or not isinstance(body.get("aliases",{}),dict) \
+                            or not isinstance(body.get("peak_multipliers",{}),dict):
                         raise ValueError()
                     for pattern,row in body["models"].items():
                         if not isinstance(pattern,str) or not 0<len(pattern)<=120 or not isinstance(row,dict) \
                                 or set(row)-set(PRICE_KEYS) or len(body["models"])>500:
                             raise ValueError()
                     aliases=body.get("aliases",{})
-                    saved=save_prices(service.config["runtime_dir"],body["currency"],body["models"],aliases)
-                    service.set_prices(body["currency"],body["models"],aliases)
+                    peak_multipliers=body.get("peak_multipliers")
+                    saved=save_prices(service.config["runtime_dir"],body["currency"],body["models"],
+                                      aliases,peak_multipliers)
+                    service.set_prices(body["currency"],body["models"],aliases,peak_multipliers)
                     self.send_json(200,saved);return
                 except (ValueError, SourceError):
                     self.send_json(400,{"error":"invalid_prices"});return

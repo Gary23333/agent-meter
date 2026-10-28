@@ -1,6 +1,6 @@
 # 全量模型定价摸排与本地价格表
 
-日期：2026-10-09（2026-10-15 增补见文末）。本摸排回答"现有统计的模型按 API 牌价折算要多少钱"。**API 等价估算不是订阅账单**：ZCode/Kimi/Claude 等Coding 套餐内的调用不按 API 价计费，估算仅用于横向比较量级。
+日期：2026-10-09（2026-10-15 与 2026-10-28 增补见文末；早期表中的个别价格已被后两轮更新，以文末最新一轮为准）。本摸排回答"现有统计的模型按 API 牌价折算要多少钱"。**API 等价估算不是订阅账单**：ZCode/Kimi/Claude 等Coding 套餐内的调用不按 API 价计费，估算仅用于横向比较量级。
 
 背景：此前唯一的费用数字来自 CC Switch 自带的 USD 估价（它库里的 `total_cost_usd` 列）；ZCode/OpenCode/WorkBuddy/Kimi/Antigravity 及四家直读 CLI 来源没有任何费用。本轮新增本地价格表（`agent_meter/prices.py`，默认价 + 用户可改 + USD/CNY 双币种），对这些来源的 token 分组做 API 等价估算。
 
@@ -84,3 +84,37 @@ CNY 默认值规则：有国内刊例的用刊例；仅 USD 刊例的按 7.25 �
 
 - 价格表合计 $2,547 → **$3,152.74**：Claude 直读 +$550（fable-5/-5-1、opus-4-8），WorkBuddy $13.59 → $66.38（混元/阶跃按折算价），Kimi Code $0 → $646.70（拆项补全后 k3 可价）。
 - 菜单栏「本机消耗」的费用卡显示合成总数（CC Switch $7,120 + 价格表 $3,153），无定价模型按用量排序列出；按应用行与模型排行各自带金额。
+
+---
+
+## 2026-10-28 第三轮：全量官方刊例复核与峰谷计价
+
+复核范围：内置 USD 35 个 + CNY 9 个 pattern，逐项对照各厂商官方定价页（当日抓取），并用 `https://models.dev/api.json` 做交叉参考（不作官方价）。39 个 pattern 中 29 项与内置完全一致；以下 4 项有官方依据、已更新内置值。
+
+| Pattern | 侧 | 旧值 | 官方值 | 来源 |
+|---|---|---|---|---|
+| glm-5.3 | CNY | 8 / 0 / 0 / 28 | 8 / **2** / 0 / 28（缓存命中 ¥2） | https://docs.bigmodel.cn/cn/guide/start/pricing |
+| gemini-3-flash | USD | 0.30 / 0.075 / 0 / 2.50 | 0.50 / 0.05 / 0 / 3.00 | https://ai.google.dev/gemini-api/docs/gemini-3 |
+| minimax-m3 | CNY | 2.175 / 0.435 / 0 / 8.70（折算） | 2.10 / 0.42 / 0 / 8.40（官方人民币刊例，不再标折算） | https://platform.minimaxi.com/docs/guides/pricing-paygo |
+| mimo-v2.6-flash | USD | 0.1379 / 0.0028 / 0 / 0.2759（折算） | 0.14 / 0.0028 / 0 / 0.28（官方美元价，不再标折算） | https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go |
+
+说明：`gemini-3-flash` 的输入 0.50 / 输出 3.00 来自官方 Gemini 3 指南；缓存读 0.05 官方定价页该行未逐字取到，取官方模型目录与 models.dev 的交叉值。
+
+新增有官方按量价的 pattern（均按官方四大项刊例；无官方的一侧仍按 7.25 折算并标「折算」）：
+
+| Pattern | 官方价（输入 / 缓存读 / 缓存写 / 输出） | 币种 |
+|---|---|---|
+| claude-mythos-5 | 10 / 1.00 / 12.50 / 50 | USD |
+| claude-mythos-5-1 | 10 / 0.25 / 12.50 / 50 | USD |
+| gpt-5.3-codex | 1.75 / 0.175 / – / 14 | USD |
+| glm-5.3-flashx | 0.37 / 0.075 / – / 1.25；¥2 / ¥0.57 / – / ¥7 | USD+CNY |
+| mimo-v2.6-pro-ultraspeed | 4.35 / 0.036 / – / 8.70；¥30 / ¥0.25 / – / ¥60 | USD+CNY |
+| step-3.7-flash | 0.20 / 0.04 / – / 1.15；¥1.35 / ¥0.27 / – / ¥8.1 | USD+CNY |
+| minimax-m2.7-highspeed | ¥4.2 / ¥0.42 / ¥2.625 / ¥16.8（仅人民币；USD 侧折算） | CNY |
+| gemini-4-argon | 2 / 0.10 / – / 10（2026-12-01 起 4 / 0.20 / 20） | USD |
+
+**DeepSeek 峰谷计价**：官方定价页脚注原文 "Off-peak rates are half of the peak rates. Peak hours are 01:00 - 04:00 and 06:00 - 10:00 UTC, Monday through Friday, excluding Chinese public holidays." 即北京时间工作日 09:00–12:00、14:00–18:00 为峰时，峰时价为谷时刊例的 2 倍；周末全天谷时。内置价保持谷时基准，`prices.py` 与价格表新增 `peak_multipliers`（默认 DeepSeek 系 2.0，可在「模型与计费」窗口逐行修改）。带逐请求时间戳的本机账本按请求时刻拆分峰/谷；无时间戳或只有日汇总的账本（CC Switch）按谷价计入估算，不猜测时段。
+
+**仍未定价 / 无法核实（不猜价）**：OpenAI gpt-6.x 四型号官方页无行（models.dev 与内置一致，仅旁证）；gemini-3.7-flash 官方已撤行；claude-haiku-5 官方无此型号（保留旧拼写兜底）；mimo-v2.5-pro 已于 2026-10-21 下线（保留历史价）；minimax-m3.1-flash 人民币侧无官方页；hy4-preview / hy3 / step-5-preview 无官方美元价。
+
+**日历提醒**：gemini-3.6-flash / 3.8-flash 将于 2027-01-01 起由 0.75 / 0.075 / 3.75 翻倍为 1.50 / 0.15 / 7.50；gemini-4-argon 2026-12-01 起翻倍；kimi-k2.6 / k2.7 系计划 2026-12 底退役。届时需再次更新默认表。

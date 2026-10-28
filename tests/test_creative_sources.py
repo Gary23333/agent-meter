@@ -208,18 +208,36 @@ class BillingTests(unittest.TestCase):
 
 class MCPTests(unittest.TestCase):
     def test_only_metadata_methods_invoked(self):
-        with tempfile.TemporaryDirectory() as d:
-            script=Path(d)/'fake.py';log=Path(d)/'methods.jsonl'
-            script.write_text('import sys,json\nfor line in sys.stdin:\n o=json.loads(line)\n with open('+repr(str(log))+',"a") as f:f.write(o["method"]+"\\n")\n if "id" in o:\n  r={"tools":[{"name":"generate_video"}]} if o["method"]=="tools/list" else {}\n  print(json.dumps({"jsonrpc":"2.0","id":o["id"],"result":r}),flush=True)\n')
-            result=probe_design_mcp(sys.executable,str(script),'http://127.0.0.1:8001',3)
-            self.assertTrue(result['connected']);self.assertFalse(result['financial_tool_names_detected'])
-            self.assertEqual(log.read_text().splitlines(),['initialize','notifications/initialized','tools/list'])
+        import io
+        seen=[]
+        class Reply(io.BytesIO):
+            headers={'Content-Type':'text/event-stream','mcp-session-id':'test-session'}
+        def respond(request,timeout):
+            payload=json.loads(request.data);seen.append(payload['method'])
+            if payload['method']!='initialize':
+                self.assertEqual(request.get_header('Mcp-session-id'),'test-session')
+                self.assertEqual(request.get_header('Mcp-protocol-version'),'2025-03-26')
+            if 'id' not in payload:return Reply(b'')
+            result={'tools':[{'name':'execute'}]} if payload['method']=='tools/list' else {'protocolVersion':'2025-03-26'}
+            return Reply(('event: message\ndata: '+json.dumps({'jsonrpc':'2.0','id':payload['id'],'result':result})+'\n\n').encode())
+        with patch('agent_meter.design_mcp.urllib.request.OpenerDirector.open',side_effect=respond):
+            result=probe_design_mcp(None,'http://127.0.0.1:18810/mcp',None,3)
+        self.assertTrue(result['connected']);self.assertFalse(result['financial_tool_names_detected'])
+        self.assertEqual(seen,['initialize','notifications/initialized','tools/list'])
+        self.assertEqual(result['tools_called'],[])
 
     def test_missing_or_failed_mcp_safe(self):
-        self.assertFalse(probe_design_mcp(None,None,'http://localhost')['connected'])
-        with tempfile.TemporaryDirectory() as d:
-            p=Path(d)/'bad.py';p.write_text('import sys\nsys.exit(1)\n')
-            self.assertFalse(probe_design_mcp(sys.executable,str(p),'http://localhost',1)['connected'])
+        with patch('agent_meter.design_mcp.urllib.request.OpenerDirector.open',side_effect=OSError('offline')):
+            self.assertFalse(probe_design_mcp(None,None,None,1)['connected'])
+        self.assertFalse(probe_design_mcp(None,'http://example.com/mcp',None,1)['connected'])
+
+    def test_legacy_entry_uses_official_url_without_spawning(self):
+        seen=[]
+        def offline(request,timeout):
+            seen.append(request.full_url);raise OSError('offline')
+        with patch('agent_meter.design_mcp.urllib.request.OpenerDirector.open',side_effect=offline):
+            probe_design_mcp('/old/node','/old/mcp/main.js','http://localhost:8001',1)
+        self.assertEqual(seen,['http://127.0.0.1:18810/mcp'])
 
 
 class CreditRefreshTests(unittest.TestCase):

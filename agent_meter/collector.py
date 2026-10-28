@@ -18,6 +18,7 @@ from .design_tokens import collect_design_tokens
 from .discovery import discover
 from .kimi import collect_kimi
 from .kimi_tokens import collect_kimi_tokens
+from .kimi_desktop_tokens import collect_kimi_desktop_tokens
 from .model import COVERAGE_METRICS, SCHEMA_VERSION, SourceError, failed_source, metric, source, timestamp
 from .opencode_tokens import collect_opencode_tokens
 from .qoder import collect_qoder
@@ -59,11 +60,13 @@ def default_config():
             # copied sessions, which the collector excludes by session id.
             "design_opencode_db":str(home/"Library/Application Support/@hilo/desktop/ai-runtime/data-home/opencode/opencode.db"),
             "codex_binary":shutil.which("codex"),"kimi_binary":shutil.which("kimi"),
+            # Kimi.app's Agent runtime keeps its own ledger with the same schema.
+            "kimi_desktop_sessions_dir":str(home/"Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions"),
             "qoder_app":"/Applications/Qoder CN.app","node_binary":shutil.which("node"),
             "qoder_projects_dir":str(home/".qoder-cn/projects"),
             "dreamina_binary":shutil.which("dreamina") or (str(home/".local/bin/dreamina") if (home/".local/bin/dreamina").is_file() else None),
             "design_gateway_url":"http://127.0.0.1:8001",
-            "design_mcp_entry":"/Applications/MiniMax Design.app/Contents/Resources/mcp-tools/dist/main.js",
+            "design_mcp_entry":"http://127.0.0.1:18810/mcp",
             "design_probe_mcp":True,"billing_overrides":{},
             # Third-party reset trackers throttle themselves; keep their pages out of the
             # 120 s snapshot cycle.
@@ -96,6 +99,7 @@ def safe_collect(source_id,scope,now,fn):
                       "codex_sessions_not_found","claude_projects_not_found","gemini_chats_not_found","mcode_db_not_found",
                       "agy_conversations_not_found","design_opencode_db_not_found",
                       "dsh_sessions_not_found","zstd_unavailable",
+                      "kimi_desktop_sessions_not_found",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
                       "claude_keychain_unavailable","web_session_missing","disabled_by_user","disabled_in_config"}
         return failed_source(source_id,scope,now,e.code,"not_connected" if e.code in disconnected else "error")
@@ -208,6 +212,7 @@ def collect(config=None,now=None):
       "gemini":("local_session_history",lambda:collect_gemini_sessions(config["gemini_dir"],config["ccswitch_db"],now)),
       "antigravity":("local_session_history",lambda:collect_antigravity_sessions(config["agy_conversations_dir"],config["ccswitch_db"],now)),
       "deepseek_harness":("local_session_history",lambda:collect_dsh_sessions(config["dsh_sessions_dir"],config["ccswitch_db"],now,zstd_binary=config["zstd_binary"])),
+      "kimi_desktop":("local_session_history",lambda:collect_kimi_desktop_tokens(config["kimi_desktop_sessions_dir"],now)),
       # Global-reset forecasts: third-party wording, never an account clock.
       "reset_forecast":("external_forecast",lambda:collect_reset_forecast(
           now=now,cache_path=str(runtime/CACHE_NAME),
@@ -368,10 +373,10 @@ class SnapshotService:
             self.config["observations"]=observations
             self._invalidate()
 
-    def set_prices(self,currency,models,aliases=None):
-        """Persist prices and preview-model bindings; then re-estimate costs."""
+    def set_prices(self,currency,models,aliases=None,peak_multipliers=None):
+        """Persist prices, preview bindings and peak multipliers; then re-estimate."""
         from .prices import save_prices
-        save_prices(self.config["runtime_dir"],currency,models,aliases)
+        save_prices(self.config["runtime_dir"],currency,models,aliases,peak_multipliers)
         self.reload_prices()
 
     def reload_prices(self):

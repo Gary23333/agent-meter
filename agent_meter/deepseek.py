@@ -70,7 +70,19 @@ def normalize_web_usage(amount,cost,now):
     if not days:
         raise SourceError('deepseek_usage_empty')
     daily=sorted(days.values(),key=lambda d:d['date'])
-    return {'currency':currency,'daily':daily,'total_amount':format(sum((Decimal(d['amount']) for d in daily),Decimal(0)),'f'),
+    # Rolling windows end on today's Beijing calendar date (inclusive).
+    today=_dt.datetime.fromtimestamp(now+tz,_dt.timezone.utc).date()
+    today_iso=today.isoformat()
+    windows={}
+    for name,size in (('today',1),('3d',3),('7d',7),('30d',30)):
+        start=(today-_dt.timedelta(days=size-1)).isoformat()
+        rows=[d for d in daily if start<=d['date']<=today_iso]
+        windows[name]={'amount':format(sum((Decimal(d['amount']) for d in rows),Decimal(0)),'f'),
+                       'tokens':sum(d['tokens'] for d in rows),
+                       'requests':sum(d['requests'] for d in rows),
+                       'days':len(rows)}
+    return {'currency':currency,'daily':daily,'windows':windows,
+            'total_amount':format(sum((Decimal(d['amount']) for d in daily),Decimal(0)),'f'),
             'total_tokens':sum(d['tokens'] for d in daily),
             'cost_buckets_seen':charged}
 

@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import peak
 from .ccswitch import period_bounds
 from .model import SourceError, metric, timestamp
 
@@ -78,9 +79,18 @@ def load_records(root):
     return records, excluded
 
 
-def summarize(records, start, end):
+def _close(bucket_values):
+    """Attach total_tokens; this source has no reasoning key, so drop the pad."""
+    del bucket_values["reasoning"]
+    bucket_values["total_tokens"] = peak.total(bucket_values)
+    return bucket_values
+
+
+def summarize(records, start, end, app="kimi"):
     totals = dict.fromkeys(("requests", "fresh_input", "output", "cache_read", "cache_write"), 0)
+    split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
     models = {}
+    model_splits = {}
     for t, model, fresh, out, read, write in records:
         if (start is not None and t < start) or t > end:
             continue
@@ -96,17 +106,25 @@ def summarize(records, start, end):
         target["output"] += out
         target["cache_read"] += read
         target["cache_write"] += write
+        values = {"fresh_input": fresh, "output": out, "cache_read": read, "cache_write": write}
+        side = "offpeak" if peak.is_offpeak(t) else "peak"
+        peak.add(split[side], values)
+        peak.add(model_splits.setdefault(model, {"peak": peak.bucket(), "offpeak": peak.bucket()})[side], values)
     total = totals["fresh_input"] + totals["output"] + totals["cache_read"] + totals["cache_write"]
     cache_base = totals["fresh_input"] + totals["cache_read"] + totals["cache_write"]
     totals["total_tokens"] = total
     totals["cache_hit_rate"] = totals["cache_read"] / cache_base if cache_base else None
+    totals["peak"] = _close(split["peak"])
+    totals["offpeak"] = _close(split["offpeak"])
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": totals,
             # The per-model split carries the same input/output/cache breakdown
             # as the totals, so the price table can cost each model.
-            "groups": [{"app": "kimi", "model": m, **v,
+            "groups": [{"app": app, "model": m, **v,
                         "total_tokens": sum(v[k] for k in ("fresh_input", "output",
-                                                           "cache_read", "cache_write"))}
+                                                           "cache_read", "cache_write")),
+                        "peak": _close(model_splits[m]["peak"]),
+                        "offpeak": _close(model_splits[m]["offpeak"])}
                        for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])]}
 
 
@@ -120,6 +138,7 @@ def collect_kimi_tokens(home, now, zone=ZoneInfo("Asia/Shanghai")):
         daily[datetime.fromtimestamp(t, zone).date().isoformat()] += fresh + out + read + write
     return metric({
         "periods": periods,
+        "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
         "coverage": "kimi_code_local_sessions",
         "dedup_rule": "usage.record_turn_only",

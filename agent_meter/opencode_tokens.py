@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import peak
 from .ccswitch import app_imported_days, period_bounds
 from .model import SourceError, metric, source, timestamp
 
@@ -54,10 +55,18 @@ def ccswitch_imported_days(path, zone):
     return app_imported_days(path, zone, "opencode")
 
 
+def _close(bucket_values):
+    """Attach total_tokens to a peak/off-peak accumulator."""
+    bucket_values["total_tokens"] = peak.total(bucket_values)
+    return bucket_values
+
+
 def summarize(rows, start, end, excluded):
     """rows are (day, ts_ms, model, fresh, output, reasoning, read, write)."""
     out = {"requests": 0, "fresh_input": 0, "output": 0, "reasoning": 0, "cache_read": 0, "cache_write": 0}
+    split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
     models = {}
+    model_splits = {}
     excluded_here = set()
     for day, t, model, fresh, output, reasoning, cache_read, cache_write in rows:
         if day in excluded:
@@ -65,24 +74,30 @@ def summarize(rows, start, end, excluded):
             continue
         if (start is not None and t < start * 1000) or t > end * 1000:
             continue
+        values = {"fresh_input": fresh, "output": output, "reasoning": reasoning,
+                  "cache_read": cache_read, "cache_write": cache_write}
         out["requests"] += 1
-        out["fresh_input"] += fresh
-        out["output"] += output
-        out["reasoning"] += reasoning
-        out["cache_read"] += cache_read
-        out["cache_write"] += cache_write
+        for name, value in values.items():
+            out[name] += value
         target = models.setdefault(model, {"requests": 0, "fresh_input": 0, "output": 0,
                                            "reasoning": 0, "cache_read": 0, "cache_write": 0})
-        for name, value in (("requests", 1), ("fresh_input", fresh), ("output", output),
-                            ("reasoning", reasoning), ("cache_read", cache_read), ("cache_write", cache_write)):
+        target["requests"] += 1
+        for name, value in values.items():
             target[name] += value
+        side = "offpeak" if peak.is_offpeak(t / 1000) else "peak"
+        peak.add(split[side], values)
+        peak.add(model_splits.setdefault(model, {"peak": peak.bucket(), "offpeak": peak.bucket()})[side], values)
     out["total_tokens"] = sum(out[k] for k in ("fresh_input", "output", "reasoning", "cache_read", "cache_write"))
+    out["peak"] = _close(split["peak"])
+    out["offpeak"] = _close(split["offpeak"])
     denominator = out["fresh_input"] + out["cache_read"] + out["cache_write"]
     out["cache_hit_rate"] = out["cache_read"] / denominator if denominator else None
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": out,
             "groups": [{"app": "opencode", "model": m, **v,
-                        "total_tokens": sum(v[k] for k in ("fresh_input", "output", "reasoning", "cache_read", "cache_write"))}
+                        "total_tokens": sum(v[k] for k in ("fresh_input", "output", "reasoning", "cache_read", "cache_write")),
+                        "peak": _close(model_splits[m]["peak"]),
+                        "offpeak": _close(model_splits[m]["offpeak"])}
                        for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])],
             "excluded_ccswitch_days": sorted(excluded_here)}
 
@@ -135,6 +150,7 @@ def collect_opencode_tokens(path, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai
     out = source("opencode", "local_session_history", now)
     out["metrics"]["tokens"] = metric({
         "periods": periods,
+        "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
         "coverage": "opencode_local_message_db",
         "dedup_rule": "one_assistant_message_per_response",

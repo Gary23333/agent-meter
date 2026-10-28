@@ -74,8 +74,106 @@ struct AccountCard: View {
             header
             if !quotas.isEmpty { VStack(spacing: 9) { ForEach(quotas.indices, id: \.self) { QuotaBar(quota: quotas[$0], now: now) } } }
             details
+            webUsage
             dailyTokens
         }
+    }
+
+    /// DeepSeek platform console usage: shown beside the local ledger, never
+    /// summed into local consumption. Windows are the backend's precomputed
+    /// 3-day / 7-day sums; without them the daily rows are summed in Beijing
+    /// calendar days here.
+    @ViewBuilder private var webUsage: some View {
+        if let cost = source.metric("cost")?.value, cost["basis"].string == "platform_web_usage" {
+            let unit = cost["currency"].string
+            let windows = webWindows(cost)
+            let bars = webBars(cost)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    Text("网页消耗").font(theme.font(11.5, weight: .semibold)).themeForeground(.secondary)
+                    Spacer(minLength: 6)
+                    Text("网页端数据，不计入本机消耗").font(.system(size: 9.5)).themeForeground(.tertiary)
+                }
+                HStack(spacing: 7) {
+                    ForEach(windows) { w in
+                        WebUsageTile(title: w.title, amount: w.amount, tokens: w.tokens, requests: w.requests,
+                                     unit: unit, tint: tint)
+                    }
+                }
+                if !bars.isEmpty {
+                    HStack(spacing: 6) {
+                        Text("近 7 日金额").font(.system(size: 9.5)).themeForeground(.tertiary)
+                        Spacer(minLength: 6)
+                        Text(Fmt.amount(bars.reduce(0) { $0 + $1.amount }, unit: unit))
+                            .font(.system(size: 10, weight: .semibold, design: theme.numberDesign))
+                            .monospacedDigit().themeForeground(.secondary)
+                    }
+                    Chart {
+                        ForEach(bars, id: \.day) { b in
+                            BarMark(x: .value("日期", b.day), y: .value("金额", b.amount), width: .fixed(10))
+                                .foregroundStyle(tint.gradient)
+                                .cornerRadius(2)
+                        }
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(height: 40)
+                    .themeGlow(tint.opacity(0.35), radius: 3, theme: theme)
+                }
+            }
+            .padding(.top, quotas.isEmpty ? 0 : 2)
+        }
+    }
+
+    private struct WebWindow: Identifiable {
+        let id: String
+        let title: String
+        let amount: Double
+        let tokens: Double
+        let requests: Double
+    }
+
+    private func webWindows(_ cost: JSON) -> [WebWindow] {
+        let specs = [("today", "今日", 1), ("3d", "近 3 天", 3), ("7d", "近 7 天", 7)]
+        return specs.map { key, title, days in
+            let w = cost["windows"][key]
+            if !w.isNull, w["amount"].double != nil || w["tokens"].double != nil || w["requests"].double != nil {
+                return WebWindow(id: key, title: title,
+                                 amount: w["amount"].double ?? 0,
+                                 tokens: w["tokens"].double ?? 0,
+                                 requests: w["requests"].double ?? 0)
+            }
+            let fallback = sumWebDays(cost, days: days)
+            return WebWindow(id: key, title: title, amount: fallback.amount,
+                             tokens: fallback.tokens, requests: fallback.requests)
+        }
+    }
+
+    /// Sums the daily rows over the last `days` Beijing calendar days.
+    private func sumWebDays(_ cost: JSON, days: Int) -> (amount: Double, tokens: Double, requests: Double) {
+        let start = Fmt.calendar.date(byAdding: .day, value: -(days - 1), to: Fmt.calendar.startOfDay(for: now))
+        var amount = 0.0, tokens = 0.0, requests = 0.0
+        for row in cost["daily"].array {
+            guard let day = Fmt.parseDay(row["date"].string) else { continue }
+            if let start, day < start { continue }
+            amount += row["amount"].double ?? 0
+            tokens += row["tokens"].double ?? 0
+            requests += row["requests"].double ?? 0
+        }
+        return (amount, tokens, requests)
+    }
+
+    /// Last seven dated rows that actually cost something; an all-zero
+    /// platform history has no shape worth charting.
+    private func webBars(_ cost: JSON) -> [(day: Date, amount: Double)] {
+        cost["daily"].array
+            .compactMap { row -> (date: Date, amount: Double)? in
+                guard let day = Fmt.parseDay(row["date"].string), let amount = row["amount"].double else { return nil }
+                return amount > 0 ? (day, amount) : nil
+            }
+            .sorted { $0.date < $1.date }
+            .suffix(7)
+            .map { (day: $0.date, amount: $0.amount) }
     }
 
     /// Account-side daily tokens (Codex), last 30 recorded days.
@@ -216,7 +314,7 @@ struct AccountCard: View {
         if let usage = source.metric("cost")?.value, usage["basis"].string == "platform_web_usage" {
             rows.append(InfoRow(symbol: "chart.bar.doc.horizontal", title: "近 30 天消耗",
                                 value: Fmt.amount(usage["total_amount"].double ?? 0, unit: usage["currency"].string),
-                                detail: Fmt.tokens(usage["total_tokens"].double ?? 0) + " · 网页端，不计入本机消耗",
+                                detail: Fmt.tokens(usage["total_tokens"].double ?? 0) + " token",
                                 valueTint: brand.tint))
         }
         // Local token history: the same merged chain the usage tab sums (CC
@@ -275,6 +373,46 @@ struct AccountCard: View {
                                 valueTint: .secondary, nested: true))
         }
         return rows
+    }
+}
+
+/// One platform web-usage window (today / 3 days / 7 days).
+private struct WebUsageTile: View {
+    let title: String
+    let amount: Double
+    let tokens: Double
+    let requests: Double
+    let unit: String?
+    let tint: Color
+    @Environment(\.panelTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(theme.font(9.5, weight: .medium)).themeForeground(.secondary)
+            Text(Fmt.amount(amount, unit: unit))
+                .font(.system(size: 15, weight: .semibold, design: theme.numberDesign))
+                .monospacedDigit().foregroundStyle(tint).lineLimit(1)
+            Text(Fmt.tokens(tokens) + " token").font(.system(size: 9.5)).themeForeground(.tertiary).lineLimit(1)
+            Text(Fmt.grouped(requests) + " 次请求").font(.system(size: 9.5)).themeForeground(.tertiary).lineLimit(1)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background { tile }
+    }
+
+    @ViewBuilder private var tile: some View {
+        switch theme {
+        case .minimal:
+            Rectangle().fill(Color.primary.opacity(0.05))
+        case .native:
+            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.045))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
+        default:
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint.opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(tint.opacity(0.20), lineWidth: 0.6))
+        }
     }
 }
 

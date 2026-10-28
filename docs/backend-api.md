@@ -107,17 +107,33 @@ v3 的 `data.stream` 数组可能内嵌一份相同的 usage 块——只读 `da
 
 独立来源 `deepseek_harness`（scope `local_session_history`），分组 app 名 `dsh`。与 CC Switch 无重叠（其 app_type 不含 dsh），仍按统一模式调用 `app_imported_days` 保持诊断一致。错误码：目录不存在或没有任何 `session*.jsonl.zstd` → `dsh_sessions_not_found`（not_connected）；单文件解压/解析失败只跳过并计入 `diagnostics.skipped_session_files`，不炸整个来源。diagnostics 另有 v3/旧格式文件数与 `decompression_route`。配置项 `dsh_sessions_dir`（默认 `~/.dsh/sessions`）与 `zstd_binary`（默认 `shutil.which("zstd")`）。verify 对四个周期做独立重算对账（与 CC Switch 的交叉对账因无重叠日自动跳过）。
 
+## Kimi 桌面端本地会话账本
+
+Kimi.app 的 Agent 模式自带一套独立的 Kimi Code 运行时，账本写在 `~/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions`（配置键 `kimi_desktop_sessions_dir`），与 CLI 的 `~/.kimi-code/sessions` 目录结构相同：`**/agents/<agent>/wire.jsonl`，schema 一致。采集器 `agent_meter/kimi_desktop_tokens.py` 只替换根目录与分组 app 名，解析与汇总复用 `agent_meter/kimi_tokens.py`；只读 token 字段与模型名，绝不读对话正文，每文件按 `(mtime,size)` 增量缓存。自动起名（`ctitle-*`）与子代理会话照常计入。
+
+wire.jsonl 口径（与 CLI Kimi Code 相同）：
+
+- 每个模型轮次只写一条 `{"type": "usage.record", "usageScope": "turn"}`；该轮 `step.end`、逐消息元数据与父会话的 `subagent.completed` 是同一组数字的重复，只计 `usage.record`/`turn` 这一条。
+- 字段：`fresh_input=inputOther`、`output=output`、`cache_read=inputCacheRead`、`cache_write=inputCacheCreation`，`total_tokens` 为四者之和；`time` 为毫秒 epoch，换算后按 Asia/Shanghai 分桶。
+- `usageScope=session` 的记录含义未确认，排除并计入 `excluded_session_scope_records`（本机 13 条）。
+
+独立来源 `kimi_desktop`（scope `local_session_history`），分组 app 名 `kimi_desktop`，`coverage=kimi_desktop_local_sessions`，`dedup_rule=usage.record_turn_only`；tokens 指标结构与其他会话账本一致（`periods.today/7d/30d/all` 的 totals 与按模型 groups、`daily_buckets`）。**只出现在「本机消耗」页，不挂账户卡片**——Kimi 桌面端没有账户额度接口，普通聊天也不写本地账本，只有 Agent 模式产生记录。错误码：目录不存在或没有任何 `wire.jsonl` → `kimi_desktop_sessions_not_found`（not_connected）。配置键 `kimi_desktop_sessions_dir`（默认路径见上）。
+
+与已接 CLI `kimi` 来源的关系：两者按 session id 与逐条 usage 记录比对**零重叠**（2026-10-26 实测 153 个会话 / 7,896 轮 / 约 6.36 亿 token，覆盖 2026-06-05 至今），因此**不合并也不剔除**：不套用 CC Switch 式重叠剔除，两条账本各自独立汇总；CC Switch 的 `kimi-for-coding` 是它路由的另一客户端，与这两个账本都不重叠。verify 对四个周期的 totals 与按模型分项做独立重算对账。
+
 ## 本地价格表与 API 等价估算
 
-`GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（含 2026-10-15 增补）：取有官方刊例的一侧币种，另一侧按 7.25 汇率折算并在 GET 的 `converted_patterns` 中列出（双向：仅 USD 刊例的折成 CNY，仅 CNY 刊例的国产模型折成 USD）；用户编辑过的条目移出该列表。匹配规则（2026-10-15 起先归一化再匹配）：两侧都取最后一个 `/` 之后的模型 id、转小写并把 `.` 统一成 `-`（`account:bigmodel-coding-plan/GLM-5.3-Flash`、`glm-5-3-flash`、`GLM-5.3.Flash` 都命中 `glm-5.3-flash`），归一化后精确命中优先、否则取最长子串 pattern；快照里的 `model` 字段保留原始拼写。
+`GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}, peak_multipliers, aliases}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（含 2026-10-15 与 2026-10-28 增补）：取有官方刊例的一侧币种，另一侧按 7.25 汇率折算并在 GET 的 `converted_patterns` 中列出（双向：仅 USD 刊例的折成 CNY，仅 CNY 刊例的国产模型折成 USD）；用户编辑过的条目移出该列表。CNY 表中，官方人民币刊例的模型优先于 `models.dev` 目录的美元折算值（目录按美元下发，折算可能覆盖国内价），目录只在没有官方人民币价时参与折算。匹配规则（2026-10-15 起先归一化再匹配）：两侧都取最后一个 `/` 之后的模型 id、转小写并把 `.` 统一成 `-`（`account:bigmodel-coding-plan/GLM-5.3-Flash`、`glm-5-3-flash`、`GLM-5.3.Flash` 都命中 `glm-5.3-flash`），归一化后精确命中优先、否则取最长子串 pattern；快照里的 `model` 字段保留原始拼写。
 
-带按模型分项的本地 token 来源（ZCode/OpenCode/Gemini/Antigravity/Codex/Claude/MiniMax Code 直读、Kimi Code、WorkBuddy）会得到 `cost` 指标：`{unit: 币种, kind: estimate, basis: local_price_table, periods: {period: {amount, models: {原始模型名: 金额}, unmatched_models}}}`；有未匹配模型时 status=partial（未匹配部分不计零价）。仅 CC Switch 自带估价与 CodexBar 保留自己的口径；DeepSeek 的 provider 账单 cost（见下）不会被覆盖。订阅套餐内的调用不按 API 价计费，估算仅作量级比较。
+带按模型分项的本地 token 来源（ZCode/OpenCode/Gemini/Antigravity/Codex/Claude/MiniMax Code 直读、Kimi Code、Kimi 桌面端、WorkBuddy、DeepSeek Harness）会得到 `cost` 指标：`{unit: 币种, kind: estimate, basis: local_price_table, peak_window, peak_multipliers, periods: {period: {amount, peak_amount, offpeak_amount, models, unmatched_models, unsplit_models}}}`；有未匹配模型时 status=partial（未匹配部分不计零价）。仅 CC Switch 自带估价与 CodexBar 保留自己的口径；DeepSeek 的 provider 账单 cost（见下）不会被覆盖。订阅套餐内的调用不按 API 价计费，估算仅作量级比较。
+
+**峰谷计价（2026-10-28）**：DeepSeek 官方峰时为北京时间工作日 09:00–12:00、14:00–18:00（UTC 周一至周五 01:00–04:00、06:00–10:00），峰时价为谷时刊例的 2 倍；周末全天谷时，法定节假日未内置日历（按工作日处理）。价格表的四项单价始终是谷时基准，`peak_multipliers` 单独保存用户覆盖（默认 DeepSeek 系 2.0）；`GET/PUT /v1/prices` 的每个模型带 `peak_multiplier`，顶层带 `peak_window` 与已保存的 `peak_multipliers`。带逐请求时间戳的账本在 tokens 指标的每个 period `totals` 与每个 model `group` 内写 `peak`/`offpeak` 两个分项（字段镜像该来源自身 token 字段，并各带 `total_tokens`），指标顶层标 `peak_split: request_timestamp`；估算时峰时部分按倍率、谷时部分按基准价，无拆分或没有时间戳的整组按谷价并记入该 period 的 `unsplit_models`。CC Switch 只有日汇总，不参与峰谷拆分，其自带 USD 估价仍按原值展示。
 
 菜单栏「本机消耗」页把两路估算合成一个总数：CC Switch 自带 USD 估价 + 价格表估算（价格表为 USD 时相加，为 CNY 时分列展示、不跨币种相加）；按应用行与模型排行显示各自金额（CC Switch 组自带 `estimated_cost_usd`，本地来源按 `models` 金额表），无定价模型按 token 量排序列出前几个。全零估算显示「—」，不把未知价格当零。
 
 ## DeepSeek 网页用量（仅展示）
 
-`deepseek_api` 来源可选携带 `user_token`（platform.deepseek.com 登录后的 localStorage 值，经应用内存通道传入，不落盘）。提供时后端以 Bearer 只读调用控制台未公开接口 `GET /api/v0/usage/by_api_key/amount|cost?start&end&tz=28800`（契约取自 MIT 的 deepseek-harness-usage-dashboard 逆向，2026-09 schema），把近 30 天按天分桶写进 `cost` 指标：`{basis: platform_web_usage, currency, daily: [{date, tokens, requests, amount}], total_amount, total_tokens}`。它**不计入本机消耗**（tokens 指标不受影响），仅在余额卡片展示。接口失败只降级该指标（固定错误码），不影响余额读取。该接口未公开、随时可能变更，尚未在本机登录会话上实测。
+`deepseek_api` 来源可选携带 `user_token`（platform.deepseek.com 登录后的 localStorage 值，经应用内存通道传入，不落盘）。提供时后端以 Bearer 只读调用控制台未公开接口 `GET /api/v0/usage/by_api_key/amount|cost?start&end&tz=28800`（契约取自 MIT 的 deepseek-harness-usage-dashboard 逆向，2026-09 schema），把近 30 天按天分桶写进 `cost` 指标：`{basis: platform_web_usage, currency, daily: [{date, tokens, requests, amount}], windows: {today, 3d, 7d, 30d}, total_amount, total_tokens}`。`windows` 每项为 `{amount, tokens, requests, days}`，按 GMT+8 日历日含今天向前取 1/3/7/30 天，晚于今天的日期忽略；账户卡展示今日、近 3 天、近 7 天，另保留近 30 天合计。它**不计入本机消耗**（tokens 指标不受影响）。接口失败只降级该指标（固定错误码），不影响余额读取。该接口未公开、随时可能变更，尚未在本机登录会话上实测。
 
 与 CC Switch 的重叠处理：CC Switch 记录过该应用（折叠 claude-desktop、任意 data_source）的本地日期被剔除、以 CC Switch 为主，动态计算，绝不叠加；`ccswitch_overlap` 字段记录剔除日期与检查状态（`checked` / `ccswitch_absent` / `ccswitch_read_failed`）。CC Switch 缺失或未运行时为全量覆盖。直读解析带每文件 (mtime,size) 增量缓存；文件被 CLI 清理时本地记录天然为下界，verify 的交叉对账跳过 CC Switch 的代理路由日（其库内存在上游自身的 600 秒去重语义，原始文件无法复现）。
 

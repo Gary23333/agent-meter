@@ -19,7 +19,7 @@ from agent_meter.model import SourceError
 ZONE = ZoneInfo("Asia/Shanghai")
 NOW = int(datetime(2026, 10, 15, 2, 0, tzinfo=ZONE).timestamp())
 TODAY = int(datetime(2026, 10, 15, 1, 0, tzinfo=ZONE).timestamp())
-OLD = int(datetime(2026, 9, 1, 12, 0, tzinfo=ZONE).timestamp())
+OLD = int(datetime(2026, 9, 1, 10, 0, tzinfo=ZONE).timestamp())
 
 
 def assistant(when, session, tokens, model, agent):
@@ -84,7 +84,12 @@ class DesignTokensTests(unittest.TestCase):
             self.assertEqual(allp["totals"],
                              {"requests": 2, "fresh_input": 150, "output": 28, "reasoning": 5,
                               "cache_read": 370, "cache_write": 10, "total_tokens": 563,
-                              "cache_hit_rate": 370 / 530})
+                              "cache_hit_rate": 370 / 530,
+                              # 10:00 peak vs 01:00 off-peak request timestamps.
+                              "peak": {"requests": 1, "fresh_input": 50, "output": 8, "reasoning": 0,
+                                       "cache_read": 70, "cache_write": 0, "total_tokens": 128},
+                              "offpeak": {"requests": 1, "fresh_input": 100, "output": 20, "reasoning": 5,
+                                          "cache_read": 300, "cache_write": 10, "total_tokens": 435}})
             # Only today's record falls in today/7d/30d; the 09-01 one is "all" only.
             for period in ("today", "7d", "30d"):
                 self.assertEqual(value["periods"][period]["totals"]["requests"], 1)

@@ -69,6 +69,7 @@ private struct PeriodSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             hero
+            PeakPricingCard(data: data, now: now)
             composition
             byApp
             topModels
@@ -330,6 +331,155 @@ private struct PeriodSummary: View {
 }
 
 
+/// Peak / off-peak split for the current period: DeepSeek prices requests
+/// inside its discount window differently, and ledgers without request
+/// timestamps were estimated entirely at the off-peak rate.
+private struct PeakPricingCard: View {
+    let data: JSON
+    let now: Date
+    @Environment(\.panelTheme) private var theme
+
+    private var peakTokens: Double { data["totals"]["peak_tokens"].double ?? 0 }
+    private var offpeakTokens: Double { data["totals"]["offpeak_tokens"].double ?? 0 }
+
+    private var intervals: [(start: Int, end: Int)] {
+        let parsed = data["peak_window"]["intervals"].array.compactMap { pair -> (Int, Int)? in
+            let values = pair.array
+            guard values.count == 2, let s = minutes(values[0].string ?? ""),
+                  let e = minutes(values[1].string ?? "") else { return nil }
+            return (s, e)
+        }
+        return parsed.isEmpty ? [(9 * 60, 12 * 60), (14 * 60, 18 * 60)] : parsed
+    }
+
+    private var windowNote: String {
+        data["peak_window"]["note"].string ?? "工作日 09:00–12:00、14:00–18:00 峰时；其余与周末谷时"
+    }
+
+    private func minutes(_ s: String) -> Int? {
+        let parts = s.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
+        return h * 60 + m
+    }
+
+    private func clock(_ minutes: Int) -> String {
+        String(format: "%02d:%02d", minutes / 60, minutes % 60)
+    }
+
+    private var nowMinutes: Int {
+        let c = Fmt.calendar.dateComponents([.hour, .minute], from: now)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+
+    /// Weekends are off-peak all day; weekdays are peak inside the intervals.
+    private var weekday: Int {
+        Fmt.calendar.component(.weekday, from: now)   // 1 = Sunday, 7 = Saturday
+    }
+
+    private var isWeekend: Bool {
+        weekday == 1 || weekday == 7
+    }
+
+    private var isOffPeak: Bool {
+        isWeekend || !intervals.contains { nowMinutes >= $0.start && nowMinutes < $0.end }
+    }
+
+    private var hint: String {
+        if isWeekend { return "周末全天谷时" }
+        if isOffPeak {
+            if let next = intervals.map(\.start).first(where: { $0 > nowMinutes }) {
+                return "\(clock(next)) 进入峰时"
+            }
+            // Friday evening's next peak day is Monday, not tomorrow.
+            let prefix = weekday == 6 ? "周一 " : "明日 "
+            return prefix + "\(clock(intervals.first?.start ?? 9 * 60)) 进入峰时"
+        }
+        if let current = intervals.first(where: { nowMinutes >= $0.start && nowMinutes < $0.end }) {
+            return "\(clock(current.end)) 结束"
+        }
+        return ""
+    }
+
+    private var statusColor: Color {
+        isOffPeak ? Color(red: 0.10, green: 0.66, blue: 0.52) : (theme.isLuminous ? Neon.orange : .orange)
+    }
+
+    private func costs(_ key: String) -> [String: Double] {
+        data[key].object.compactMapValues { $0.double }
+    }
+
+    var body: some View {
+        let peak = peakTokens
+        let offpeak = offpeakTokens
+        let split = peak + offpeak
+        let share = split > 0 ? offpeak / split : 0
+        let unsplit = data["peak_unsplit"].array.compactMap { $0.string }
+        return Card {
+            HStack(spacing: 6) {
+                Text("峰谷定价").font(theme.font(11.5, weight: .semibold)).themeForeground(.secondary)
+                Spacer(minLength: 8)
+                Text(isOffPeak ? "谷时" : "峰时")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(statusColor)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(statusColor.opacity(0.13)))
+                    .overlay(Capsule().strokeBorder(statusColor.opacity(0.30), lineWidth: 0.5))
+                Text(hint).font(.system(size: 9.5)).themeForeground(.tertiary)
+            }
+            Text("\(windowNote)；DeepSeek 系模型峰时 ×2，其余模型不分峰谷")
+                .font(.system(size: 10.5)).themeForeground(.tertiary)
+            splitRow("峰时", tokens: peak, amounts: costs("local_peak_cost"))
+            splitRow("谷时", tokens: offpeak, amounts: costs("local_offpeak_cost"))
+            if split > 0 {
+                VStack(alignment: .leading, spacing: 4) {
+                    Meter(fraction: share, tint: Color(red: 0.15, green: 0.82, blue: 0.62), height: 5)
+                    HStack(spacing: 6) {
+                        Text("谷时 Token 占比 " + Fmt.percent((share * 1000).rounded() / 10))
+                            .font(.system(size: 10)).themeForeground(.tertiary).monospacedDigit()
+                        Spacer(minLength: 6)
+                        Text("已拆分 \(Fmt.tokens(split)) / \(Fmt.tokens(data["totals"]["total_tokens"].double ?? split))")
+                            .font(.system(size: 9.5)).themeForeground(.tertiary).monospacedDigit()
+                    }
+                }
+            } else {
+                Text("当前账本没有可拆分的请求时刻")
+                    .font(.system(size: 10.5)).themeForeground(.tertiary)
+            }
+            if !unsplit.isEmpty {
+                Text("未拆分来源按谷价计入价格表估算：" + unsplit.map { Catalog.brand($0).name }.joined(separator: "、"))
+                    .font(.system(size: 10)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("CC Switch 自带估价不分峰谷，未计入上面的价格表金额")
+                    .font(.system(size: 9.5)).themeForeground(.tertiary)
+            }
+        }
+    }
+
+    private func splitRow(_ title: String, tokens: Double, amounts: [String: Double]) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(title).font(theme.font(11.5, weight: .medium)).themeForeground(.secondary)
+                .frame(width: theme == .minimal ? 34 : 40, alignment: .leading)
+            Text(Fmt.tokens(tokens))
+                .font(.system(size: 12.5, weight: .semibold, design: theme.numberDesign))
+                .monospacedDigit().themeForeground()
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 1) {
+                if amounts.isEmpty {
+                    Text("—").font(.system(size: 11.5, weight: .medium, design: theme.numberDesign))
+                        .themeForeground(.tertiary)
+                } else {
+                    ForEach(amounts.keys.sorted(), id: \.self) { unit in
+                        Text(Fmt.amount(amounts[unit] ?? 0, unit: unit))
+                            .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
+                            .monospacedDigit().themeForeground()
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One local-usage view summing every local token ledger: CC Switch's imports
 /// plus the direct readers (Kimi Code, ZCode, OpenCode, WorkBuddy, and the
 /// Codex / Claude Code / Gemini / MiniMax Code session logs). They record
@@ -390,6 +540,8 @@ enum LocalUsage {
             }
         }
         var localCosts: [String: Double] = [:]
+        var localPeakCosts: [String: Double] = [:]
+        var localOffpeakCosts: [String: Double] = [:]
         var costIndex: [String: JSON] = [:]
         var unmatched: [String: Set<String>] = [:]
         for source in snapshot.sources {
@@ -397,6 +549,10 @@ enum LocalUsage {
             let window = cost["periods"][period.rawValue]
             if let unit = cost["unit"].string, let amount = window["amount"].double {
                 localCosts[unit, default: 0] += amount
+            }
+            if let unit = cost["unit"].string {
+                if let amount = window["peak_amount"].double { localPeakCosts[unit, default: 0] += amount }
+                if let amount = window["offpeak_amount"].double { localOffpeakCosts[unit, default: 0] += amount }
             }
             let models = window["models"].object
             if !models.isEmpty {
@@ -413,14 +569,51 @@ enum LocalUsage {
                   unmatched[source]?.contains(model) == true else { continue }
             unpriced[Catalog.modelLabel(model), default: 0] += g["total_tokens"].double ?? 0
         }
+        // Peak / off-peak split. Tokens come from the merged groups (each
+        // ledger's own peak objects); a ledger with per-model groups but no
+        // request-time split was estimated entirely at the off-peak price.
+        var peakTokens = 0.0
+        var offpeakTokens = 0.0
+        for g in groups {
+            peakTokens += g["peak"]["total_tokens"].double ?? 0
+            offpeakTokens += g["offpeak"]["total_tokens"].double ?? 0
+        }
+        var peakUnsplit: [String] = []
+        var peakWindow: JSON = .null
+        for source in snapshot.sources {
+            guard let value = source.metric("tokens")?.value["periods"][period.rawValue], !value.isNull else { continue }
+            let sourceGroups = value["groups"].array
+            if !sourceGroups.isEmpty, !sourceGroups.contains(where: { $0["peak"]["total_tokens"].double != nil }),
+               source.metric("cost")?.value["basis"].string == "local_price_table",
+               !peakUnsplit.contains(source.id) {
+                peakUnsplit.append(source.id)
+            }
+            if peakWindow.isNull, let w = source.metric("cost")?.value["peak_window"], !w.isNull {
+                peakWindow = w
+            }
+        }
         let fresh = totals["fresh_input"]?.double ?? 0
         let read = totals["cache_read"]?.double ?? 0
         let write = totals["cache_write"]?.double ?? 0
         totals["cache_hit_rate"] = fresh + read + write > 0 ? .number(read / (fresh + read + write)) : .null
         totals["unpriced_extra_requests"] = .number(extraRequests)
+        totals["peak_tokens"] = .number(peakTokens)
+        totals["offpeak_tokens"] = .number(offpeakTokens)
         var out: [String: JSON] = ["totals": .object(totals), "groups": .array(groups),
                                    "includes_local": .array(included.map { .string($0) })]
         out["local_cost"] = .object(localCosts.mapValues { .number($0) })
+        out["local_peak_cost"] = .object(localPeakCosts.mapValues { .number($0) })
+        out["local_offpeak_cost"] = .object(localOffpeakCosts.mapValues { .number($0) })
+        out["peak_unsplit"] = .array(peakUnsplit.map { .string($0) })
+        out["peak_window"] = peakWindow.isNull
+            ? .object(["timezone": .string("Asia/Shanghai"),
+                       "weekdays": .array([1, 2, 3, 4, 5].map { .number(Double($0)) }),
+                       "intervals": .array([["09:00", "12:00"], ["14:00", "18:00"]].map { pair in
+                           .array(pair.map { .string($0) })
+                       }),
+                       "weekend_offpeak": .bool(true),
+                       "note": .string("工作日 09:00–12:00、14:00–18:00 峰时；其余与周末全天谷时")])
+            : peakWindow
         out["cost_index"] = .object(costIndex)
         out["unpriced_models"] = .array(unpriced.sorted { $0.value > $1.value }.prefix(8).map { .string($0.key) })
         if let periodStatus = base?["period_status"], !periodStatus.isNull {

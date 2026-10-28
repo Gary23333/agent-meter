@@ -117,10 +117,12 @@ struct BackendClient {
         return json
     }
 
-    func putPrices(currency: String, models: [String: [String: Double]], aliases: [String: String]) async throws -> JSON {
+    func putPrices(currency: String, models: [String: [String: Double]], aliases: [String: String],
+                   peakMultipliers: [String: Double]) async throws -> JSON {
         var r = try request("v1/prices", method: "PUT", timeout: 10)
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try JSONSerialization.data(withJSONObject: ["currency": currency, "models": models, "aliases": aliases])
+        r.httpBody = try JSONSerialization.data(withJSONObject: ["currency": currency, "models": models,
+                                                                 "aliases": aliases, "peak_multipliers": peakMultipliers])
         let (_, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else { throw BackendError.http(http.statusCode, nil) }

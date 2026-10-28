@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import peak
 from .ccswitch import period_bounds
 from .model import SourceError, metric, source, timestamp
 
@@ -52,10 +53,18 @@ def validate_schema(conn):
         raise SourceError("unsupported_zcode_usage_schema")
 
 
+def _close(bucket_values):
+    """Attach total_tokens to a peak/off-peak accumulator."""
+    bucket_values["total_tokens"] = peak.total(bucket_values)
+    return bucket_values
+
+
 def summarize(rows, start, end):
     """One pass over (ts_ms, model, status, tokens...) rows for a period."""
     totals = dict.fromkeys(("requests", *TOKEN_FIELDS), 0)
+    split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
     models = {}
+    model_splits = {}
     statuses = {}
     for ts_ms, model, status, *values in rows:
         if (start is not None and ts_ms < start * 1000) or (ts_ms > end * 1000):
@@ -63,17 +72,25 @@ def summarize(rows, start, end):
         totals["requests"] += 1
         statuses[status] = statuses.get(status, 0) + 1
         target = models.setdefault(model, dict.fromkeys(("requests", *TOKEN_FIELDS), 0))
-        for name, value in zip(TOKEN_FIELDS, values):
+        counts = dict(zip(TOKEN_FIELDS, values))
+        for name, value in counts.items():
             totals[name] += value
             target[name] += value
         target["requests"] += 1
+        side = "offpeak" if peak.is_offpeak(ts_ms / 1000) else "peak"
+        peak.add(split[side], counts)
+        peak.add(model_splits.setdefault(model, {"peak": peak.bucket(), "offpeak": peak.bucket()})[side], counts)
     totals["total_tokens"] = sum(totals[f] for f in TOKEN_FIELDS)
+    totals["peak"] = _close(split["peak"])
+    totals["offpeak"] = _close(split["offpeak"])
     denominator = totals["fresh_input"] + totals["cache_read"] + totals["cache_write"]
     totals["cache_hit_rate"] = totals["cache_read"] / denominator if denominator else None
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": totals,
             "groups": [{"app": "zcode", "model": m, **v,
-                        "total_tokens": sum(v[f] for f in TOKEN_FIELDS)}
+                        "total_tokens": sum(v[f] for f in TOKEN_FIELDS),
+                        "peak": _close(model_splits[m]["peak"]),
+                        "offpeak": _close(model_splits[m]["offpeak"])}
                        for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])],
             "requests_by_status": statuses}
 
@@ -97,6 +114,7 @@ def collect_zcode_local(path, now, zone=ZoneInfo("Asia/Shanghai")):
     out = source("zcode", "local_session_history", now)
     out["metrics"]["tokens"] = metric({
         "periods": periods_value(rows, now, zone),
+        "peak_split": "request_timestamp",
         "daily_buckets": daily_value(rows, zone),
         "coverage": "zcode_local_model_usage_db",
         "dedup_rule": "one_row_per_model_request_attempt",

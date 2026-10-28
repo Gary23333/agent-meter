@@ -27,6 +27,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import peak
 from .ccswitch import period_bounds
 from .model import SourceError, metric, timestamp
 
@@ -133,27 +134,54 @@ def load_records(root):
     return records, credit, totals
 
 
+def _split_bucket():
+    """peak/off-peak accumulator over this source's own fields."""
+    values = peak.bucket()
+    del values["reasoning"]   # this source reports no reasoning column
+    values["thinking_tokens"] = 0
+    return values
+
+
+def _close(bucket_values):
+    """Attach total_tokens (same rule as the totals) to a split bucket."""
+    bucket_values["total_tokens"] = peak.total(bucket_values)
+    return bucket_values
+
+
 def summarize(records, start, end):
     out = {"requests": 0, "fresh_input": 0, "output": 0, "cache_read": 0, "cache_write": 0,
            "thinking_tokens": 0}
+    split = {"peak": _split_bucket(), "offpeak": _split_bucket()}
     models = {}
+    model_splits = {}
     for t, model, fresh, output, cache_read, cache_write, thinking in records:
         if (start is not None and t < start) or t > end:
             continue
         out["requests"] += 1
-        for name, value in (("fresh_input", fresh), ("output", output), ("cache_read", cache_read),
-                            ("cache_write", cache_write), ("thinking_tokens", thinking)):
+        target = models.setdefault(model, dict.fromkeys(("requests", *TOKEN_FIELDS, "thinking_tokens"), 0))
+        target["requests"] += 1
+        values = {"fresh_input": fresh, "output": output, "cache_read": cache_read,
+                  "cache_write": cache_write, "thinking_tokens": thinking}
+        side = "offpeak" if peak.is_offpeak(t) else "peak"
+        split[side]["requests"] += 1
+        target_side = model_splits.setdefault(model, {"peak": _split_bucket(), "offpeak": _split_bucket()})[side]
+        target_side["requests"] += 1
+        for name, value in values.items():
             out[name] += value
-            target = models.setdefault(model, dict.fromkeys(("requests", *TOKEN_FIELDS, "thinking_tokens"), 0))
             target[name] += value
-        models[model]["requests"] += 1
+            split[side][name] += value
+            target_side[name] += value
     out["total_tokens"] = sum(out[k] for k in TOKEN_FIELDS)
+    out["peak"] = _close(split["peak"])
+    out["offpeak"] = _close(split["offpeak"])
     denominator = out["fresh_input"] + out["cache_read"] + out["cache_write"]
     out["cache_hit_rate"] = out["cache_read"] / denominator if denominator else None
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": out,
             "groups": [{"app": "workbuddy", "model": m, **v,
-                        "total_tokens": sum(v[k] for k in TOKEN_FIELDS)}
+                        "total_tokens": sum(v[k] for k in TOKEN_FIELDS),
+                        "peak": _close(model_splits[m]["peak"]),
+                        "offpeak": _close(model_splits[m]["offpeak"])}
                        for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])]}
 
 
@@ -171,6 +199,7 @@ def collect_workbuddy_tokens(root, now, zone=ZoneInfo("Asia/Shanghai")):
         daily[day] = daily.get(day, 0) + fresh + output + cache_read + cache_write
     return metric({
         "periods": periods,
+        "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
         "coverage": "workbuddy_local_projects",
         "dedup_rule": "one_rawUsage_record_per_response",
