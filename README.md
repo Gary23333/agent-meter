@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
   <img src="https://img.shields.io/badge/Tests-306%20Passed-brightgreen" alt="Tests: 306 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.3-blue" alt="Release: v0.9.3" />
+  <img src="https://img.shields.io/badge/Release-v0.9.4-blue" alt="Release: v0.9.4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -121,7 +121,7 @@
 - **历史主库**：通过只读事务与一致性连接读取 **CC Switch (Schema 20)** 历史数据库；
 - **增量会话**：毫秒级解析 **Kimi Code** 本机 `~/.kimi-code/sessions/**/wire.jsonl`，提取唯一 `turn` 作用域真实 Token；
 - **严密去重**：明确区分 CC Switch 路由的 `kimi-for-coding` 与独立的 Kimi Code 桌面端，相加绝不重叠；对缺少定价的记录或下界统计明确标注，绝不捏造虚假账单。
-- **峰谷计价视图**：按请求时间戳把本机消耗拆成峰时 / 谷时，展示 DeepSeek 峰时 ×2 的价差影响；没有请求时刻的账本（CC Switch 日汇总）按谷价计入价格表估算，并在视图里点名说明。
+- **DeepSeek 峰谷计价视图**：挂在「账户额度」页的 DeepSeek 卡内，只汇总各本机账本中的 DeepSeek 系模型，按请求时间戳拆成峰时 / 谷时，展示峰时 ×2 的价差影响；没有请求时刻的账本（CC Switch 日汇总）按谷价计入价格表估算，并在视图里点名说明。
 
 ### 6. 🧠 模型目录自动同步与体验模型计费绑定
 - **自动更新模型名称与刊例价**：从公开 `models.dev` 目录同步主流供应商的模型 ID、名称、发布日期及输入、输出、缓存读写的每百万 Token 单价；启动后自动同步，每 6 小时检查，目录本身按 24 小时节流，也可在「模型与计费」窗口手动同步。
@@ -251,13 +251,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.9.3](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.3) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.9.3-macos-arm64.dmg`
+1. 从 [Releases · v0.9.4](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.4) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.9.4-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.3 发布说明](docs/release-v0.9.3.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.4 发布说明](docs/release-v0.9.4.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -273,7 +273,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.3，发布标签为 v0.9.3；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.4，发布标签为 v0.9.4；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -359,6 +359,10 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.9.4 · 2026-10-29
+- **DeepSeek 峰谷定价迁入账户卡**：从「本机消耗」页移到「账户额度」页的 DeepSeek 卡内，只统计各本机账本中的 DeepSeek 系模型，并在卡片内提供今日 / 7 天 / 30 天 / 全部切换。详见[发布说明](docs/release-v0.9.4.md)。
+- **按模型拆分峰谷金额**：后端成本指标新增 `peak_models` / `offpeak_models`，卡片可显示 DeepSeek 专属的峰时、谷时金额与谷时占比。
 
 ### v0.9.3 · 2026-10-28
 - **修复 Codex 间歇性“读取失败”**：`account/rateLimits/read` 实测需 15–25 秒，原 20 秒通用超时导致 `rpc_timeout`；Codex 改用独立 45 秒超时，并缓存最后一次成功的账户指标，瞬时失败显示“旧数据”而不是“读取失败”。详见[发布说明](docs/release-v0.9.3.md)。

@@ -75,7 +75,16 @@ struct AccountCard: View {
             if !quotas.isEmpty { VStack(spacing: 9) { ForEach(quotas.indices, id: \.self) { QuotaBar(quota: quotas[$0], now: now) } } }
             details
             webUsage
+            deepseekPeak
             dailyTokens
+        }
+    }
+
+    /// DeepSeek's peak / off-peak pricing belongs on its own account card; the
+    /// numbers still come from the local ledgers, not the platform console.
+    @ViewBuilder private var deepseekPeak: some View {
+        if source.baseID == "deepseek_api" {
+            DeepSeekPeakSection(snapshot: snapshot, now: now).padding(.top, 2)
         }
     }
 
@@ -373,6 +382,160 @@ struct AccountCard: View {
                                 valueTint: .secondary, nested: true))
         }
         return rows
+    }
+}
+
+/// DeepSeek's peak / off-peak split inside its API account card: requests in
+/// the discount window cost less, and ledgers without request timestamps were
+/// estimated entirely at the off-peak rate. Only DeepSeek models count, so a
+/// shared local ledger never leaks other models' tokens into this section.
+private struct DeepSeekPeakSection: View {
+    let snapshot: Snapshot
+    let now: Date
+    @AppStorage("usagePeriod") private var periodRaw = Period.today.rawValue
+    @Environment(\.panelTheme) private var theme
+
+    private var period: Period { Period(rawValue: periodRaw) ?? .today }
+    private var split: LocalUsage.DeepSeekPeak? { LocalUsage.deepseekPeak(snapshot: snapshot, period: period) }
+    private var window: JSON { split?.window ?? .null }
+
+    private var intervals: [(start: Int, end: Int)] {
+        let parsed = window["intervals"].array.compactMap { pair -> (Int, Int)? in
+            let values = pair.array
+            guard values.count == 2, let s = minutes(values[0].string ?? ""),
+                  let e = minutes(values[1].string ?? "") else { return nil }
+            return (s, e)
+        }
+        return parsed.isEmpty ? [(9 * 60, 12 * 60), (14 * 60, 18 * 60)] : parsed
+    }
+
+    private var windowNote: String {
+        window["note"].string ?? "工作日 09:00–12:00、14:00–18:00 峰时；其余与周末谷时"
+    }
+
+    private func minutes(_ s: String) -> Int? {
+        let parts = s.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
+        return h * 60 + m
+    }
+
+    private func clock(_ minutes: Int) -> String {
+        String(format: "%02d:%02d", minutes / 60, minutes % 60)
+    }
+
+    private var nowMinutes: Int {
+        let c = Fmt.calendar.dateComponents([.hour, .minute], from: now)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+
+    /// Weekends are off-peak all day; weekdays are peak inside the intervals.
+    private var weekday: Int {
+        Fmt.calendar.component(.weekday, from: now)   // 1 = Sunday, 7 = Saturday
+    }
+
+    private var isWeekend: Bool {
+        weekday == 1 || weekday == 7
+    }
+
+    private var isOffPeak: Bool {
+        isWeekend || !intervals.contains { nowMinutes >= $0.start && nowMinutes < $0.end }
+    }
+
+    private var hint: String {
+        if isWeekend { return "周末全天谷时" }
+        if isOffPeak {
+            if let next = intervals.map(\.start).first(where: { $0 > nowMinutes }) {
+                return "\(clock(next)) 进入峰时"
+            }
+            // Friday evening's next peak day is Monday, not tomorrow.
+            let prefix = weekday == 6 ? "周一 " : "明日 "
+            return prefix + "\(clock(intervals.first?.start ?? 9 * 60)) 进入峰时"
+        }
+        if let current = intervals.first(where: { nowMinutes >= $0.start && nowMinutes < $0.end }) {
+            return "\(clock(current.end)) 结束"
+        }
+        return ""
+    }
+
+    private var statusColor: Color {
+        isOffPeak ? Color(red: 0.10, green: 0.66, blue: 0.52) : (theme.isLuminous ? Neon.orange : .orange)
+    }
+
+    var body: some View {
+        if let split = split {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    Text("DeepSeek 峰谷定价").font(theme.font(11.5, weight: .semibold)).themeForeground(.secondary)
+                    Spacer(minLength: 8)
+                    Text(isOffPeak ? "谷时" : "峰时")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(statusColor.opacity(0.13)))
+                        .overlay(Capsule().strokeBorder(statusColor.opacity(0.30), lineWidth: 0.5))
+                    Text(hint).font(.system(size: 9.5)).themeForeground(.tertiary)
+                }
+                PillTabs(items: Period.allCases, title: { $0.label },
+                         selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
+                Text("\(windowNote)；DeepSeek 系模型峰时 ×2")
+                    .font(.system(size: 10.5)).themeForeground(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                splitRow("峰时", tokens: split.peakTokens, amounts: split.peakCosts)
+                splitRow("谷时", tokens: split.offpeakTokens, amounts: split.offpeakCosts)
+                let splitTotal = split.peakTokens + split.offpeakTokens
+                if splitTotal > 0 {
+                    let share = split.offpeakTokens / splitTotal
+                    VStack(alignment: .leading, spacing: 4) {
+                        Meter(fraction: share, tint: Color(red: 0.15, green: 0.82, blue: 0.62), height: 5)
+                        HStack(spacing: 6) {
+                            Text("谷时 Token 占比 " + Fmt.percent((share * 1000).rounded() / 10))
+                                .font(.system(size: 10)).themeForeground(.tertiary).monospacedDigit()
+                            Spacer(minLength: 6)
+                            Text("已拆分 \(Fmt.tokens(splitTotal)) / \(Fmt.tokens(split.totalTokens))")
+                                .font(.system(size: 9.5)).themeForeground(.tertiary).monospacedDigit()
+                        }
+                    }
+                } else if split.totalTokens > 0 {
+                    Text("该时间段没有可拆分的 DeepSeek 请求时刻")
+                        .font(.system(size: 10.5)).themeForeground(.tertiary)
+                } else {
+                    Text("该时间段没有 DeepSeek 模型的本机记录")
+                        .font(.system(size: 10.5)).themeForeground(.tertiary)
+                }
+                if !split.unsplitSources.isEmpty {
+                    Text("未拆分来源按谷价计入价格表估算：" + split.unsplitSources.joined(separator: "、"))
+                        .font(.system(size: 10)).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if split.hasUnsplitCCSwitch {
+                    Text("CC Switch 自带估价不分峰谷，未计入上面的价格表金额")
+                        .font(.system(size: 9.5)).themeForeground(.tertiary)
+                }
+            }
+        }
+    }
+
+    private func splitRow(_ title: String, tokens: Double, amounts: [String: Double]) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(title).font(theme.font(11.5, weight: .medium)).themeForeground(.secondary)
+                .frame(width: theme == .minimal ? 34 : 40, alignment: .leading)
+            Text(Fmt.tokens(tokens))
+                .font(.system(size: 12.5, weight: .semibold, design: theme.numberDesign))
+                .monospacedDigit().themeForeground()
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 1) {
+                if amounts.isEmpty {
+                    Text("—").font(.system(size: 11.5, weight: .medium, design: theme.numberDesign))
+                        .themeForeground(.tertiary)
+                } else {
+                    ForEach(amounts.keys.sorted(), id: \.self) { unit in
+                        Text(Fmt.amount(amounts[unit] ?? 0, unit: unit))
+                            .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
+                            .monospacedDigit().themeForeground()
+                    }
+                }
+            }
+        }
     }
 }
 

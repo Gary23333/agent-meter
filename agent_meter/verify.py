@@ -661,10 +661,13 @@ def verify_snapshot(snapshot,config,native_reference=None):
             groups=(tokens["periods"].get(period) or {}).get("groups") or []
             peak_total=Decimal(0)
             offpeak_total=Decimal(0)
+            peak_models={}
+            offpeak_models={}
             unmatched=set()
             for g in groups:
                 pattern=None
-                key=normalize_model(str(g.get("model","")))
+                model=str(g.get("model",""))
+                key=normalize_model(model)
                 if key:
                     if key in price_table.index:
                         pattern=price_table.index[key]
@@ -688,11 +691,20 @@ def verify_snapshot(snapshot,config,native_reference=None):
                         cost+=Decimal(str(row.get(field,0) or 0))*Decimal(str(prices[price]))*multiplier/Decimal(1000000)
                     return cost
                 if split:
-                    peak_total+=amount_for(g["peak"],
-                                           Decimal(str(price_table.peak_multipliers.get(pattern,1.0))).normalize())
-                    offpeak_total+=amount_for(g["offpeak"],Decimal(1))
+                    peak_part=amount_for(g["peak"],
+                                         Decimal(str(price_table.peak_multipliers.get(pattern,1.0))).normalize())
+                    offpeak_part=amount_for(g["offpeak"],Decimal(1))
+                    peak_total+=peak_part
+                    offpeak_total+=offpeak_part
+                    if peak_part:
+                        peak_models[model]=peak_models.get(model,Decimal(0))+peak_part
+                    if offpeak_part:
+                        offpeak_models[model]=offpeak_models.get(model,Decimal(0))+offpeak_part
                 else:
-                    offpeak_total+=amount_for(g,Decimal(1))
+                    offpeak_part=amount_for(g,Decimal(1))
+                    offpeak_total+=offpeak_part
+                    if offpeak_part:
+                        offpeak_models[model]=offpeak_models.get(model,Decimal(0))+offpeak_part
             total=peak_total+offpeak_total
             backend=value["periods"].get(period) or {}
             check("prices."+src["id"]+"."+period+".amount",Decimal(backend.get("amount") or 0)==total,
@@ -703,6 +715,16 @@ def verify_snapshot(snapshot,config,native_reference=None):
             check("prices."+src["id"]+"."+period+".offpeak_amount",
                   Decimal(backend.get("offpeak_amount") or 0)==offpeak_total,
                   {"backend":backend.get("offpeak_amount"),"reference":format(offpeak_total,"f")})
+            backend_peak_models={name:Decimal(value or 0)
+                                 for name,value in (backend.get("peak_models") or {}).items()}
+            check("prices."+src["id"]+"."+period+".peak_models",backend_peak_models==peak_models,
+                  {"backend":backend.get("peak_models") or {},
+                   "reference":{name:format(value,"f") for name,value in peak_models.items()}})
+            backend_offpeak_models={name:Decimal(value or 0)
+                                    for name,value in (backend.get("offpeak_models") or {}).items()}
+            check("prices."+src["id"]+"."+period+".offpeak_models",backend_offpeak_models==offpeak_models,
+                  {"backend":backend.get("offpeak_models") or {},
+                   "reference":{name:format(value,"f") for name,value in offpeak_models.items()}})
             check("prices."+src["id"]+"."+period+".unmatched",set(backend.get("unmatched_models") or [])==unmatched,
                   {"backend":backend.get("unmatched_models"),"reference":sorted(unmatched)})
     # Direct CLI session readers: exact recompute plus CC Switch cross-check.

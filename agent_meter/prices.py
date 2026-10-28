@@ -344,9 +344,11 @@ def estimate_source_cost(tokens_metric, table):
     pattern. A group with both a "peak" and an "offpeak" token object is
     billed at the peak multiplier for the peak part and at the base price for
     the off-peak part; a group that was never split stays at the off-peak
-    base price and its model is named in unsplit_models. Sources without a
-    per-model breakdown cannot be priced and stay not_provided. Returns the
-    cost metric, or None when nothing matched.
+    base price and its model is named in unsplit_models. The per-model peak
+    and off-peak amount maps (same keys as models) let the UI show only one
+    vendor's models (DeepSeek is the only peak-multiplier vendor). Sources
+    without a per-model breakdown cannot be priced and stay not_provided.
+    Returns the cost metric, or None when nothing matched.
     """
     value = tokens_metric.get("value") if isinstance(tokens_metric, dict) else None
     periods = value.get("periods") if isinstance(value, dict) else None
@@ -361,12 +363,15 @@ def estimate_source_cost(tokens_metric, table):
         if not isinstance(groups, list) or not groups:
             out_periods[period] = {"amount": "0", "models": {}, "unmatched_models": [],
                                    "bound_models": {}, "peak_amount": "0",
-                                   "offpeak_amount": "0", "unsplit_models": []}
+                                   "offpeak_amount": "0", "unsplit_models": [],
+                                   "peak_models": {}, "offpeak_models": {}}
             continue
         total = Decimal(0)
         peak_total = Decimal(0)
         offpeak_total = Decimal(0)
         models = {}
+        peak_models = {}
+        offpeak_models = {}
         unmatched = set()
         unsplit = set()
         bound = {}
@@ -392,6 +397,10 @@ def estimate_source_cost(tokens_metric, table):
             offpeak_total += offpeak_part
             total += amount
             models[model] = models.get(model, Decimal(0)) + amount
+            if peak_part:
+                peak_models[model] = (peak_models.get(model, Decimal(0)) + peak_part).normalize()
+            if offpeak_part:
+                offpeak_models[model] = (offpeak_models.get(model, Decimal(0)) + offpeak_part).normalize()
             target = table.binding_for(model)
             if target:
                 bound[model] = target
@@ -401,6 +410,8 @@ def estimate_source_cost(tokens_metric, table):
                                "peak_amount": format(peak_total, "f"),
                                "offpeak_amount": format(offpeak_total, "f"),
                                "models": {name: format(amount, "f") for name, amount in models.items()},
+                               "peak_models": {name: format(amount, "f") for name, amount in peak_models.items()},
+                               "offpeak_models": {name: format(amount, "f") for name, amount in offpeak_models.items()},
                                "unmatched_models": sorted(unmatched),
                                "unsplit_models": sorted(unsplit), "bound_models": bound}
     if not any_group:

@@ -283,6 +283,8 @@ class PeakPriceTests(unittest.TestCase):
         self.assertEqual(Decimal(period["offpeak_amount"]), Decimal("1.32"))
         self.assertEqual(Decimal(period["amount"]), Decimal("6.60"))
         self.assertEqual(Decimal(period["models"]["deepseek-v4-pro"]), Decimal("6.60"))
+        self.assertEqual(period["peak_models"], {"deepseek-v4-pro": "5.28"})
+        self.assertEqual(period["offpeak_models"], {"deepseek-v4-pro": "1.32"})
         self.assertEqual(period["unsplit_models"], [])
         self.assertEqual(cost["value"]["peak_window"], WINDOW)
         self.assertEqual(cost["value"]["peak_multipliers"]["deepseek-v4-pro"], 2.0)
@@ -297,6 +299,8 @@ class PeakPriceTests(unittest.TestCase):
         self.assertEqual(Decimal(period["amount"]), Decimal("0.66"))
         self.assertEqual(Decimal(period["offpeak_amount"]), Decimal("0.66"))
         self.assertEqual(Decimal(period["peak_amount"]), Decimal(0))
+        self.assertEqual(period["peak_models"], {})
+        self.assertEqual(period["offpeak_models"], {"deepseek-v4-pro": "0.66"})
         self.assertEqual(period["unsplit_models"], ["deepseek-v4-pro"])
 
     def test_peak_multiplier_persistence_and_validation(self):
