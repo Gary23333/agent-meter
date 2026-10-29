@@ -181,6 +181,8 @@ enum Catalog {
             "opencode_db_read_failed": "OpenCode 数据库读取失败",
             "workbuddy_projects_not_found": "未找到 WorkBuddy 本地会话记录",
             "codex_sessions_not_found": "未找到 Codex 会话记录（本机未安装 Codex CLI）",
+            "codex_images_not_found": "未找到 Codex 生图归档（本机未用内置生图）",
+            "codex_history_unavailable": "生图调用记录暂不可读，仅按图片文件统计",
             "claude_projects_not_found": "未找到 Claude Code 会话记录（本机未安装 Claude Code）",
             "gemini_chats_not_found": "未找到 Gemini CLI 会话记录",
             "mcode_db_not_found": "未找到 MiniMax Code 运行数据库",

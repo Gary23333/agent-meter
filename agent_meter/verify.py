@@ -7,7 +7,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -357,6 +357,63 @@ def check_cli_tokens(checks,snapshot,config,prefix,source_id,records,cc_apps,sub
                     if abs(fields[f])>max(0.05*base,5 if f=="requests" else 0):ok=False
                 checks.append({"name":prefix+".ccswitch_cross","status":"pass" if ok else "fail",
                                "detail":{"days":days_seen,**detail}})
+
+
+def check_codex_images(checks,snapshot,config,source):
+    """Codex 内置生图的独立重算：重扫 PNG、重算每周期张数/成本，再重查历史库调用数。"""
+    entry=source["metrics"].get("image_generation") or {}
+    value=entry.get("value") if isinstance(entry.get("value"),dict) else None
+    if entry.get("status") not in {"available","partial"} or not value:
+        return
+    images_dir=config.get("codex_images_dir")
+    if not images_dir:
+        return
+    from .codex_images import estimate_cost_usd,history_call_counts,resolve_history_db,scan_image_files
+    from .prices import FX_FALLBACK
+    def check(name,ok,detail=None):
+        checks.append({"name":name,"status":"pass" if ok else "fail","detail":detail})
+    zone=ZoneInfo(value.get("timezone") or "Asia/Shanghai")
+    now=snapshot["collected_at"]["epoch_seconds"]
+    quality=value.get("quality_assumption","high")
+    try:
+        records=scan_image_files(images_dir,use_cache=False)
+    except Exception:
+        check("codex.image_generation.files",False,"reference scan failed")
+        return
+    for period in ("today","7d","30d","all"):
+        start,end=period_bounds(now,period,zone)
+        images=0
+        usd=Decimal(0)
+        for epoch,width,height in records:
+            if (start is not None and epoch<start) or epoch>end:
+                continue
+            images+=1
+            if width is not None and height is not None:
+                usd+=estimate_cost_usd(width,height,quality)
+        if value.get("currency")=="CNY":
+            usd=usd*FX_FALLBACK
+        expected=usd.quantize(Decimal("0.000001"),ROUND_HALF_UP)
+        backend=value["periods"].get(period) or {}
+        check("codex.image_generation."+period+".images",backend.get("images")==images,
+              {"backend":backend.get("images"),"reference":images})
+        actual=backend.get("estimated_cost")
+        try:
+            actual=Decimal(str(actual)) if actual is not None else None
+        except (ValueError,InvalidOperation):
+            actual=None
+        check("codex.image_generation."+period+".estimated_cost",actual==expected,
+              {"backend":backend.get("estimated_cost"),"reference":format(expected,"f")})
+    if not value.get("call_counts_available"):
+        return
+    counts=history_call_counts(resolve_history_db(config.get("codex_history_db")),now,zone)
+    if counts is None:
+        check("codex.image_generation.history.reload",False,"reference history reload failed")
+        return
+    for period in ("today","7d","30d","all"):
+        backend=value["periods"].get(period) or {}
+        for field in ("calls","failed_calls","generating_calls"):
+            check("codex.image_generation."+period+"."+field,backend.get(field)==counts[period][field],
+                  {"backend":backend.get(field),"reference":counts[period][field]})
 
 
 def verify_snapshot(snapshot,config,native_reference=None):
@@ -764,6 +821,10 @@ def verify_snapshot(snapshot,config,native_reference=None):
             check_cli_tokens(checks,snapshot,config,"dsh_local","deepseek_harness",records,("dsh",),False)
         except Exception:
             checks.append({"name":"dsh_local.reload","status":"fail","detail":"reference reload failed"})
+    # Codex 内置生图：按文件重扫 + 历史库调用数重查（Codex-only 指标）。
+    codex_src=next((s for s in snapshot["sources"] if s["id"]=="codex"),None)
+    if codex_src is not None:
+        check_codex_images(checks,snapshot,config,codex_src)
     measured=[]
     missing=[]
     for row in snapshot["coverage"]:

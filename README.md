@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
   <img src="https://img.shields.io/badge/Tests-306%20Passed-brightgreen" alt="Tests: 306 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.4-blue" alt="Release: v0.9.4" />
+  <img src="https://img.shields.io/badge/Release-v0.9.5-blue" alt="Release: v0.9.5" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -251,13 +251,13 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.9.4](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.4) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.9.4-macos-arm64.dmg`
+1. 从 [Releases · v0.9.5](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.5) 页面下载最新的安装镜像：
+   - 📦 `AgentMeter-0.9.5-macos-arm64.dmg`
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.4 发布说明](docs/release-v0.9.4.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.5 发布说明](docs/release-v0.9.5.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -273,7 +273,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.4，发布标签为 v0.9.4；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.5，发布标签为 v0.9.5；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -359,6 +359,10 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📝 更新日志
 
 各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+
+### v0.9.5 · 2026-10-29
+- **Codex 内置生图统计**：账户额度页 Codex 卡新增今日张数、近 30 天张数与按日趋势；本机消耗页新增独立生图卡，按今日 / 7 天 / 30 天 / 全部展示张数与 API 等价成本估算，不计入 Token 费用。详见[发布说明](docs/release-v0.9.5.md)。
+- **成本口径**：按 GPT Image 2.5 high 档输出 token 估算（方形 1024²≈$0.05268、非方形 1536×1024≈$0.04116，按面积缩放），只含输出 token，不含参考图输入。
 
 ### v0.9.4 · 2026-10-29
 - **DeepSeek 峰谷定价迁入账户卡**：从「本机消耗」页移到「账户额度」页的 DeepSeek 卡内，只统计各本机账本中的 DeepSeek 系模型，并在卡片内提供今日 / 7 天 / 30 天 / 全部切换。详见[发布说明](docs/release-v0.9.4.md)。
