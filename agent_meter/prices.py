@@ -168,6 +168,7 @@ class PriceTable:
     def __init__(self, currency, user_models, converted, aliases=None, runtime_dir=None,
                  peak_multipliers=None):
         self.currency = currency
+        self.user_models = dict(user_models or {})
         self.catalog = load_catalog(runtime_dir) if runtime_dir else {}
         # A live catalogue row is a USD price; converting it into CNY would
         # overwrite a domestic model's officially published CNY list. Keep the
@@ -264,7 +265,13 @@ def _clean_aliases(value):
     return clean
 
 
-def load_prices(runtime_dir):
+def load_prices(runtime_dir, currency=None):
+    """Optional currency previews reprice defaults and convert user overrides.
+
+    Reading a preview never changes the persisted selected currency or prices.
+    """
+    if currency is not None and currency not in CURRENCIES:
+        raise SourceError("invalid_price_currency")
     path = Path(runtime_dir) / "prices.json"
     try:
         data = json.loads(path.read_text())
@@ -282,11 +289,16 @@ def load_prices(runtime_dir):
                     raise ValueError()
                 clean[key] = value
             models[pattern] = tuple(clean[k] for k in PRICE_KEYS)
-        return PriceTable(data["currency"], models, set(data.get("converted", [])),
+        target = currency or data["currency"]
+        if target != data["currency"]:
+            factor = FX_FALLBACK if target == "CNY" else 1 / FX_FALLBACK
+            models = {p: tuple(float(Decimal(str(v)) * factor) for v in prices)
+                      for p, prices in models.items()}
+        return PriceTable(target, models, set(data.get("converted", [])),
                           _clean_aliases(data.get("aliases", {})), runtime_dir,
                           peak_multipliers=_clean_peak_multipliers(data.get("peak_multipliers", {})))
     except (OSError, ValueError, json.JSONDecodeError):
-        return PriceTable("USD", {}, set(), runtime_dir=runtime_dir)
+        return PriceTable(currency or "USD", {}, set(), runtime_dir=runtime_dir)
 
 
 def save_prices(runtime_dir, currency, models, aliases=None, peak_multipliers=None):

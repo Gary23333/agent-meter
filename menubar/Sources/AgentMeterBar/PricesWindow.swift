@@ -13,17 +13,22 @@ enum PricesWindow {
                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             w.title = "模型与计费"
             w.isReleasedWhenClosed = false
-            w.contentView = NSHostingView(rootView: PricesView().environment(UsageStore.shared))
+            w.contentViewController = NSHostingController(rootView: PricesView().environment(UsageStore.shared))
             w.center()
             window = w
         }
         StatusBarController.shared.closePanel()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            window?.makeKeyAndOrderFront(nil)
+        }
     }
 }
 
-struct PriceRow: Identifiable {
+struct PriceRow: Identifiable, Equatable {
     var id: String
     var input: String
     var cacheRead: String
@@ -50,6 +55,9 @@ struct PricesView: View {
     @State private var loading = true
     @State private var syncing = false
     @State private var section = 0
+    @State private var originals: [String: [PriceRow]] = [:]
+    @State private var userPatterns: [String: Set<String>] = [:]
+    @State private var drafts: [String: [PriceRow]] = [:]
 
     private var pricedTargets: [String] { rows.map(\.id).filter { !$0.isEmpty }.sorted() }
 
@@ -97,11 +105,13 @@ struct PricesView: View {
     private var prices: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Picker("币种", selection: $currency) {
+                Picker("单价币种", selection: Binding(get: { currency }, set: { selected in
+                    Task { await load(currency: selected) }
+                })) {
                     Text("美元 USD").tag("USD"); Text("人民币 CNY").tag("CNY")
                 }
                 .pickerStyle(.segmented).frame(width: 210)
-                .onChange(of: currency) { _, _ in Task { await load() } }
+
                 Spacer()
                 Button("添加自定义价格") {
                     rows.insert(PriceRow(id: "", input: "", cacheRead: "", cacheWrite: "", output: "",
@@ -110,6 +120,8 @@ struct PricesView: View {
                 Button("保存修改") { Task { await save() } }.buttonStyle(.borderedProminent)
             }
             .controlSize(.small)
+            Text(Fmt.currencyNote + "；下方按所选单价币种编辑，保存后生效。")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
             tableHeader
             Text("谷时=基准价，峰时=基准×倍率；峰时为北京时间工作日 09:00–12:00、14:00–18:00，周末全天谷时；无请求时刻的账本按谷价估算")
                 .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -212,12 +224,20 @@ struct PricesView: View {
         TextField(hint, text: binding).textFieldStyle(.roundedBorder).frame(width: width)
     }
 
-    private func load() async {
+    private func load(currency requested: String? = nil) async {
+        if let requested {
+            drafts[currency] = rows
+            if let draft = drafts[requested] {
+                currency = requested
+                rows = draft
+                return
+            }
+        }
         loading = true
         defer { loading = false }
         guard let client = store.backendClient else { message = "后端未连接"; return }
         do {
-            let json = try await client.getPrices()
+            let json = try await client.getPrices(currency: requested)
             currency = json["currency"].string ?? "USD"
             let converted = Set(json["converted_patterns"].array.compactMap(\.string))
             let catalog = json["catalog"].object
@@ -231,8 +251,12 @@ struct PricesView: View {
                                 peakMultiplier: p["peak_multiplier"].double.map { Fmt.trim($0) } ?? "1",
                                 converted: converted.contains(pattern), synced: catalog[pattern] != nil)
             }
-            bindings = json["aliases"].object.map { ModelBindingRow(id: $0.key, target: $0.value.string ?? "") }
-                .sorted { $0.id < $1.id }
+            originals[currency] = rows
+            userPatterns[currency] = Set(json["user_patterns"].array.compactMap(\.string))
+            if requested == nil {
+                bindings = json["aliases"].object.map { ModelBindingRow(id: $0.key, target: $0.value.string ?? "") }
+                    .sorted { $0.id < $1.id }
+            }
             let sync = json["sync"]
             syncMessage = sync["synced_at"].double.map { "目录 \(Fmt.moment(Date(timeIntervalSince1970: $0), now: Date())) · \(Int(sync["model_count"].double ?? 0)) 个模型" }
                 ?? "目录尚未同步"
@@ -275,17 +299,25 @@ struct PricesView: View {
 
     private func save() async {
         guard let client = store.backendClient else { message = "后端未连接"; return }
-        let catalogKeys = Set(rows.filter(\.synced).map(\.id))
+        let baseline = Dictionary((originals[currency] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var models: [String: [String: Double]] = [:]
         func num(_ s: String) -> Double { Double(s.replacingOccurrences(of: ",", with: ".")) ?? 0 }
-        for row in rows where !catalogKeys.contains(row.id) {
+        for row in rows {
+            let old = baseline[row.id]
+            let changed = old == nil || old?.input != row.input || old?.cacheRead != row.cacheRead
+                || old?.cacheWrite != row.cacheWrite || old?.output != row.output
+            guard changed || userPatterns[currency, default: []].contains(row.id) else { continue }
             let pattern = row.id.trimmingCharacters(in: .whitespaces)
             guard !pattern.isEmpty else { continue }
+            guard [row.input, row.cacheRead, row.cacheWrite, row.output].allSatisfy({
+                guard let n = Double($0.replacingOccurrences(of: ",", with: ".")) else { return false }
+                return n.isFinite && n >= 0
+            }) else { message = "价格必须是有效的非负数字：" + pattern; return }
             models[pattern] = ["input": num(row.input), "cache_read": num(row.cacheRead),
                                "cache_write": num(row.cacheWrite), "output": num(row.output)]
         }
-        // Multipliers are a separate table: catalogue rows skip the price
-        // override above but may still carry a peak multiplier.
+        // Only edited/user prices override the catalogue; unchanged defaults
+        // keep following future catalogue updates.
         var peakMultipliers: [String: Double] = [:]
         for row in rows {
             let pattern = row.id.trimmingCharacters(in: .whitespaces)
@@ -302,6 +334,9 @@ struct PricesView: View {
         do {
             _ = try await client.putPrices(currency: currency, models: models, aliases: aliases,
                                            peakMultipliers: peakMultipliers)
+            drafts.removeAll()
+            originals.removeAll()
+            userPatterns.removeAll()
             message = "已保存，正在重新估算"
             await store.fetch(force: true)
             await load()

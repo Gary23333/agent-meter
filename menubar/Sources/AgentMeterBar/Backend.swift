@@ -108,8 +108,9 @@ struct BackendClient {
     }
 
     /// Local price table (GET/PUT /v1/prices).
-    func getPrices() async throws -> JSON {
-        let r = try request("v1/prices", timeout: 10)
+    func getPrices(currency: String? = nil) async throws -> JSON {
+        let path = currency.map { "v1/prices/" + $0 } ?? "v1/prices"
+        let r = try request(path, timeout: 10)
         let data: Data, resp: URLResponse
         do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200,

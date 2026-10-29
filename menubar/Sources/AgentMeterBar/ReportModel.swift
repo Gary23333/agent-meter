@@ -29,6 +29,17 @@ struct ReportData {
         let cost: String
     }
 
+    struct ImageUsage {
+        let images: Double
+        let calls: Double?
+        let cost: String
+        let quality: String
+        let partial: Bool
+    }
+
+    let imageUsage: ImageUsage?
+    let hasTokenUsage: Bool
+    let deepseek: LocalUsage.DeepSeekPeak
     let period: Period
     let generatedAt: Date
     let totalTokens: Double
@@ -38,7 +49,7 @@ struct ReportData {
     let cacheRead: Double
     let cacheWrite: Double
     let cacheHitRate: Double?
-    /// 估算费用，可能是 USD 或 CNY；未知价时为 nil（显示「—」，不是 0）。
+    /// 人民币估算费用；未知价时为 nil（显示「—」，不是 0）。
     let costAmount: Double?
     let costUnit: String?
     let costText: String
@@ -51,6 +62,24 @@ struct ReportData {
     let sourceNote: String
     let appCount: Int
     let periodStatus: String?
+
+    var dateRange: String {
+        let formatter = DateFormatter()
+        formatter.timeZone = Fmt.zone
+        formatter.dateFormat = "yyyy.MM.dd"
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = Fmt.zone
+        let days: Int
+        switch period {
+        case .today: days = 0
+        case .week: days = 6
+        case .month: days = 29
+        case .all: return "全部本机历史 · 截至 " + formatter.string(from: generatedAt)
+        }
+        let end = formatter.string(from: generatedAt)
+        let start = formatter.string(from: calendar.date(byAdding: .day, value: -days, to: generatedAt) ?? generatedAt)
+        return days == 0 ? end : start + " — " + end
+    }
 
     var cacheHitText: String {
         guard let rate = cacheHitRate else { return "—" }
@@ -65,7 +94,18 @@ struct ReportData {
     }
 
     static func build(snapshot: Snapshot, period: Period, now: Date) -> ReportData? {
-        guard let data = LocalUsage.merged(snapshot: snapshot, period: period) else { return nil }
+        let imageMetric = snapshot.sources.first { $0.id == "codex" }?.metric("image_generation")
+        let imageValue = imageMetric?.value ?? .null
+        let imagePeriod = imageValue["periods"][period.rawValue]
+        let merged = LocalUsage.merged(snapshot: snapshot, period: period)
+        guard merged != nil || !imagePeriod.isNull else { return nil }
+        let data = merged ?? .object([:])
+        let imageUsage: ImageUsage? = imagePeriod.isNull ? nil : ImageUsage(
+            images: imagePeriod["images"].double ?? 0,
+            calls: imageValue["call_counts_available"].bool == true ? imagePeriod["calls"].double : nil,
+            cost: imagePeriod["estimated_cost"].double.map { Fmt.amount($0, unit: imageValue["currency"].string) } ?? "—",
+            quality: imageValue["quality_assumption"].string ?? "high",
+            partial: imageMetric?.status != "available")
         let totals = data["totals"]
         let costIndex = data["cost_index"]
 
@@ -80,9 +120,7 @@ struct ReportData {
 
         func costLabel(_ costs: [String: Double]) -> String {
             guard !costs.isEmpty else { return "—" }
-            return costs.sorted { $0.key < $1.key }
-                .map { Fmt.amount($0.value, unit: $0.key) }
-                .joined(separator: " + ")
+            return Fmt.moneyLabel(costs)
         }
 
         let total = totals["total_tokens"].double ?? 0
@@ -125,41 +163,43 @@ struct ReportData {
                      tint: Catalog.appTint(value.app), tokens: value.tokens, cost: costLabel(value.costs))
         }
 
-        // 费用口径：CC Switch 的 USD 估算 + 价格表 USD 可相加；CNY 单独成数，绝不跨币种相加。
+        // Convert each component to the single display currency before adding.
         let local = data["local_cost"].object
         let cc = totals["estimated_cost_usd"].double ?? 0
-        let localUSD = local["USD"]?.double ?? 0
-        var costAmount: Double?
-        var costUnit: String?
-        if cc > 0 || localUSD > 0 {
-            costAmount = cc + localUSD
-            costUnit = "USD"
-        } else if let cny = local["CNY"]?.double, cny > 0 {
-            costAmount = cny
-            costUnit = "CNY"
-        }
-        let costText = costAmount.map { Fmt.amount($0, unit: costUnit) } ?? "—"
+        var currencies = local.compactMapValues { $0.double }
+        if cc > 0 { currencies["USD", default: 0] += cc }
+        let totalCost = Fmt.moneyTotal(currencies)
+        let costAmount: Double? = totalCost > 0 ? totalCost : nil
+        let costUnit: String? = costAmount == nil ? nil : "CNY"
+        let costText = costAmount.map { Fmt.amount($0, unit: "CNY") } ?? "—"
 
         var costParts: [CostPart] = []
         if cc > 0 { costParts.append(CostPart(id: "ccswitch", label: "CC Switch", text: Fmt.usd(cc))) }
         for (unit, value) in local.sorted(by: { $0.key < $1.key }) {
             guard let amount = value.double, amount > 0 else { continue }
-            costParts.append(CostPart(id: "local-\(unit)", label: "价格表 \(unit)", text: Fmt.amount(amount, unit: unit)))
+            costParts.append(CostPart(id: "local-\(unit)", label: "价格表", text: Fmt.amount(amount, unit: unit)))
         }
         if let n = totals["unpriced_detail_requests"].double, n > 0 {
             costParts.append(CostPart(id: "unpriced", label: "无定价请求", text: "\(Int(n)) 次"))
         }
 
         let includesLocal = data["includes_local"].array.compactMap { $0.string }
-        let sourceNote = includesLocal.isEmpty
-            ? "数据来自 CC Switch 本机记录"
-            : "数据来自 CC Switch 与 " + includesLocal.map { Catalog.brand($0).name }.joined(separator: "、") + " 本机记录"
-
-        return ReportData(period: period, generatedAt: now,
+        var sourceNames = includesLocal.map { Catalog.brand($0).name }
+        if snapshot.sources.contains(where: { $0.id == "ccswitch" && $0.metric("tokens") != nil }) {
+            sourceNames.insert("CC Switch", at: 0)
+        }
+        if imageUsage != nil { sourceNames.append("Codex 生图") }
+        let sourceNote = "数据来自 " + sourceNames.joined(separator: "、") + " 本机记录"
+        // Several ledgers expose reasoning separately. Include it in output
+        // so the composition adds up to the headline total.
+        let reasoning = data["groups"].array.reduce(0.0) { $0 + ($1["reasoning"].double ?? 0) }
+        return ReportData(imageUsage: imageUsage, hasTokenUsage: merged != nil,
+                          deepseek: LocalUsage.deepseekPeak(data: data),
+                          period: period, generatedAt: now,
                           totalTokens: total,
                           requests: totals["requests"].double ?? 0,
                           freshInput: totals["fresh_input"].double ?? 0,
-                          output: totals["output"].double ?? 0,
+                          output: (totals["output"].double ?? 0) + reasoning,
                           cacheRead: totals["cache_read"].double ?? 0,
                           cacheWrite: totals["cache_write"].double ?? 0,
                           cacheHitRate: totals["cache_hit_rate"].double,

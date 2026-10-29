@@ -1,3 +1,21 @@
+<!-- WORKSPACE-STATUS-START -->
+## 当前入口与目录约定
+
+2026-10-30 整理。发布版本 0.9.6，包含性能与分享优化、统一人民币展示及人民币价格配置修复。
+
+- 目录导览：[STRUCTURE.md](STRUCTURE.md)。
+- AI 接手先读 [AGENTS.md](AGENTS.md)，再按任务阅读相应模块文档。
+- Git：当前内容已提交到本地 `main`，旧分支历史可从主线追溯，旧文件保留在恢复归档；未向远端推送。
+- 旧副本与旧包恢复位置：同级 `vibrcoding-整理恢复-2026-10-30/整理前完整快照/NEW-agent 统计/`。
+- 本次核验为目录、版本、引用与 Git 状态检查；下文既有测试数字属于对应历史批次。
+
+常用入口（依赖安装和环境配置见下文）：
+
+```sh
+python3 -m unittest discover -v
+```
+<!-- WORKSPACE-STATUS-END -->
+
 <p align="center">
   <img src="docs/images/logo/agentmeter-icon.svg" alt="AgentMeter logo" width="128" />
 </p>
@@ -20,7 +38,7 @@
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
   <img src="https://img.shields.io/badge/Tests-306%20Passed-brightgreen" alt="Tests: 306 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.5-blue" alt="Release: v0.9.5" />
+  <img src="https://img.shields.io/badge/Release-v0.9.6-blue" alt="Release: v0.9.5" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -158,6 +176,10 @@
 ### 9. 🖼️ 用量报告与一键分享图（Usage Report）
 - **本机消耗页一键打开报告窗口**：时间段筛选与本机消耗页共用，今日 / 7 天 / 30 天 / 全部即时联动；总览、Token 构成、按应用 / 模型 Top 排行口径逐位一致，只含本机消耗、不含账户余额。
 - **七套风格竖版分享卡**：极简、原生、瓷白、极光、钛影、霓虹、棱镜，宽度固定、高度随内容自适应；一键复制 2x PNG 到剪贴板，或直接保存为图片，适合分享到微信 / 飞书 / 小红书。
+- **人民币单价配置修复**：切换币种会加载对应价格预览，保存前不会改写现有价格；编辑同步模型的单价也可正常保存。
+- **两种内容模式**：简洁晒用量 / 完整复盘，可切换并记住选择；费用、缓存与构成、应用、模型、DeepSeek 峰谷、Codex 生图均可单独开关。
+- **新增统计进入海报**：DeepSeek 峰谷仅取 DeepSeek 模型；生图张数、调用次数与成本独立展示。金额统一人民币（USD 按固定汇率 1:7.25 折算后汇总）、输出包含独立推理分项、标注北京时间日期范围；隐藏费用同时隐藏各排行及生图金额。
+- **本轮性能和功能梳理**：见 [内存与海报优化记录](docs/performance-sharing-review-2026-10-30.md)，含测量口径与下一步功能建议。
 - **口径标注**：页脚标明「数据来自本机账本 · 只读聚合 · 不含对话内容」「费用为 API 等价估算」，不含凭据与对话正文。
 
 <p align="center">

@@ -5,6 +5,7 @@ let package = Package(
     name: "AgentMeterBar",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "AgentMeterBar", path: "Sources/AgentMeterBar")
+        .executableTarget(name: "AgentMeterBar", path: "Sources/AgentMeterBar"),
+        .testTarget(name: "AgentMeterBarTests", dependencies: ["AgentMeterBar"])
     ]
 )

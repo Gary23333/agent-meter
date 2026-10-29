@@ -65,17 +65,19 @@ def make_server(service,token,port=8769):
                 self.send_json(400,{"error":"unsupported_query"});return
             if route.path=="/v1/health":
                 self.send_json(200,{"status":"ok","schema_version":SCHEMA_VERSION});return
-            if route.path=="/v1/prices":
+            if route.path in {"/v1/prices","/v1/prices/USD","/v1/prices/CNY"}:
                 from .prices import load_prices
                 from .peak import WINDOW
                 from .model_catalog import catalog_status
-                table=load_prices(service.config["runtime_dir"])
+                currency = route.path.rsplit("/",1)[-1] if route.path != "/v1/prices" else None
+                table=load_prices(service.config["runtime_dir"], currency)
                 self.send_json(200,{"currency":table.currency,
                                     "models":{p:{**dict(zip(("input","cache_read","cache_write","output"),v)),
                                                  "peak_multiplier":table.peak_multipliers.get(p,1.0)}
                                               for p,v in table.models.items()},
                                     "peak_window":WINDOW,
                                     "peak_multipliers":table.peak_overrides,
+                                    "user_patterns":sorted(table.user_models),
                                     "aliases":table.aliases,"catalog":table.catalog,
                                     "sync":catalog_status(service.config["runtime_dir"]),
                                     "converted_patterns":sorted(table.converted)})

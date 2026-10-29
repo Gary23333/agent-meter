@@ -581,8 +581,8 @@ private struct DeepSeekPeakSection: View {
                     Text("—").font(.system(size: 11.5, weight: .medium, design: theme.numberDesign))
                         .themeForeground(.tertiary)
                 } else {
-                    ForEach(amounts.keys.sorted(), id: \.self) { unit in
-                        Text(Fmt.amount(amounts[unit] ?? 0, unit: unit))
+                    Group {
+                        Text(Fmt.moneyLabel(amounts))
                             .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
                             .monospacedDigit().themeForeground()
                     }

@@ -104,21 +104,23 @@ def _parse_conversation(path):
     try:
         conn.execute("PRAGMA query_only=ON")
         steps = conn.execute("SELECT metadata FROM steps WHERE step_type=? ORDER BY idx",
-                             (LLM_STEP_TYPE,)).fetchall()
-        gens = [row[0] for row in conn.execute("SELECT data FROM gen_metadata ORDER BY idx")]
+                             (LLM_STEP_TYPE,))
+        gens = iter(conn.execute("SELECT data FROM gen_metadata ORDER BY idx"))
+        records = []
+        for (metadata,) in steps:
+            # Consume the corresponding generation even for malformed steps.
+            generation = next(gens, (None,))[0]
+            if not isinstance(metadata, bytes):
+                continue
+            parsed = _usage_and_time(metadata)
+            if parsed is None:
+                continue
+            t, total_input, output, thinking = parsed
+            model = _generation_model(generation) if isinstance(generation, bytes) else "unknown"
+            records.append((t, model, total_input, output, thinking))
+        return records
     finally:
         conn.close()
-    records = []
-    for seq, (metadata,) in enumerate(steps):
-        if not isinstance(metadata, bytes):
-            continue
-        parsed = _usage_and_time(metadata)
-        if parsed is None:
-            continue
-        t, total_input, output, thinking = parsed
-        model = _generation_model(gens[seq]) if seq < len(gens) else "unknown"
-        records.append((t, model, total_input, output, thinking))
-    return records
 
 
 def load_antigravity(root):
@@ -139,7 +141,7 @@ def load_antigravity(root):
             skipped += 1
             continue
         records.extend((t, model, inp, out, think, 0, 0) for t, model, inp, out, think in file_records)
-    _prune(seen)
+    _prune(seen, "_parse_conversation")
     return records, skipped
 
 

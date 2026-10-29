@@ -186,6 +186,7 @@ struct PanelView: View {
     // MARK: Footer
 
     private var footer: some View {
+        VStack(alignment: .leading, spacing: 3) {
         HStack(spacing: 6) {
             if let s = store.snapshot {
                 let summary = s.summary
@@ -196,6 +197,8 @@ struct PanelView: View {
             }
             Spacer()
             Text("北京时间")
+        }
+        Text(Fmt.currencyNote).font(.system(size: 9))
         }
         .font(.system(size: 10.5))
         .themeForeground(.secondary)

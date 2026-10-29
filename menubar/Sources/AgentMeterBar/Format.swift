@@ -133,18 +133,28 @@ enum Fmt {
         return json.double ?? 0
     }
 
-    static func usd(_ n: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.minimumFractionDigits = n >= 1000 ? 0 : 2
-        f.maximumFractionDigits = n >= 1000 ? 0 : 2
-        return "$" + (f.string(from: NSNumber(value: n)) ?? String(n))
+    /// Display amounts in CNY using the same fixed estimate as prices.py.
+    /// This is an estimate conversion, not a live exchange rate.
+    static let usdToCNY = 7.25
+    static let currencyNote = "金额统一人民币 · USD 按固定汇率 1:7.25 折算"
+
+    static func cny(_ n: Double, unit: String) -> Double {
+        unit == "USD" ? n * usdToCNY : n
     }
+
+    static func moneyTotal(_ costs: [String: Double]) -> Double {
+        costs.reduce(0) { $0 + cny($1.value, unit: $1.key) }
+    }
+
+    static func moneyLabel(_ costs: [String: Double]) -> String {
+        costs.isEmpty ? "—" : amount(moneyTotal(costs), unit: "CNY")
+    }
+
+    static func usd(_ n: Double) -> String { amount(n, unit: "USD") }
 
     static func amount(_ n: Double, unit: String?) -> String {
         switch unit {
-        case "USD": return "$" + grouped(n, fraction: 2)
-        case "CNY": return "¥" + grouped(n, fraction: 2)
+        case "USD", "CNY": return "¥" + grouped(cny(n, unit: unit!), fraction: 2)
         default: return grouped(n, fraction: 2)
         }
     }

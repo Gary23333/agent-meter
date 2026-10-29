@@ -10,16 +10,17 @@ struct ReportView: View {
     /// 与「本机消耗」页共用同一个时间段筛选。
     @AppStorage("usagePeriod") private var periodRaw = Period.today.rawValue
 
-    @State private var style: PanelTheme = .aurora
+    @AppStorage("reportStyle") private var style: PanelTheme = .aurora
     @State private var toast: String?
+    @State private var options = ShareOptions.restored()
+    @State private var data: ReportData?
     /// 分享卡自然高度（未缩放），由预览自身量出；不建宿主视图，避免布局期重入。
     @State private var cardHeight: CGFloat = 0
 
     private var period: Period { Period(rawValue: periodRaw) ?? .today }
 
-    private var data: ReportData? {
-        guard let snapshot = store.snapshot else { return nil }
-        return ReportData.build(snapshot: snapshot, period: period, now: store.now)
+    private func rebuildReport() {
+        data = store.snapshot.flatMap { ReportData.build(snapshot: $0, period: period, now: Date()) }
     }
 
     private static let fileDay: DateFormatter = {
@@ -54,6 +55,9 @@ struct ReportView: View {
         .padding(16)
         .frame(minWidth: 820, minHeight: 640)
         .themedRoot(store.theme)
+        .onChange(of: store.snapshot?.identity, initial: true) { rebuildReport() }
+        .onChange(of: periodRaw) { rebuildReport() }
+        .onChange(of: options) { options.save() }
     }
 
     // MARK: 顶部控制
@@ -62,13 +66,30 @@ struct ReportView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("用量报告与分享").font(.system(size: 16, weight: .semibold))
-                Text("在本机账本上聚合，只导出 PNG")
+                Text("本机账本 · 金额统一人民币 · PNG")
                     .font(.system(size: 10.5)).themeForeground(.tertiary)
                 Spacer()
                 PillTabs(items: Period.allCases, title: { $0.label },
                          selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
                     .frame(width: 260)
             }
+            HStack(spacing: 14) {
+                PillTabs(items: ShareMode.allCases, title: { $0.label },
+                         selection: Binding(get: { options.mode }, set: {
+                             options = $0 == .compact ? .compact : .review
+                         }), small: true).frame(width: 240)
+                Text("切换模式会恢复推荐内容，可继续自定义")
+                    .font(.system(size: 10)).themeForeground(.tertiary)
+                Spacer()
+            }
+            HStack(spacing: 12) {
+                Toggle("费用", isOn: $options.costs)
+                Toggle("缓存与构成", isOn: $options.efficiency)
+                Toggle("应用", isOn: $options.apps)
+                Toggle("模型", isOn: $options.models)
+                Toggle("DeepSeek 峰谷", isOn: $options.peak)
+                Toggle("Codex 生图", isOn: $options.images)
+            }.toggleStyle(.checkbox).font(.system(size: 11))
             HStack(alignment: .bottom, spacing: 14) {
                 control("分享卡风格") {
                     // 用应用自己的分段控件（纯 SwiftUI 手势），避免窗口里
@@ -110,7 +131,7 @@ struct ReportView: View {
                     let availableH = max(1, geo.size.height - 28)
                     let height = cardHeight > 0 ? cardHeight : ShareCard.width * 11 / 10
                     let scale = max(0.1, min(availableW / ShareCard.width, availableH / height))
-                    ShareCard(data: data, theme: style)
+                    ShareCard(data: data, theme: style, options: options)
                         .background(GeometryReader { inner in
                             Color.clear.preference(key: CardHeightKey.self, value: inner.size.height)
                         })
@@ -141,10 +162,14 @@ struct ReportView: View {
         ScrollView {
             VStack(spacing: 10) {
                 if let data {
+                    if data.hasTokenUsage {
                     overviewCard(data)
                     costCard(data)
                     appsCard(data)
                     modelsCard(data)
+                    } else {
+                        Card { Text("当前时间段仅有生图记录，Token 用量未知。") }
+                    }
                     sourceCard(data)
                 } else {
                     Card {
@@ -167,7 +192,7 @@ struct ReportView: View {
                     detail: data.totalIsLowerBound ? "部分日期为日汇总，总量为下界" : nil)
             InfoRow(symbol: "bolt.horizontal", title: "请求数", value: Fmt.grouped(data.requests))
             InfoRow(symbol: "arrow.down.left", title: "新输入", value: Fmt.tokens(data.freshInput))
-            InfoRow(symbol: "arrow.up.right", title: "输出", value: Fmt.tokens(data.output))
+            InfoRow(symbol: "arrow.up.right", title: "输出含推理", value: Fmt.tokens(data.output))
             InfoRow(symbol: "arrow.triangle.2.circlepath", title: "缓存读 / 写",
                     value: "\(Fmt.tokens(data.cacheRead)) / \(Fmt.tokens(data.cacheWrite))")
             InfoRow(symbol: "target", title: "缓存命中率", value: data.cacheHitText,
@@ -180,7 +205,7 @@ struct ReportView: View {
         Card(tint: Color(red: 0.15, green: 0.82, blue: 0.62)) {
             Text("费用构成").font(.system(size: 12, weight: .semibold))
             InfoRow(symbol: "creditcard", title: "估算费用", value: data.costText,
-                    detail: "API 等价估算，不是订阅账单")
+                    detail: "API 等价估算，不是订阅账单 · " + Fmt.currencyNote)
             ForEach(data.costParts) { part in
                 InfoRow(symbol: "chart.bar", title: part.label, value: part.text, valueTint: .secondary, nested: true)
             }
@@ -280,7 +305,7 @@ struct ReportView: View {
 
     private func copy() {
         guard let data else { return }
-        guard let rendered = ShareCardRenderer.render(data: data, theme: style, scale: 2) else {
+        guard let rendered = ShareCardRenderer.render(data: data, theme: style, options: options, scale: 2) else {
             show("生成图片失败")
             return
         }
@@ -292,16 +317,16 @@ struct ReportView: View {
 
     private func save() {
         guard let data else { return }
-        guard let rendered = ShareCardRenderer.render(data: data, theme: style, scale: 2) else {
-            show("生成图片失败")
-            return
-        }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true
         panel.title = "保存用量报告 PNG"
         panel.nameFieldStringValue = "AgentMeter-用量报告-\(data.period.label)-\(Self.fileDay.string(from: data.generatedAt)).png"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let rendered = ShareCardRenderer.render(data: data, theme: style, options: options, scale: 2) else {
+            show("生成图片失败")
+            return
+        }
         do {
             try rendered.png.write(to: url)
             show("已保存 \(url.lastPathComponent)")
