@@ -1,11 +1,11 @@
 <!-- WORKSPACE-STATUS-START -->
 ## 当前入口与目录约定
 
-2026-10-30 整理。发布包 0.9.5；主目录还包含 2026-10-30 性能与分享优化源码，尚未重新发布。
+2026-10-30 整理。发布版本 0.9.6，包含性能与分享优化、统一人民币展示及人民币价格配置修复。
 
 - 目录导览：[STRUCTURE.md](STRUCTURE.md)。
 - AI 接手先读 [AGENTS.md](AGENTS.md)，再按任务阅读相应模块文档。
-- Git：本次保留当前主目录内容，旧版留在恢复归档；main 收敛等待具体清单审批，未向远端推送。
+- Git：当前内容已提交到本地 `main`，旧分支历史可从主线追溯，旧文件保留在恢复归档；未向远端推送。
 - 旧副本与旧包恢复位置：同级 `vibrcoding-整理恢复-2026-10-30/整理前完整快照/NEW-agent 统计/`。
 - 本次核验为目录、版本、引用与 Git 状态检查；下文既有测试数字属于对应历史批次。
 
@@ -38,7 +38,7 @@ python3 -m unittest discover -v
   <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
   <img src="https://img.shields.io/badge/Tests-306%20Passed-brightgreen" alt="Tests: 306 Passed" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.5-blue" alt="Release: v0.9.5" />
+  <img src="https://img.shields.io/badge/Release-v0.9.6-blue" alt="Release: v0.9.5" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 

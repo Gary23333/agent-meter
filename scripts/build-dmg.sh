@@ -16,6 +16,9 @@ hdiutil create -ov -volname "Agent 用量 v${version%.*}" -srcfolder "$stage" -f
 # dist 模式下若提供公证凭据，对 DMG 公证装订（可选；app 内签名由
 # menubar/scripts/build-app.sh 完成，DMG 公证覆盖整个分发包）
 if [ "${SIGN_MODE:-dev}" = "dist" ]; then
+  dmg_sign_id="${SIGN_IDENTITY:-${SIGN_DIST_IDENTITY:-$(security find-identity -v -p codesigning | awk '/Developer ID Application/ { print $2; exit }')}}"
+  [ -n "$dmg_sign_id" ] || { echo "error: Developer ID certificate required" >&2; exit 1; }
+  codesign --force --timestamp --sign "$dmg_sign_id" "$dmg"
   if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
     xcrun notarytool submit "$dmg" \
       --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
