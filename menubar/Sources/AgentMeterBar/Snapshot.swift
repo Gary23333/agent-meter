@@ -95,6 +95,7 @@ struct CoverageRow: Identifiable {
 }
 
 struct Snapshot {
+    let identity = UUID()
     let schemaVersion: Int
     let collectedAt: Date?
     let servedFromCache: Bool

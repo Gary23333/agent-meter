@@ -5,6 +5,15 @@ import SwiftUI
 @MainActor
 enum ReportWindow {
     private static var window: NSWindow?
+    private static let delegate = ReleaseOnClose()
+
+    private final class ReleaseOnClose: NSObject, NSWindowDelegate {
+        func windowWillClose(_ notification: Notification) {
+            // Drop SwiftUI observation and backing surfaces when the report closes.
+            ReportWindow.window?.contentViewController = nil
+            ReportWindow.window = nil
+        }
+    }
 
     static func show() {
         if window == nil {
@@ -13,6 +22,7 @@ enum ReportWindow {
                              backing: .buffered, defer: false)
             w.title = "用量报告与分享"
             w.isReleasedWhenClosed = false
+            w.delegate = delegate
             // 用 hosting controller 挂载：手挂 contentView 时 AppKit 桥接控件
             // （分段选择器等）拿不到点击/动作，纯 SwiftUI 手势却正常。
             let host = NSHostingController(rootView: ReportView().environment(UsageStore.shared))

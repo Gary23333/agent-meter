@@ -33,7 +33,7 @@ from .model import SourceError, metric, timestamp
 
 MARKER = b'"rawUsage"'
 TOKEN_FIELDS = ("fresh_input", "output", "cache_read", "cache_write")
-_cache = {}   # path -> ((mtime_ns, size), records, stats)
+from .record_cache import records_cache as _cache
 
 
 def _int(value):
@@ -114,23 +114,14 @@ def load_records(root):
     for path in root.glob("**/*.jsonl"):
         seen.add(str(path))
         try:
-            st = path.stat()
+            cached = _cache.read(path, _parse_file, ("workbuddy_tokens", str(root)))
         except OSError:
             continue
-        stamp = (st.st_mtime_ns, st.st_size)
-        cached = _cache.get(str(path))
-        if cached is None or cached[0] != stamp:
-            try:
-                cached = (stamp, *_parse_file(path))
-            except OSError:
-                continue
-            _cache[str(path)] = cached
-        records.extend(cached[1])
-        credit += cached[2]
+        records.extend(cached[0])
+        credit += cached[1]
         for k in totals:
-            totals[k] += cached[3][k]
-    for gone in set(_cache) - seen:
-        del _cache[gone]
+            totals[k] += cached[2][k]
+    _cache.prune(seen, ("workbuddy_tokens", str(root)))
     return records, credit, totals
 
 

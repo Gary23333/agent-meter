@@ -24,7 +24,7 @@ from .ccswitch import period_bounds
 from .model import SourceError, metric, timestamp
 
 MARKER = b'"usage"'
-_cache = {}   # path -> ((mtime_ns, size), records, excluded)
+from .record_cache import records_cache as _cache
 
 
 def _parse_ts(value):
@@ -89,26 +89,17 @@ def load_records(root):
         key = str(path)
         live.add(key)
         try:
-            st = path.stat()
+            cached = _cache.read(path, _parse_file, ("qoder_tokens", str(root)))
         except OSError:
             continue
-        stamp = (st.st_mtime_ns, st.st_size)
-        cached = _cache.get(key)
-        if cached is None or cached[0] != stamp:
-            try:
-                cached = (stamp, *_parse_file(path))
-            except OSError:
-                continue
-            _cache[key] = cached
-        for record in cached[1]:
+        for record in cached[0]:
             if record[5] in seen_ids:
                 excluded += 1
                 continue
             seen_ids.add(record[5])
             records.append(record)
-        excluded += cached[2]
-    for gone in set(_cache) - live:
-        del _cache[gone]
+        excluded += cached[1]
+    _cache.prune(live, ("qoder_tokens", str(root)))
     usage_seen = len(records) + excluded
     if usage_seen and not records:
         # Every usage object lost its credits: the private format drifted.

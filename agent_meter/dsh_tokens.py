@@ -154,7 +154,7 @@ def load_dsh_sessions(root, zstd_binary=None):
     v3_files = legacy_files = skipped = 0
     for path in paths:
         seen.add(str(path))
-        parsed = _file_records(path, parse)
+        parsed = _file_records(path, parse, "dsh")
         if not parsed:
             skipped += 1
             continue
@@ -164,7 +164,7 @@ def load_dsh_sessions(root, zstd_binary=None):
         else:
             legacy_files += 1
         records.extend(file_records)
-    _prune(seen)
+    _prune(seen, "dsh")
     return records, v3_files, legacy_files, skipped, route
 
 

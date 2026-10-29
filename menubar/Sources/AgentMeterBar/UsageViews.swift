@@ -185,17 +185,12 @@ private struct PeriodSummary: View {
         return (metric, value)
     }
 
-    /// One headline figure: CC Switch's own USD estimate plus the price-table
-    /// estimate when that table is in USD. A CNY table is never folded into a
-    /// USD number — the composition line lists both separately. An all-zero
-    /// result stays "—": unknown prices are not zero cost.
+    /// Convert each source to CNY before adding. Unknown prices stay unknown.
     private var headlineCost: (amount: Double, unit: String)? {
-        let local = data["local_cost"].object
-        let cc = totals["estimated_cost_usd"].double ?? 0
-        let localUSD = local["USD"]?.double ?? 0
-        if cc > 0 || localUSD > 0 { return (cc + localUSD, "USD") }
-        if let cny = local["CNY"]?.double, cny > 0 { return (cny, "CNY") }
-        return nil
+        var amounts = data["local_cost"].object.compactMapValues { $0.double }
+        amounts["USD", default: 0] += totals["estimated_cost_usd"].double ?? 0
+        let total = Fmt.moneyTotal(amounts)
+        return total > 0 ? (total, "CNY") : nil
     }
 
     /// Where the estimate comes from, per source and per currency. Zero
@@ -210,7 +205,7 @@ private struct PeriodSummary: View {
         }
         let n = Int(totals["unpriced_detail_requests"].double ?? 0)
         if n > 0 { parts.append("\(n) 次无定价") }
-        return parts.isEmpty ? "API 等价估算" : parts.joined(separator: " · ")
+        return (parts.isEmpty ? "API 等价估算" : parts.joined(separator: " · ")) + " · " + Fmt.currencyNote
     }
 
     /// Models the price table could not cost, so the number is a lower bound.
@@ -348,7 +343,7 @@ private struct PeriodSummary: View {
 
     private func costLabel(_ costs: [String: Double]) -> String {
         guard !costs.isEmpty else { return "—" }
-        return costs.sorted { $0.key < $1.key }.map { Fmt.amount($0.value, unit: $0.key) }.joined(separator: " + ")
+        return Fmt.moneyLabel(costs)
     }
 
     @ViewBuilder private var topModels: some View {
@@ -433,6 +428,10 @@ enum LocalUsage {
 
     static func deepseekPeak(snapshot: Snapshot, period: Period) -> DeepSeekPeak? {
         guard let data = merged(snapshot: snapshot, period: period) else { return nil }
+        return deepseekPeak(data: data)
+    }
+
+    static func deepseekPeak(data: JSON) -> DeepSeekPeak {
         var totalTokens = 0.0
         var peakTokens = 0.0
         var offpeakTokens = 0.0

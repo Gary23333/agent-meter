@@ -38,32 +38,20 @@ from . import peak
 from .ccswitch import app_imported_days, period_bounds
 from .model import SourceError, metric, source, timestamp
 
-_cache = {}   # path -> ((mtime_ns, size), parsed)
+from .record_cache import records_cache as _cache
 
 TOKEN_KEYS = ("requests", "fresh_input", "output", "reasoning", "cache_read", "cache_write")
 
 
-def _file_records(path, parser):
-    """Incremental per-file parse cache (mtime+size); parser(path) -> parsed."""
-    path = Path(path)
+def _file_records(path, parser, namespace=None):
     try:
-        st = path.stat()
+        return _cache.read(path, parser, namespace or parser.__name__)
     except OSError:
         return []
-    stamp = (st.st_mtime_ns, st.st_size)
-    cached = _cache.get(str(path))
-    if cached is None or cached[0] != stamp:
-        try:
-            cached = (stamp, parser(path))
-        except OSError:
-            return []
-        _cache[str(path)] = cached
-    return cached[1]
 
 
-def _prune(seen):
-    for gone in set(_cache) - seen:
-        del _cache[gone]
+def _prune(seen, namespace):
+    _cache.prune(seen, namespace)
 
 
 def _epoch(ts):
@@ -189,16 +177,17 @@ def load_claude(root):
     root = Path(root)
     if not root.is_dir():
         raise SourceError("claude_projects_not_found")
-    keyed = []
     seen = set()
-    order = 0
-    for path in sorted(root.glob("**/*.jsonl")):
-        seen.add(str(path))
-        for key, t, model, fresh, output, cache_read, cache_write in _file_records(path, _parse_claude_file):
-            keyed.append((key, (t, order), (t, model, fresh, output, 0, cache_read, cache_write)))
-            order += 1
-    _prune(seen)
-    return _last_per_key(keyed)
+    def entries():
+        order = 0
+        for path in sorted(root.glob("**/*.jsonl")):
+            seen.add(str(path))
+            for key, t, model, fresh, output, cache_read, cache_write in _file_records(path, _parse_claude_file):
+                yield (key, (t, order), (t, model, fresh, output, 0, cache_read, cache_write))
+                order += 1
+    records = _last_per_key(entries())
+    _prune(seen, "_parse_claude_file")
+    return records
 
 
 def _parse_gemini_file(path):
@@ -228,16 +217,17 @@ def load_gemini(root):
     root = Path(root)
     if not root.is_dir():
         raise SourceError("gemini_chats_not_found")
-    keyed = []
     seen = set()
-    order = 0
-    for path in sorted(root.glob("tmp/*/chats/session-*.jsonl")):
-        seen.add(str(path))
-        for key, t, model, fresh, output, cached in _file_records(path, _parse_gemini_file):
-            keyed.append((key, (t, order), (t, model, fresh, output, 0, cached, 0)))
-            order += 1
-    _prune(seen)
-    return _last_per_key(keyed)
+    def entries():
+        order = 0
+        for path in sorted(root.glob("tmp/*/chats/session-*.jsonl")):
+            seen.add(str(path))
+            for key, t, model, fresh, output, cached in _file_records(path, _parse_gemini_file):
+                yield (key, (t, order), (t, model, fresh, output, 0, cached, 0))
+                order += 1
+    records = _last_per_key(entries())
+    _prune(seen, "_parse_gemini_file")
+    return records
 
 
 def _parse_codex_file(path):
@@ -293,7 +283,7 @@ def load_codex(*roots):
             records.extend(_file_records(path, _parse_codex_file))
     if not any_dir:
         raise SourceError("codex_sessions_not_found")
-    _prune(seen)
+    _prune(seen, "_parse_codex_file")
     return records
 
 
@@ -334,7 +324,7 @@ def _mcode_turn_models(conn):
         # JSON1 在 SQLite 里解析，避免把整条消息（含工具输出）搬进 Python。
         rows = conn.execute("SELECT session_id, turn_id,"
                             " json_extract(data_json,'$.context_usage_telemetry.model') AS model"
-                            " FROM local_runtime_message_rows WHERE turn_id IS NOT NULL").fetchall()
+                            " FROM local_runtime_message_rows WHERE turn_id IS NOT NULL")
         for row in rows:
             model = row["model"]
             if isinstance(model, str) and 0 < len(model) < 120:
@@ -344,7 +334,7 @@ def _mcode_turn_models(conn):
         pass   # 该 SQLite 未编译 JSON1，退回 Python 解析
     try:
         rows = conn.execute("SELECT session_id, turn_id, data_json FROM local_runtime_message_rows"
-                            " WHERE turn_id IS NOT NULL AND data_json LIKE '%context_usage_telemetry%'").fetchall()
+                            " WHERE turn_id IS NOT NULL AND data_json LIKE '%context_usage_telemetry%'")
     except sqlite3.OperationalError:
         return {}
     for row in rows:

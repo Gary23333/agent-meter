@@ -23,7 +23,7 @@ from .model import SourceError, metric, timestamp
 
 FIELDS = ("inputOther", "output", "inputCacheRead", "inputCacheCreation")
 MARKER = b'"usage.record"'
-_cache = {}   # path -> ((mtime_ns, size), records, excluded)
+from .record_cache import records_cache as _cache
 
 
 def _parse_file(path):
@@ -61,21 +61,12 @@ def load_records(root):
         key = str(path)
         seen.add(key)
         try:
-            st = path.stat()
+            parsed, skipped = _cache.read(path, _parse_file, ("kimi", str(root)))
         except OSError:
             continue
-        stamp = (st.st_mtime_ns, st.st_size)
-        cached = _cache.get(key)
-        if cached is None or cached[0] != stamp:
-            try:
-                cached = (stamp, *_parse_file(path))
-            except OSError:
-                continue
-            _cache[key] = cached
-        records.extend(cached[1])
-        excluded += cached[2]
-    for gone in set(_cache) - seen:
-        del _cache[gone]
+        records.extend(parsed)
+        excluded += skipped
+    _cache.prune(seen, ("kimi", str(root)))
     return records, excluded
 
 

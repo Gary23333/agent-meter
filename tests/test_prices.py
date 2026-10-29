@@ -20,6 +20,23 @@ NOW = int(datetime(2026, 10, 9, 4, 0, tzinfo=timezone.utc).timestamp())
 
 
 class PriceTableTests(unittest.TestCase):
+    def test_currency_preview_preserves_saved_prices_and_reprices_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            save_prices(tmp, "USD", {"custom": {"input": 2, "output": 3}},
+                        {"preview": "custom"}, {"custom": 2})
+            path = Path(tmp) / "prices.json"
+            before = path.read_bytes()
+            cny = load_prices(tmp, "CNY")
+            self.assertEqual(cny.currency, "CNY")
+            self.assertEqual(cny.models["custom"][0], 14.5)
+            self.assertEqual(cny.models["glm-5.3"][0], 8)  # native CNY list price
+            self.assertEqual(cny.aliases["preview"], "custom")
+            self.assertEqual(cny.peak_multipliers["custom"], 2)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(load_prices(tmp).currency, "USD")
+            save_prices(tmp, "CNY", {"custom": {"input": 14.5}})
+            self.assertEqual(load_prices(tmp, "USD").models["custom"][0], 2)
+
     def test_matching_and_cny_conversion(self):
         with tempfile.TemporaryDirectory() as tmp:
             table = load_prices(tmp)
@@ -354,6 +371,15 @@ class PricesHTTPTests(unittest.TestCase):
                 self.assertEqual(listing["peak_window"], WINDOW)
                 self.assertEqual(listing["models"]["deepseek-v4-flash"]["peak_multiplier"], 4.0)
                 self.assertEqual(listing["models"]["glm-5.3-flash"]["peak_multiplier"], 1.0)
+                with opener.open(urllib.request.Request(url + "/v1/prices/CNY", headers=auth),
+                                 timeout=3) as response:
+                    cny = json.load(response)
+                self.assertEqual(cny["currency"], "CNY")
+                self.assertEqual(cny["models"]["glm-5.3"]["input"], 8)
+                self.assertEqual(cny["user_patterns"], [])
+                with opener.open(urllib.request.Request(url + "/v1/prices", headers=auth),
+                                 timeout=3) as response:
+                    self.assertEqual(json.load(response)["currency"], "USD")
                 with self.assertRaises(urllib.error.HTTPError) as ctx:
                     put({"deepseek-v4-flash": 0})
                 self.assertEqual(ctx.exception.code, 400)

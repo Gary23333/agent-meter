@@ -17,15 +17,20 @@ enum PreviewRenderer {
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
         let snap = Snapshot(json)
-        // 7 张竖版分享卡：演示快照、7 天，7 套风格各一张。
+        // Both presets and a no-cost variant, in every theme.
         if let report = ReportData.build(snapshot: snap, period: .week, now: Date()) {
+            var hidden = ShareOptions.review
+            hidden.costs = false
             for theme in PanelTheme.allCases {
-                if let png = ShareCardRenderer.pngData(data: report, theme: theme, scale: 2) {
-                    try? png.write(to: URL(fileURLWithPath: outDir)
-                        .appendingPathComponent("share-\(theme.rawValue)-portrait.png"))
+                for (name, options) in [("compact", ShareOptions.compact), ("review", .review), ("no-cost", hidden)] {
+                    if let png = ShareCardRenderer.pngData(data: report, theme: theme, options: options, scale: 2) {
+                        try? png.write(to: URL(fileURLWithPath: outDir)
+                            .appendingPathComponent("share-\(theme.rawValue)-\(name).png"))
+                    }
                 }
             }
         }
+        if CommandLine.arguments.contains("--share-only") { exit(0) }
 
         // Dry-run alert rules now and at later times so expiry rules are exercised.
         var report = ""

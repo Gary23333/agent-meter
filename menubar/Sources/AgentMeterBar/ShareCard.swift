@@ -5,6 +5,7 @@ import SwiftUI
 struct ShareCard: View {
     let data: ReportData
     let theme: PanelTheme
+    var options: ShareOptions = .compact
 
     /// 竖版固定宽度，高度随内容自适应。
     static let width: CGFloat = 540
@@ -40,7 +41,9 @@ struct ShareCard: View {
             brandRow.padding(.bottom, 18)
             surface(pad: 18) { heroBlock }
             Spacer().frame(height: 14)
-            surface(pad: 18) { detailBlock }
+            if options.efficiency || options.apps || options.models || options.peak || options.images {
+                surface(pad: 18) { detailBlock }
+            }
             Spacer(minLength: 10)
             footerRow
         }
@@ -63,7 +66,7 @@ struct ShareCard: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(data.period.label) · 本机消耗")
-                Text(Fmt.day(data.generatedAt, now: data.generatedAt) + " 生成")
+                Text(data.dateRange)
             }
             .font(.system(size: smallSize))
             .foregroundStyle(muted)
@@ -74,7 +77,7 @@ struct ShareCard: View {
         HStack(spacing: 8) {
             Text("数据来自本机账本 · 只读聚合 · 不含对话内容")
             Spacer(minLength: 6)
-            Text("费用为 API 等价估算")
+            if options.costs { Text("API 等价估算 · USD 按 1:7.25 转人民币") }
         }
         .font(.system(size: 9))
         .foregroundStyle(faint)
@@ -87,7 +90,7 @@ struct ShareCard: View {
     private var heroBlock: some View {
         VStack(alignment: .leading, spacing: 11) {
             heroFigures
-            metricStrip
+            if data.hasTokenUsage { metricStrip }
         }
     }
 
@@ -100,7 +103,7 @@ struct ShareCard: View {
                         .kerning(1.2)
                         .foregroundStyle(muted)
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(Fmt.tokens(data.totalTokens))
+                        Text(data.hasTokenUsage ? Fmt.tokens(data.totalTokens) : "—")
                             .font(theme.number(heroSize))
                             .monospacedDigit()
                             .lineLimit(1)
@@ -114,21 +117,23 @@ struct ShareCard: View {
                     }
                 }
                 Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text("估算费用")
-                        .font(.system(size: smallSize, weight: theme == .minimal ? .regular : .semibold, design: theme.numberDesign))
-                        .foregroundStyle(muted)
-                    Text(data.costText)
-                        .font(theme.number(costSize))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .foregroundStyle(costStyle)
-                        .themeGlow(theme.isLuminous ? Neon.lime.opacity(0.45) : .clear, radius: 5,
-                                   theme: theme.isLuminous ? .neon : .minimal)
-                    Text("API 等价")
-                        .font(.system(size: smallSize - 1))
-                        .foregroundStyle(faint)
+                if options.costs {
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("估算费用")
+                            .font(.system(size: smallSize, weight: theme == .minimal ? .regular : .semibold, design: theme.numberDesign))
+                            .foregroundStyle(muted)
+                        Text(data.costText)
+                            .font(theme.number(costSize))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .foregroundStyle(costStyle)
+                            .themeGlow(theme.isLuminous ? Neon.lime.opacity(0.45) : .clear, radius: 5,
+                                       theme: theme.isLuminous ? .neon : .minimal)
+                        Text("API 等价")
+                            .font(.system(size: smallSize - 1))
+                            .foregroundStyle(faint)
+                    }
                 }
             }
             if let note = heroNote {
@@ -144,7 +149,8 @@ struct ShareCard: View {
     private var heroNote: String? {
         var parts: [String] = []
         if data.totalIsLowerBound { parts.append("总量为下界") }
-        if !data.unpricedModels.isEmpty {
+        if let status = data.periodStatus, status != "available", status != "complete" { parts.append("包含不完整时段记录") }
+        if options.costs && !data.unpricedModels.isEmpty {
             let names = data.unpricedModels.prefix(2).joined(separator: "、")
             let more = data.unpricedModels.count > 2 ? " 等 \(data.unpricedModels.count) 个" : ""
             parts.append("未计价 " + names + more)
@@ -155,10 +161,14 @@ struct ShareCard: View {
     private var metricStrip: some View {
         HStack(spacing: 0) {
             metric("请求", Fmt.grouped(data.requests))
-            metricDivider
-            metric("缓存命中", data.cacheHitText)
-            metricDivider
-            metric("新输入 / 输出", "\(Fmt.tokens(data.freshInput)) / \(Fmt.tokens(data.output))")
+            if options.efficiency {
+                metricDivider
+                metric("缓存命中", data.cacheHitText)
+                if options.mode == .review {
+                    metricDivider
+                    metric("新输入 / 输出含推理", "\(Fmt.tokens(data.freshInput)) / \(Fmt.tokens(data.output))")
+                }
+            }
             metricDivider
             metric("活跃应用", "\(data.appCount)")
         }
@@ -191,11 +201,13 @@ struct ShareCard: View {
 
     private var detailBlock: some View {
         VStack(alignment: .leading, spacing: sectionGap) {
-            compositionBlock
-            divider
-            appList
-            divider
-            modelList
+            if data.hasTokenUsage {
+                if options.efficiency && options.mode == .review { compositionBlock }
+                if options.apps { appList }
+                if options.models { modelList }
+            }
+            if options.peak && data.deepseek.totalTokens > 0 { peakBlock }
+            if options.images, let images = data.imageUsage { imageBlock(images) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -246,7 +258,7 @@ struct ShareCard: View {
             if data.apps.isEmpty {
                 Text("暂无应用记录").font(.system(size: smallSize)).foregroundStyle(muted)
             }
-            ForEach(Array(data.apps.prefix(4))) { app in
+            ForEach(Array(data.apps.prefix(options.appLimit))) { app in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 7) {
                         RoundedRectangle(cornerRadius: 1.5)
@@ -272,11 +284,11 @@ struct ShareCard: View {
 
     private var modelList: some View {
         VStack(alignment: .leading, spacing: modelGap) {
-            sectionTitle("Top 模型", trailing: "费用 / Token")
+            sectionTitle("Top 模型", trailing: options.costs ? "费用 / Token" : "Token 用量")
             if data.models.isEmpty {
                 Text("暂无模型记录").font(.system(size: smallSize)).foregroundStyle(muted)
             }
-            ForEach(Array(data.models.prefix(3))) { model in
+            ForEach(Array(data.models.prefix(options.modelLimit))) { model in
                 HStack(spacing: 7) {
                     Text(model.name)
                         .font(.system(size: rowSize, weight: .medium))
@@ -291,12 +303,14 @@ struct ShareCard: View {
                         .background(Capsule().fill(theme.tint(model.tint).opacity(theme == .minimal ? 0.07 : 0.12)))
                         .lineLimit(1)
                     Spacer(minLength: 5)
+                    if options.costs {
                     Text(model.cost)
                         .font(.system(size: smallSize, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(muted)
                         .lineLimit(1)
                         .frame(width: 60, alignment: .trailing)
+                    }
                     Text(Fmt.tokens(model.tokens))
                         .font(.system(size: rowSize, weight: .semibold, design: theme.numberDesign))
                         .monospacedDigit()
@@ -304,6 +318,48 @@ struct ShareCard: View {
                         .frame(width: 76, alignment: .trailing)
                 }
                 .frame(minHeight: 22)
+            }
+        }
+    }
+
+    private func amounts(_ values: [String: Double]) -> String {
+        Fmt.moneyLabel(values)
+    }
+
+    private var peakBlock: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            sectionTitle("DeepSeek 峰谷", trailing: "仅 DeepSeek 模型 · 北京时间")
+            HStack {
+                metric("峰时 Token", Fmt.tokens(data.deepseek.peakTokens))
+                metric("谷时 Token", Fmt.tokens(data.deepseek.offpeakTokens))
+            }
+            if options.costs {
+                Text("峰时估算 \(amounts(data.deepseek.peakCosts)) · 谷时估算 \(amounts(data.deepseek.offpeakCosts))")
+                    .font(.system(size: smallSize)).foregroundStyle(muted)
+            }
+            let unsplit = max(0, data.deepseek.totalTokens - data.deepseek.peakTokens - data.deepseek.offpeakTokens)
+            if unsplit > 0 {
+                Text("另有 \(Fmt.tokens(unsplit)) Token 无请求时刻；价格表按谷价估算，CC Switch 费用未并入。")
+                    .font(.system(size: smallSize - 1)).foregroundStyle(muted).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func imageBlock(_ images: ReportData.ImageUsage) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            sectionTitle("Codex 生图", trailing: "独立统计")
+            HStack {
+                metric("图片", Fmt.grouped(images.images) + " 张")
+                metric("调用", images.calls.map { Fmt.grouped($0) + " 次" } ?? "未知")
+                if options.costs { metric("生图估算", images.cost) }
+            }
+            Text(options.costs
+                 ? "按 \(images.quality) 质量估算，仅含输出；未并入 Token 费用。"
+                 : "仅统计 Codex 本机归档图片，未并入 Token 总量。")
+                .font(.system(size: smallSize - 1)).foregroundStyle(muted)
+            if images.partial {
+                Text("生图数据不完整或为上次记录")
+                    .font(.system(size: smallSize - 1)).foregroundStyle(muted)
             }
         }
     }
@@ -322,7 +378,7 @@ struct ShareCard: View {
         let total = data.totalTokens
         let raw: [(String, String, Double)] = [
             ("in", "新输入", data.freshInput),
-            ("out", "输出", data.output),
+            ("out", "输出含推理", data.output),
             ("read", "缓存读", data.cacheRead),
             ("write", "缓存写", data.cacheWrite)
         ]
@@ -618,14 +674,15 @@ enum ShareCardRenderer {
 
     /// 卡片实际逻辑尺寸：只在导出时用（菜单动作，不在 SwiftUI 更新周期内），
     /// 供 1x 兜底路线定框；正常路径由 ImageRenderer 自己量高。
-    private static func hostingSize(data: ReportData, theme: PanelTheme) -> CGSize {
-        let host = NSHostingView(rootView: ShareCard(data: data, theme: theme))
+    private static func hostingSize(data: ReportData, theme: PanelTheme, options: ShareOptions) -> CGSize {
+        let host = NSHostingView(rootView: ShareCard(data: data, theme: theme, options: options))
         host.layoutSubtreeIfNeeded()
         return host.fittingSize
     }
 
-    static func render(data: ReportData, theme: PanelTheme, scale: CGFloat = 2) -> Rendered? {
-        let card = ShareCard(data: data, theme: theme)
+    static func render(data: ReportData, theme: PanelTheme, options: ShareOptions = .compact, scale: CGFloat = 2) -> Rendered? {
+        return autoreleasepool {
+        let card = ShareCard(data: data, theme: theme, options: options)
         let renderer = ImageRenderer(content: card)
         renderer.scale = scale
         renderer.isOpaque = true
@@ -639,7 +696,7 @@ enum ShareCardRenderer {
             }
         }
         // 1x 兜底：与 PreviewRenderer 使用的宿主视图路线一致。
-        let size = hostingSize(data: data, theme: theme)
+        let size = hostingSize(data: data, theme: theme, options: options)
         guard size.width > 0, size.height > 0 else { return nil }
         let host = NSHostingView(rootView: card)
         host.frame = NSRect(origin: .zero, size: size)
@@ -648,9 +705,10 @@ enum ShareCardRenderer {
         host.cacheDisplay(in: host.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { return nil }
         return Rendered(png: png, pixels: size)
+        }
     }
 
-    static func pngData(data: ReportData, theme: PanelTheme, scale: CGFloat = 2) -> Data? {
-        render(data: data, theme: theme, scale: scale)?.png
+    static func pngData(data: ReportData, theme: PanelTheme, options: ShareOptions = .compact, scale: CGFloat = 2) -> Data? {
+        render(data: data, theme: theme, options: options, scale: scale)?.png
     }
 }
