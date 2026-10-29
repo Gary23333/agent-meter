@@ -33,7 +33,7 @@ struct UsageView: View {
             }
 
             if let data = LocalUsage.merged(snapshot: snapshot, period: period) {
-                PeriodSummary(data: data, history: snapshot.history, snapshot: snapshot, now: now)
+                PeriodSummary(data: data, history: snapshot.history, snapshot: snapshot, period: period, now: now)
             } else {
                 Card {
                     Label(Catalog.reason(snapshot.history?.reason ?? "database_not_found"), systemImage: "tray")
@@ -55,6 +55,7 @@ private struct PeriodSummary: View {
     let data: JSON
     let history: Source?
     let snapshot: Snapshot
+    let period: Period
     let now: Date
     @Environment(\.panelTheme) private var theme
 
@@ -69,6 +70,7 @@ private struct PeriodSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             hero
+            imageCard
             composition
             byApp
             topModels
@@ -116,6 +118,71 @@ private struct PeriodSummary: View {
             }
             .help("按 API 价格估算，不是订阅账单")
         }
+    }
+
+    /// Codex built-in image_gen in the current period. Its API-equivalent
+    /// estimate is deliberately separate from the token cost card above.
+    @ViewBuilder private var imageCard: some View {
+        if let image = codexImage {
+            let tint = theme.tint(Catalog.brand("codex").tint)
+            let images = Int(image.value["images"].double ?? 0)
+            let cost = image.value["estimated_cost"].double
+            let quality = image.metric.value["quality_assumption"].string ?? "high"
+            let points: [(day: Date, images: Double)] = image.metric.value["daily_buckets"].array
+                .compactMap { b in
+                    guard let d = Fmt.parseDay(b["date"].string), let n = b["images"].double, n > 0 else { return nil }
+                    return (d, n)
+                }
+                .sorted { $0.day < $1.day }
+                .suffix(30)
+            Card(tint: Catalog.brand("codex").tint) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text("生图").font(theme.font(10.5, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
+                        Spacer(minLength: 4)
+                        Text("Codex 内置 image_gen").font(theme.font(9.5)).themeForeground(.tertiary)
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(images) 张").font(theme.number(27)).monospacedDigit()
+                            .themeForeground()
+                            .contentTransition(.numericText())
+                        if let cost {
+                            Text("约 " + Fmt.amount(cost, unit: image.metric.value["currency"].string))
+                                .font(theme.font(11, weight: .semibold)).foregroundStyle(tint).monospacedDigit()
+                        }
+                    }
+                    Text("Codex 内置 image_gen · \(quality) 档估算 · 不计入上方 Token 费用")
+                        .font(theme.font(10.5)).themeForeground(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if image.metric.status == "partial" {
+                        Text(Catalog.reason(image.metric.reason))
+                            .font(.system(size: 10)).foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if points.count >= 2 {
+                        Chart {
+                            ForEach(points, id: \.day) { p in
+                                BarMark(x: .value("日期", p.day), y: .value("张数", p.images), width: .fixed(8))
+                                    .foregroundStyle(tint.gradient)
+                                    .cornerRadius(2)
+                            }
+                        }
+                        .chartXAxis(.hidden)
+                        .chartYAxis(.hidden)
+                        .frame(height: 40)
+                        .themeGlow(tint.opacity(0.4), radius: 3, theme: theme)
+                    }
+                }
+            }
+        }
+    }
+
+    private var codexImage: (metric: Metric, value: JSON)? {
+        guard let source = snapshot.sources.first(where: { $0.id == "codex" }),
+              let metric = source.metric("image_generation") else { return nil }
+        let value = metric.value["periods"][period.rawValue]
+        guard let images = value["images"].double, images > 0 else { return nil }
+        return (metric, value)
     }
 
     /// One headline figure: CC Switch's own USD estimate plus the price-table

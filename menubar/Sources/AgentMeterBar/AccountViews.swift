@@ -77,6 +77,7 @@ struct AccountCard: View {
             webUsage
             deepseekPeak
             dailyTokens
+            imageTrend
         }
     }
 
@@ -229,6 +230,43 @@ struct AccountCard: View {
         }
     }
 
+    /// Codex's built-in image_gen archive: daily image counts, last 30 active days.
+    @ViewBuilder private var imageTrend: some View {
+        if source.id == "codex", let metric = source.metric("image_generation") {
+            let points: [(day: Date, images: Double)] = metric.value["daily_buckets"].array
+                .compactMap { b in
+                    guard let d = Fmt.parseDay(b["date"].string), let n = b["images"].double, n > 0 else { return nil }
+                    return (d, n)
+                }
+                .sorted { $0.day < $1.day }
+                .suffix(30)
+            let monthImages = metric.value["periods"]["30d"]["images"].double
+                ?? points.reduce(0) { $0 + $1.images }
+            if !points.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("近 \(points.count) 个活跃日 · 生图")
+                            .font(.system(size: 10.5)).themeForeground(.secondary)
+                        Spacer()
+                        Text("\(Int(monthImages)) 张")
+                            .font(.system(size: 11, weight: .bold, design: theme.numberDesign)).foregroundStyle(tint)
+                    }
+                    Chart {
+                        ForEach(points, id: \.day) { p in
+                            BarMark(x: .value("日期", p.day), y: .value("张数", p.images), width: .fixed(8))
+                                .foregroundStyle(tint.gradient)
+                                .cornerRadius(2)
+                        }
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(height: 40)
+                    .themeGlow(tint.opacity(0.4), radius: 4, theme: theme)
+                }
+            }
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
             BrandBadge(brand: brand, size: 30, icon: AppLauncher.icon(for: source.baseID, in: snapshot))
@@ -339,6 +377,21 @@ struct AccountCard: View {
                                 detail: "\(Int(today?.requests ?? 0)) 轮"))
             rows.append(InfoRow(symbol: "calendar.badge.clock", title: "近 30 天 / 全部", value: Fmt.tokens(month?.tokens ?? 0),
                                 detail: "全部 " + Fmt.tokens(all?.tokens ?? 0)))
+        }
+        // Codex built-in image_gen: display-only API-equivalent estimate, never
+        // part of the token/cost totals above.
+        if source.id == "codex", let metric = source.metric("image_generation"),
+           let images = metric.value["periods"]["today"]["images"].double {
+            var detail: [String] = []
+            if let cost = metric.value["periods"]["today"]["estimated_cost"].double {
+                detail.append("约 " + Fmt.amount(cost, unit: metric.value["currency"].string))
+            }
+            if let monthly = metric.value["periods"]["30d"]["images"].double {
+                detail.append("近 30 天 \(Int(monthly)) 张")
+            }
+            rows.append(InfoRow(symbol: "photo.on.rectangle.angled", title: "生图 今日",
+                                value: "\(Int(images)) 张",
+                                detail: detail.isEmpty ? nil : detail.joined(separator: " · ")))
         }
         // Qoder CN local credits ledger (its logs carry credits, never token
         // counts): account-card statistics only, never local consumption.

@@ -14,6 +14,7 @@ from .agy_tokens import collect_antigravity_sessions
 from .claude_code import collect_claude, collect_claude_web
 from .cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
 from .codex import collect_codex
+from .codex_images import codex_image_metric
 from .design_tokens import collect_design_tokens
 from .discovery import discover
 from .kimi import collect_kimi
@@ -49,6 +50,10 @@ def default_config():
             "workbuddy_projects_dir":str(home/".workbuddy/projects"),
             # Direct CLI session logs (used for days CC Switch has not imported).
             "codex_sessions_dir":str(home/".codex/sessions"),"codex_archives_dir":str(home/".codex/archived_sessions"),
+            # Codex 内置 image_gen：PNG 按张统计 + 历史库里的调用数（版本号会变，模块内 glob 兜底）。
+            "codex_images_dir":str(home/".codex/generated_images"),
+            "codex_history_db":str(home/".codex/thread_history_1.sqlite"),
+            "codex_image_quality":"high",
             "claude_projects_dir":str(home/".claude/projects"),"gemini_dir":str(home/".gemini"),
             "mcode_db":str(home/".minimax/v2/sqlite/runtime-state.sqlite"),
             "agy_conversations_dir":str(home/".gemini/antigravity-cli/conversations"),
@@ -265,6 +270,13 @@ def collect(config=None,now=None):
         ):
             if not switched_off(provider):
                 token_futures[provider]=pool.submit(fn)
+        # Codex 内置生图的按张统计（文件 + 历史库调用数），与账户网络无关。
+        image_futures={}
+        if not switched_off("codex"):
+            image_futures["codex"]=pool.submit(
+                lambda:codex_image_metric(config["codex_images_dir"],config["codex_history_db"],now,
+                                          currency=table.currency,
+                                          quality=config.get("codex_image_quality","high")))
         # Qoder CN's local credits ledger is account-page statistics, never a
         # tokens metric: it must not enter the local-consumption sum.
         credits_futures={}
@@ -286,6 +298,14 @@ def collect(config=None,now=None):
         try:src["metrics"]["tokens"]=future.result()
         except SourceError as e:src["metrics"]["tokens"]=metric(status="not_connected",reason=e.code)
         except Exception:src["metrics"]["tokens"]=metric(status="error",reason="local_token_parse_failed")
+    # Codex 内置生图（文件张数 + 历史库调用数）；本地读失败只影响该指标。
+    for src in sources:
+        future=image_futures.get(src["id"])
+        if future is None:
+            continue
+        try:src["metrics"]["image_generation"]=future.result()
+        except SourceError as e:src["metrics"]["image_generation"]=metric(status="not_connected",reason=e.code)
+        except Exception:src["metrics"]["image_generation"]=metric(status="error",reason="codex_image_parse_failed")
     # Qoder CN local credits: folded into the account source's credits metric
     # (wallets stay under "rows"), never into tokens, so the local-consumption
     # tab cannot sum credits as tokens. Attached even when the account query
@@ -423,6 +443,10 @@ class SnapshotService:
                     # keep the fresh measurement instead of the stale one.
                     if src["metrics"]["tokens"]["status"] in {"available","partial"}:
                         cached["metrics"]["tokens"]=src["metrics"]["tokens"]
+                    # Codex 内置生图同样来自本地文件，不随账户超时变 stale。
+                    image=src["metrics"].get("image_generation") or {}
+                    if image.get("status") in {"available","partial"}:
+                        cached["metrics"]["image_generation"]=image
                     fresh["sources"][index]=cached
                     replaced=True
             if replaced:
