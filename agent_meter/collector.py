@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from .ccswitch import collect_ccswitch
 from .agy_tokens import collect_antigravity_sessions
+from .agy_quota import collect_antigravity_quota
 from .claude_code import collect_claude, collect_claude_web
 from .cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
 from .codex import collect_codex
@@ -57,6 +58,9 @@ def default_config():
             "claude_projects_dir":str(home/".claude/projects"),"gemini_dir":str(home/".gemini"),
             "mcode_db":str(home/".minimax/v2/sqlite/runtime-state.sqlite"),
             "agy_conversations_dir":str(home/".gemini/antigravity-cli/conversations"),
+            # The desktop app writes the same conversation schema to its own
+            # root; the source treats the two as one Antigravity ledger.
+            "agy_desktop_conversations_dir":str(home/".gemini/antigravity/conversations"),
             # DeepSeek Harness (dsh) session ledgers are zstd-compressed; the
             # CLI path is only needed when the stdlib route is unavailable.
             "dsh_sessions_dir":str(home/".dsh/sessions"),"zstd_binary":shutil.which("zstd"),
@@ -169,6 +173,35 @@ def coverage_summary(coverage):
             "missing_fields":sum(f["status"] not in {"available","partial"} for r in coverage for f in r["fields"].values())}
 
 
+def collect_antigravity(config,now):
+    """One Antigravity source: local token ledgers plus the running app's quota.
+
+    The token roots and the desktop language server fail independently. A
+    missing quota server must not hide token history, and a machine without
+    conversation databases can still show the signed-in account's windows.
+    """
+    try:
+        out=collect_antigravity_sessions(config["agy_conversations_dir"],config["ccswitch_db"],now,
+                                         desktop_root=config.get("agy_desktop_conversations_dir"))
+    except SourceError as e:
+        out=source("antigravity","account",now,status="partial",reason=e.code)
+        out["metrics"]["tokens"]=metric(status="not_connected",reason=e.code)
+    try:
+        out["metrics"]["quota"]=metric(collect_antigravity_quota(now))
+    except SourceError as e:
+        out["metrics"]["quota"]=metric(
+            status="not_connected" if e.code=="antigravity_language_server_not_running" else "error",
+            reason=e.code)
+        out["diagnostics"]["quota_error"]=e.code
+        if out["status"]=="available":
+            out["status"]="partial"
+            out["diagnostics"]["reason"]=e.code
+    if (out["metrics"]["tokens"]["status"] not in {"available","stale"}
+            and out["metrics"]["quota"]["status"] not in {"available","stale"}):
+        out["status"]="not_connected"
+    return out
+
+
 def collect(config=None,now=None):
     config=dict(default_config(),**(config or {}))
     now=time.time() if now is None else now
@@ -215,7 +248,7 @@ def collect(config=None,now=None):
       # usage db attaches to its account source below (kimi pattern).
       "opencode":("local_session_history",lambda:collect_opencode_tokens(config["opencode_db"],config["ccswitch_db"],now)),
       "gemini":("local_session_history",lambda:collect_gemini_sessions(config["gemini_dir"],config["ccswitch_db"],now)),
-      "antigravity":("local_session_history",lambda:collect_antigravity_sessions(config["agy_conversations_dir"],config["ccswitch_db"],now)),
+      "antigravity":("account",lambda:collect_antigravity(config,now)),
       "deepseek_harness":("local_session_history",lambda:collect_dsh_sessions(config["dsh_sessions_dir"],config["ccswitch_db"],now,zstd_binary=config["zstd_binary"])),
       "kimi_desktop":("local_session_history",lambda:collect_kimi_desktop_tokens(config["kimi_desktop_sessions_dir"],now)),
       # Global-reset forecasts: third-party wording, never an account clock.

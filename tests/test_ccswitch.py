@@ -6,7 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from agent_meter.ccswitch import collect_ccswitch, readonly_database, rollup_bounds, summarize, validate_schema
+from agent_meter.ccswitch import (app_imported_days, collect_ccswitch, readonly_database,
+                                  rollup_bounds, summarize, validate_schema)
 from agent_meter.model import SourceError
 from agent_meter.prices import PriceTable
 from agent_meter.verify import reference_ccswitch
@@ -133,6 +134,84 @@ class CCSwitchTests(unittest.TestCase):
         insert(self.c,'bad',input_token_semantics=9)
         with readonly_database(self.path) as c:
             with self.assertRaisesRegex(SourceError,'unknown_token_semantics'):validate_schema(c)
+
+    def test_schema_24_supported_and_25_rejected(self):
+        # v4.0.22 migrations 21-24 only add the session_usage_dedup table and
+        # session_log_sync.parser_state; the columns we read are unchanged.
+        self.c.execute('PRAGMA user_version=24')
+        self.c.execute('CREATE TABLE session_usage_dedup (data_source TEXT, semantic_id TEXT, has_entry_id INTEGER)')
+        self.c.execute('ALTER TABLE session_log_sync ADD COLUMN parser_state TEXT')
+        self.c.commit()
+        insert(self.c,'ok',input_tokens=100)
+        with readonly_database(self.path) as c:
+            self.assertEqual(validate_schema(c),24)
+            self.assertEqual(summarize(c)['totals']['total_tokens'],100)
+        self.c.execute('PRAGMA user_version=25');self.c.commit()
+        with readonly_database(self.path) as c:
+            with self.assertRaisesRegex(SourceError,'unsupported_ccswitch_schema'):validate_schema(c)
+
+    def test_v4022_codex_cache_creation_zero_proxy_suppresses_session(self):
+        # 4.0.22 adds a third cache-match branch: a proxy row with
+        # cache_creation=0 and legacy semantics dedups a codex_session row that
+        # carries cache writes (4.0.5 would have kept both).
+        insert(self.c,'proxy',app_type='codex',input_tokens=100,output_tokens=50,cache_read_tokens=300,
+               cache_creation_tokens=0,input_token_semantics=0,created_at=1000)
+        insert(self.c,'session',app_type='codex',input_tokens=100,output_tokens=50,cache_read_tokens=300,
+               cache_creation_tokens=50,input_token_semantics=0,created_at=1100,data_source='codex_session')
+        with readonly_database(self.path) as c:
+            result=summarize(c)
+            expected=reference_ccswitch(c,None,None,ZoneInfo('Asia/Shanghai'))
+        self.assertEqual(result['totals']['requests'],1)
+        self.assertEqual(result['suppressed_duplicate_records'],1)
+        for k,v in expected.items():self.assertEqual(result['totals'][k],v,k)
+
+    def test_v4022_codex_cache_branch_requires_legacy_proxy_semantics(self):
+        # Only new/no write: a total-inclusive proxy row, or a non-codex session
+        # source, must not suppress the session row.
+        insert(self.c,'proxy',app_type='codex',input_tokens=100,output_tokens=50,cache_read_tokens=300,
+               cache_creation_tokens=0,input_token_semantics=2,created_at=1000)
+        insert(self.c,'codex-session',app_type='codex',input_tokens=100,output_tokens=50,cache_read_tokens=300,
+               cache_creation_tokens=50,input_token_semantics=0,created_at=1100,data_source='codex_session')
+        insert(self.c,'gemini-session',app_type='codex',input_tokens=100,output_tokens=50,cache_read_tokens=300,
+               cache_creation_tokens=50,input_token_semantics=0,created_at=1200,data_source='gemini_session')
+        with readonly_database(self.path) as c:
+            result=summarize(c)
+            expected=reference_ccswitch(c,None,None,ZoneInfo('Asia/Shanghai'))
+        self.assertEqual(result['totals']['requests'],3)
+        for k,v in expected.items():self.assertEqual(result['totals'][k],v,k)
+
+    def test_new_sources_fold_and_direct_primary_apps(self):
+        # Project mapping only (not upstream): dsh -> deepseek_harness;
+        # other sources keep their app_type. agy is direct-primary: the
+        # Antigravity conversation DBs are complete, so CC Switch's partial
+        # transcript import must not add a second agy bucket.
+        insert(self.c,'agy:s:1',app_type='agy',input_tokens=10,created_at=1000,data_source='agy_session')
+        insert(self.c,'dsh:s:1',app_type='dsh',input_tokens=20,created_at=1000,data_source='dsh_session')
+        insert(self.c,'kimi:s:1',app_type='kimi',input_tokens=30,created_at=1000,data_source='kimi_session')
+        insert(self.c,'mcode:s:1',app_type='mcode',input_tokens=40,created_at=1000,data_source='mcode_session')
+        with readonly_database(self.path) as c:
+            result=summarize(c)
+            apps=sorted(g['app'] for g in result['groups'])
+            expected=reference_ccswitch(c,None,None,ZoneInfo('Asia/Shanghai'))
+        self.assertEqual(apps,['deepseek_harness','kimi','mcode'])
+        self.assertEqual(result['direct_primary_apps'],['agy'])
+        # The agy row is outside both the detail and raw counts.
+        self.assertEqual(result['totals']['requests'],3)
+        self.assertEqual(result['totals']['fresh_input'],90)
+        self.assertEqual(result['raw_detail_records'],3)
+        for k,v in expected.items():self.assertEqual(result['totals'][k],v,k)
+
+    def test_app_imported_days_requires_supported_schema(self):
+        # If the CC Switch reader cannot run, direct readers must not exclude
+        # days it would have imported, or those days vanish from both sides.
+        insert(self.c,'dsh-row',app_type='dsh',input_tokens=10,created_at=1000,data_source='dsh_session')
+        self.c.execute('PRAGMA user_version=25');self.c.commit()
+        days,state=app_imported_days(self.path,ZoneInfo('Asia/Shanghai'),'dsh')
+        self.assertEqual((days,state),(set(),'ccswitch_unsupported_schema'))
+        self.c.execute('PRAGMA user_version=24');self.c.commit()
+        days,state=app_imported_days(self.path,ZoneInfo('Asia/Shanghai'),'dsh')
+        self.assertEqual(state,'checked')
+        self.assertEqual(days,{'1970-01-01'})
 
     def test_source_database_cannot_be_written(self):
         with readonly_database(self.path) as c:

@@ -8,7 +8,7 @@ enum Catalog {
         let tint: Color
     }
 
-    static let order = ["codex", "claude", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "zcode", "volcengine", "minimax_design", "dreamina", "mimo", "stepfun", "deepseek_api"]
+    static let order = ["codex", "claude", "antigravity", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "zcode", "volcengine", "minimax_design", "dreamina", "mimo", "stepfun", "deepseek_api"]
     static let metricOrder = ["quota", "reset_time", "reset_cards", "credits", "tokens", "cost",
                               "renewal_time", "renewal_countdown", "renewal_amount",
                               "credit_refresh_time", "credit_refresh_countdown"]
@@ -188,7 +188,10 @@ enum Catalog {
             "mcode_db_not_found": "未找到 MiniMax Code 运行数据库",
             "mcode_db_read_failed": "MiniMax Code 数据库读取失败",
             "unsupported_mcode_schema": "MiniMax Code 数据库结构不兼容",
-            "agy_conversations_not_found": "未找到 Antigravity CLI 会话记录",
+            "agy_conversations_not_found": "未找到 Antigravity 会话记录",
+            "antigravity_language_server_not_running": "Antigravity 未运行，额度暂不可读",
+            "antigravity_quota_unreadable": "额度返回格式无法识别",
+            "antigravity_quota_api_error": "本地额度服务读取失败",
             "dsh_sessions_not_found": "未找到 DeepSeek Harness 会话记录（本机未使用过 dsh）",
             "kimi_desktop_sessions_not_found": "未找到 Kimi 桌面端 Agent 会话记录（本机未用过 Agent 模式）",
             "zstd_unavailable": "缺少 zstd 解压能力（需要 Python 3.14+ 或安装 zstd 命令行工具）",
@@ -209,6 +212,11 @@ enum Catalog {
     }
 
     static func bucketLabel(_ q: JSON) -> String {
+        // Account quota rows (Antigravity) carry a model group; the window
+        // label stays the same vocabulary every other card uses.
+        if let group = q["group"].string, !group.isEmpty {
+            return "\(group) · \(windowLabel(q))"
+        }
         // Named windows that share a length (Claude's weekly model windows).
         let named = ["seven_day_opus": "7 天 Opus", "seven_day_sonnet": "7 天 Sonnet", "monthly": "每月", "mcp": "MCP 调用（月）",
                      "seven_day_oauth_apps": "7 天 OAuth 应用"]
@@ -217,6 +225,22 @@ enum Catalog {
         // Same window, same words across providers ("1 周" reads as "7 天").
         if let m = windowMinutes(q), q["window"]["unit"].string != nil || q["window_minutes"].double != nil,
            m.truncatingRemainder(dividingBy: 60) == 0 { return Fmt.window(minutes: m) }
+        if let d = q["window"]["duration"].double, let u = q["window"]["unit"].string {
+            let unit = ["second": "秒", "minute": "分钟", "hour": "小时", "day": "天", "week": "周", "month": "个月"][u] ?? u
+            return "\(Fmt.trim(d)) \(unit)"
+        }
+        let names = ["limit5h": "5 小时", "limit7d": "7 天", "monthTotal": "本月总量", "monthCode": "本月编程",
+                     "stepPlanCredits": "STEP 积分",
+                     "5h": "5 小时", "week": "每周", "userQuota": "套餐额度", "addOnQuota": "加购额度",
+                     "orgResourcePackage": "组织资源包", "totalQuota": "总额度", "sharedQuota": "共享额度", "credits": "积分", "primary": "主窗口", "secondary": "次窗口",
+                     "tertiary": "第三窗口", "summary": "汇总"]
+        let b = q["bucket"].string ?? ""
+        return names[b] ?? (b.isEmpty ? "额度" : b)
+    }
+
+    /// The window part of a quota label ("5 小时", "7 天"), for grouped rows.
+    static func windowLabel(_ q: JSON) -> String {
+        if let minutes = q["window_minutes"].double { return Fmt.window(minutes: minutes) }
         if let d = q["window"]["duration"].double, let u = q["window"]["unit"].string {
             let unit = ["second": "秒", "minute": "分钟", "hour": "小时", "day": "天", "week": "周", "month": "个月"][u] ?? u
             return "\(Fmt.trim(d)) \(unit)"
@@ -265,7 +289,8 @@ enum Catalog {
     static func appLabel(_ app: String) -> String {
         ["claude": "Claude", "codex": "Codex", "kimi": "Kimi Code", "kimi_desktop": "Kimi 桌面端", "gemini": "Gemini", "opencode": "OpenCode",
          "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi", "zcode": "ZCode", "workbuddy": "WorkBuddy",
-         "antigravity": "Antigravity", "dsh": "DeepSeek Harness"][app] ?? app
+         "antigravity": "Antigravity", "agy": "Antigravity",
+         "dsh": "DeepSeek Harness", "deepseek_harness": "DeepSeek Harness"][app] ?? app
     }
 
     /// Model id for display: the readers prefix the vendor's id with their own
@@ -291,11 +316,11 @@ enum Catalog {
         case "opencode": return brand("opencode").tint
         case "zcode": return brand("zcode").tint
         case "workbuddy": return brand("workbuddy").tint
-        case "antigravity": return brand("antigravity").tint
+        case "antigravity", "agy": return brand("antigravity").tint
         case "mcode": return brand("minimax_code").tint
         case "kimi": return brand("kimi").tint
         case "kimi_desktop": return brand("kimi_desktop").tint
-        case "dsh": return brand("deepseek_harness").tint
+        case "dsh", "deepseek_harness": return brand("deepseek_harness").tint
         default: return .purple
         }
     }

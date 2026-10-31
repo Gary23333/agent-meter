@@ -20,7 +20,7 @@
 
 后续实施需保留研究中的数据边界：应用不等于计费账户，本机日志不等于全账户用量，未知值不等于零，不同供应方的积分和额度不能直接相加。
 
-当前真实可用来源为 CC Switch、Codex、Kimi、即梦 CLI 和 MiniMax Design。Qoder 安装版 SDK 初始化未通过，MiniMax 与 DeepSeek 查询凭据未连接；其他产品见覆盖矩阵。复用 CC Switch 4.0.5 的规则固定到 `2db86e94da13365caae55bb08d09295e31500d21`，只支持已验证的 schema 20。
+当前真实可用来源为 CC Switch、Codex、Kimi、即梦 CLI 和 MiniMax Design。Qoder 安装版 SDK 初始化未通过，MiniMax 与 DeepSeek 查询凭据未连接；其他产品见覆盖矩阵。复用 CC Switch 4.0.22 的规则固定到 `b76426741ef93069e2f374ac01ca7ef5760e1d0e`，支持已验证的 schema 20 与 24；agy 由直读会话库为主，CC Switch 统计剔除 `app_type='agy'` 行。
 
 回归命令是 `python3 -m unittest discover -v`。真实对账命令是 `python3 -m agent_meter verify`；它会返回未采集字段，检查通过不表示全部应用已接通。运行时快照、认证文件和第三方安装代码的私有缓存均位于已忽略的 `.runtime/`，不作为源码交付。
 
@@ -72,3 +72,13 @@
 
 2026-10-30 性能与分享优化（v0.9.6）：新增 `record_cache.py`，多个本机日志采集器共享有界缓存（估算 Python 对象 16 MiB / 512 文件）；按来源隔离清理，Kimi CLI 与桌面端按目录隔离，淘汰后重读而不丢用量。Antigravity 元数据游标流式读取；Claude/Gemini 去重输入改为生成器。报告窗口关闭释放视图，按快照和周期缓存聚合，导出用 autoreleasepool 释放临时位图。海报提供简洁晒用量 / 完整复盘和六个内容开关，加入 DeepSeek 专属峰谷与 Codex 生图；按用户要求金额统一人民币（USD 按既有固定汇率 1:7.25 折算），输出含独立 reasoning，生图独立于 Token 总量与成本。选项可记住。详见 [性能与分享优化记录](../performance-sharing-review-2026-10-30.md)。
 同轮修复「模型与计费」CNY 选择被 load() 恢复为已保存 USD 的问题：新增只读 `GET /v1/prices/USD`、`GET /v1/prices/CNY`，保留原 `GET /v1/prices`；重建该币种默认价并换算自定义覆盖，读取不落盘。界面改用 HostingController，切币种不再循环重载，保存只写原有用户覆盖与本次修改的价格（同步目录模型也可修改），避免把未编辑的目录/默认价冻结成覆盖。原始账本与后台价格币种仍保留，前端金额统一人民币。
+
+2026-10-31 agy 桌面端与 5 小时/周额度轮（用户要求：agy 桌面端 token 能采就纳管，另加 5 小时/周消耗；CC Switch 4.0.22 一并适配）：
+- **CC Switch 4.0.22**：`SUPPORTED_SCHEMA={20,24}`；SQL 按 v4.0.22 commit `b76426741ef93069e2f374ac01ca7ef5760e1d0e` 更新（`effective_filter` 新增 codex legacy cache 分支，dedup app-type 匹配与上游一致）；`folded_app` 增加项目映射 `agy→antigravity`、`dsh→deepseek_harness`。迁移 21–24 只加表/加列（`session_usage_dedup`、`session_log_sync.parser_state`），token 语义未变。
+- **agy 直读为主**：CC Switch 4.0.22 的 `agy_session` 导入读 brain transcript，本机只覆盖 19 个历史日中的 3 个（10-09/10-14/10-31，155 条），10-09 还少 7 步；因此 `antigravity` 直读会话库为主，`ccswitch_overlap.excluded_days=[]`、`direct_primary=true`，CC Switch 统计剔除 `app_type='agy'` 行，避免双算或丢历史。
+- **CC Switch 不可用保护**：`app_imported_days` 校验 `user_version`；schema 不支持时返回 `ccswitch_unsupported_schema` 且不剔除日期，直读来源照常计数，避免“CC Switch 读不了、直读又被整日剔除”的双重丢失。
+- **dsh v4**：新增 `session.v4.jsonl.zstd` 识别（本机 45 个 v4 文件 / 5,044 条 usage）；v4 与 v3 同读 `assistant/message.data.usage`，模型取 `data.message.source.model`，新增 `cacheWriteTokens`（本机均为 0）；诊断增加 `v4_session_files`。直读原始 15,272 轮与 CC Switch 的 15,250 轮相差 0.14%；CC Switch 的 dsh output 含 reasoning、直读拆分 reasoning，output 分项漂移由 verify 标为 `inconclusive_live_drift`。
+- **桌面 token**：新增 `~/.gemini/antigravity/conversations`（配置 `agy_desktop_conversations_dir`），与 CLI 双根合并、按会话 UUID 去重（mtime/size 较大者）；`usage.f5` 已用桌面 transcript 在 155/155 条带 token 字段的记录上验证为 cache read（f2 新鲜输入、f3 含思考输出、f9 思考、f10 不含思考输出），cache_write 全为 0；cache_hit_rate 恢复真实值，`cache_semantics=f5_cache_read_verified_cache_write_absent`。`antigravity` 来源升级为 `account` scope。
+- **额度**：新增 `agent_meter/agy_quota.py`，`ps`+`lsof` 定位运行中的 `language_server`，仅连 localhost 调 `RetrieveUserQuotaSummary`（`x-codeium-csrf-token`）；五个桶（Gemini 5h/weekly、Claude+GPT 5h/weekly、Gemini 4 Argon weekly），`window` 明确 5h/weekly；应用关闭时 quota `not_connected`、token 卡片保留；不读/不存姓名、邮箱、token。错误码 `antigravity_language_server_not_running` / `antigravity_quota_unreadable`。
+- **UI**：一张 Antigravity 账户卡（5 小时/周额度条 + 本机 Token 今日/30 天/全部）；`Catalog.order` 加入 antigravity，`bucketLabel` 支持 group 前缀，`agy`/`dsh` 应用名与颜色映射补齐。
+- **验证**：Python 3.14 下回归 352 项全过（1 项 zstd CLI 测试按设计 skip）；verify 2,195 项 0 失败、2 项 `inconclusive_live_drift`（Codex 直读不读 `.jsonl.zst` 压缩 rollout；dsh 与 CC Switch 的 output/reasoning 拆分口径不同）。agy 的 DB 以 `immutable=1` 打开，活跃会话最新步仍为下界，verify 对小正漂移标 inconclusive。

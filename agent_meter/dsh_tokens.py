@@ -1,22 +1,24 @@
 """DeepSeek Harness (dsh) local token ledger from its zstd session files.
 
 ~/.dsh/sessions/<encoded project path>/<session id>/ holds one compressed
-JSONL per session: session.v3.jsonl.zstd (v3) or the legacy
-session.jsonl.zstd. Only usage fields are read, never conversation text.
-Field semantics were verified against this machine's 99 files (2026-10-18,
-20,578 usage records):
+JSONL per session: session.v3.jsonl.zstd (v3), session.v4.jsonl.zstd (v4)
+or the legacy session.jsonl.zstd. Only usage fields are read, never
+conversation text. Field semantics were verified against this machine's
+files (2026-10-18 v3/legacy, 2026-10-31 v4, 20,578+ usage records):
 
-- v3: type "assistant/message" carries data.usage {inputTokens, outputTokens,
-  cacheReadTokens, reasoningTokens, totalTokens}; the model sits in
-  data.message.source.model. data.stream may embed a copy of the same usage
-  chunk — only data.usage is read, so it is never counted twice.
+- v3 / v4: type "assistant/message" carries data.usage {inputTokens,
+  outputTokens, cacheReadTokens, reasoningTokens, totalTokens}; v4 adds
+  cacheWriteTokens (zero on every checked record) and omits reasoningTokens.
+  The model sits in data.message.source.model. data.stream may embed a copy
+  of the same usage chunk — only data.usage is read, so it is never counted
+  twice.
 - legacy: type "assistant/chunk" carries progressive data.chunk.usage values
   (early ones may be 0) and the following "assistant/message" record holds
   the final data.usage for the same (turn, step); the model is the closest
   preceding request/header (data.header.config.model), "unknown" without one.
 - inputTokens is fresh (cache-miss) input; cacheReadTokens is independent;
-  there is no cache-write field (0); reasoningTokens is a subset of
-  outputTokens, so output is split as outputTokens − reasoningTokens.
+  cacheWriteTokens is recorded separately (0 when absent); reasoningTokens is
+  a subset of outputTokens, so output is split as outputTokens − reasoningTokens.
 
 Dedup: within one file keep the record with the largest timestamp per
 (turn, step) — covers identical chunk/message pairs and progressive values.
@@ -74,18 +76,25 @@ def _key_part(value):
 
 
 def _usage_fields(usage):
-    """(fresh, output, reasoning, cache_read); None when usage is absent."""
+    """(fresh, output, reasoning, cache_read, cache_write); None when absent."""
     if not isinstance(usage, dict):
         return None
     fresh = _nonneg(usage.get("inputTokens"))
     output = _nonneg(usage.get("outputTokens"))
     reasoning = _nonneg(usage.get("reasoningTokens"))
-    return fresh, max(0, output - reasoning), reasoning, _nonneg(usage.get("cacheReadTokens"))
+    return (fresh, max(0, output - reasoning), reasoning,
+            _nonneg(usage.get("cacheReadTokens")), _nonneg(usage.get("cacheWriteTokens")))
 
 
 def _parse_dsh_file(path, route, zstd_binary):
-    """(records, is_v3) for one session file; raises OSError when unreadable."""
-    is_v3 = ".v3." in path.name
+    """(records, schema) for one session file; raises OSError when unreadable."""
+    if ".v4." in path.name:
+        schema = "v4"
+    elif ".v3." in path.name:
+        schema = "v3"
+    else:
+        schema = "legacy"
+    is_message_schema = schema in {"v3", "v4"}
     header_model = "unknown"
     keyed = []
     try:
@@ -121,21 +130,21 @@ def _parse_dsh_file(path, route, zstd_binary):
                 if isinstance(when, bool) or not isinstance(when, (int, float)) or when < 0:
                     continue
                 model = header_model
-                if is_v3:
+                if is_message_schema:
                     message = data.get("message")
                     origin = message.get("source") if isinstance(message, dict) else None
                     if isinstance(origin, dict) and isinstance(origin.get("model"), str) and origin["model"]:
                         model = _model(origin["model"])
                 t = when / 1000
                 key = (_key_part(data.get("turn")), _key_part(data.get("step")))
-                keyed.append((key, t, (t, model, *fields, 0)))
+                keyed.append((key, t, (t, model, *fields)))
     except _ZSTD_ERRORS:
         raise OSError("unreadable zstd session file") from None
-    return tuple(_last_per_key(keyed)), is_v3
+    return tuple(_last_per_key(keyed)), schema
 
 
 def load_dsh_sessions(root, zstd_binary=None):
-    """(records, v3_files, legacy_files, skipped, route) from one sessions tree.
+    """(records, v3, v4, legacy, skipped, route) from one sessions tree.
 
     Record shape matches cli_sessions: (epoch_seconds, model, fresh_input,
     output, reasoning, cache_read, cache_write).
@@ -151,32 +160,35 @@ def load_dsh_sessions(root, zstd_binary=None):
 
     records = []
     seen = set()
-    v3_files = legacy_files = skipped = 0
+    v3_files = v4_files = legacy_files = skipped = 0
     for path in paths:
         seen.add(str(path))
         parsed = _file_records(path, parse, "dsh")
         if not parsed:
             skipped += 1
             continue
-        file_records, is_v3 = parsed
-        if is_v3:
+        file_records, schema = parsed
+        if schema == "v3":
             v3_files += 1
+        elif schema == "v4":
+            v4_files += 1
         else:
             legacy_files += 1
         records.extend(file_records)
     _prune(seen, "dsh")
-    return records, v3_files, legacy_files, skipped, route
+    return records, v3_files, v4_files, legacy_files, skipped, route
 
 
 def collect_dsh_sessions(sessions_dir, ccswitch_db, now,
                          zone=ZoneInfo("Asia/Shanghai"), zstd_binary=None):
     excluded, overlap_state = app_imported_days(ccswitch_db, zone, "dsh")
-    records, v3_files, legacy_files, skipped, route = load_dsh_sessions(sessions_dir, zstd_binary)
+    records, v3_files, v4_files, legacy_files, skipped, route = load_dsh_sessions(sessions_dir, zstd_binary)
     out = source("deepseek_harness", "local_session_history", now)
     out["metrics"]["tokens"] = metric(
         _metric_value(records, now, zone, excluded, "dsh", "dsh_local_session_logs",
                       "last_usage_per_turn_step", overlap_state))
     out["diagnostics"]["v3_session_files"] = v3_files
+    out["diagnostics"]["v4_session_files"] = v4_files
     out["diagnostics"]["legacy_session_files"] = legacy_files
     out["diagnostics"]["skipped_session_files"] = skipped
     out["diagnostics"]["decompression_route"] = route

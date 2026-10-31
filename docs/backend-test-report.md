@@ -68,7 +68,7 @@ Codex 账户远端 token 与 CC Switch 本机历史保持分开。Kimi 这次没
 
 ## 统计质量边界
 
-- CC Switch 来源 schema 为 20；规则固定到 4.0.5 的上游 commit `2db86e94da13365caae55bb08d09295e31500d21`。
+- CC Switch 来源支持 schema 20 与 24（本机 4.0.22）；SQL 与过滤规则固定到 4.0.22 的上游 commit `b76426741ef93069e2f374ac01ca7ef5760e1d0e`。`agy` 由 Antigravity 直读账本为主，CC Switch 统计剔除其 `agy` 行。
 - 代理与会话重复使用上游 600 秒启发式规则。与其统计一致，不等于已完成所有原始请求的账单级追踪。
 - 当前 30 天范围的起始日落在旧日汇总边界，不能精确还原该日部分时段；接口已标记 `partial`、`total_is_lower_bound` 和被排除日期。
 - 费用保持估算标签，未定价请求与旧汇总价格完整性未知会显示为部分；不会把这些数字当作实际订阅费用。

@@ -46,6 +46,14 @@ def v3_message(ms, turn, step, model, inp, out, reasoning=0, cache_read=0, strea
     return {"type": "assistant/message", "time": ms, "data": data}
 
 
+def v4_message(ms, turn, step, model, inp, out, cache_read=0, cache_write=0):
+    usage = {"inputTokens": inp, "outputTokens": out, "cacheReadTokens": cache_read,
+             "cacheWriteTokens": cache_write, "totalTokens": inp + out + cache_read + cache_write}
+    return {"type": "assistant/message", "time": ms,
+            "data": {"turn": turn, "step": step, "usage": usage,
+                     "message": {"source": {"model": model}}}}
+
+
 def legacy_chunk(ms, turn, step, inp, out, reasoning=0, cache_read=0):
     return {"type": "assistant/chunk", "time": ms,
             "data": {"turn": turn, "step": step,
@@ -108,6 +116,24 @@ class DshTokenTests(unittest.TestCase):
             self.assertEqual(totals(out, "today")["requests"], 2)
             self.assertEqual([b["tokens"] for b in out["metrics"]["tokens"]["value"]["daily_buckets"]],
                              [20, 420])
+
+    def test_v4_usage_model_and_cache_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = sessions_root(tmp) / "proj" / "s4"
+            write_zstd(root / "session.v4.jsonl.zstd", [
+                v4_message(ms_at(9, 10), 1, 1, "deepseek-flash", 100, 40, cache_read=200, cache_write=3),
+                v4_message(ms_at(9, 11), 1, 2, "deepseek-flash", 50, 30, cache_read=20),
+            ])
+            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            allp = totals(out)
+            self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"],
+                              allp["reasoning"], allp["cache_read"], allp["cache_write"]),
+                             (2, 150, 70, 0, 220, 3))
+            groups = {g["model"]: g for g in out["metrics"]["tokens"]["value"]["periods"]["all"]["groups"]}
+            self.assertEqual(groups["deepseek-flash"]["requests"], 2)
+            self.assertEqual(out["diagnostics"]["v4_session_files"], 1)
+            self.assertEqual(out["diagnostics"]["v3_session_files"], 0)
+            self.assertEqual(out["diagnostics"]["legacy_session_files"], 0)
 
     def test_v3_dedup_keeps_last_usage_per_turn_step(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -246,6 +272,7 @@ class DshCollectorIntegrationTests(unittest.TestCase):
                        [v3_message(ms_at(9), 1, 1, "mimo-v2.5-pro", 100, 40, reasoning=10, cache_read=200)])
             config = {"runtime_dir": tmp, "app_roots": [],
                       "dsh_sessions_dir": str(sessions_root(tmp)), "zstd_binary": shutil.which("zstd"),
+                      "ccswitch_db": str(Path(tmp) / "none.db"),
                       "disabled_sources": list(self.ALL)}
             snap = collect(config, now=NOW)
             dsh = next(s for s in snap["sources"] if s["id"] == "deepseek_harness")

@@ -63,7 +63,13 @@ struct Source: Identifiable {
     /// its own tab and must not appear in either account list.
     var isForecastFeature: Bool { scope == "external_forecast" }
     var hasAccountData: Bool {
-        ["quota", "reset_cards", "credits", "renewal_time", "credit_refresh_time"].contains { metric($0) != nil }
+        if ["quota", "reset_cards", "credits", "renewal_time", "credit_refresh_time"].contains(where: { metric($0) != nil }) {
+            return true
+        }
+        // Antigravity's quota needs its desktop app, but its local token ledger
+        // does not. Keeping the card on tokens alone stops it from vanishing
+        // (and falling back into 未接入) when the app is closed.
+        return baseID == "antigravity" && metric("tokens") != nil
     }
 }
 

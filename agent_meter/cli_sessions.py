@@ -2,7 +2,10 @@
 and MiniMax Code, for machines (or date ranges) CC Switch does not cover.
 
 Dedup and field semantics were aligned against this machine's CC Switch 4.0.5
-imports (verified 2026-10-09, exact match on shared days):
+imports (verified 2026-10-09, exact match on shared days). CC Switch 4.0.22
+added compressed `.jsonl.zst` rollouts and token_usage_record events; this
+reader still reads only uncompressed token_count events, so CC Switch stays
+primary for the days it imports those.
 
 - Codex: one jsonl rollout per session under ~/.codex/sessions and
   ~/.codex/archived_sessions; event_msg/token_count events carry cumulative

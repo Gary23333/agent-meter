@@ -214,6 +214,7 @@ python3 -m unittest discover -v
 | :--- | :--- | :--- | :--- | :---: |
 | **Codex** | ChatGPT / Codex CLI | 本机配置与官方端点只读解析 | 额度余量、周重置时间、重置卡库存及到期、Token 汇总 | 独立账户 |
 | **Claude Code** | Claude Code CLI | 钥匙串 OAuth 令牌只读获取 | 5 小时 / 7 天窗口额度与重置时刻 | 独立账户 |
+| **Antigravity** | Google Antigravity 桌面端 / agy CLI | 本机会话 SQLite 只读 + 运行中 `language_server` 本地 RPC | 5 小时/周额度（Gemini / Claude+GPT / Argon 分组）、重置时间、本机 Token 今日/30天/全部、模型分组、缓存命中率、估算费用 | 独立账户 |
 | **Kimi Code** | Kimi 编程助手 | 本机 REST + 本机 `wire.jsonl` | 周/5小时额度、Token 消耗流（turn 级精准解析） | 独立账户 |
 | **Qoder CN** | Qoder 中国区 | 内嵌安全网页登录 / Cookie | 总体额度、共享额度、已用/剩余、下次重置时间 | 最多 5 账号 |
 | **WorkBuddy** | WorkBuddy 腾讯协作 | 内嵌安全网页登录 / Cookie + 本机会话日志直读 | 资源包总量、剩余量、冻结积分、周期截止时间、本机 Token/费用估算 | 最多 5 账号 |
@@ -227,7 +228,7 @@ python3 -m unittest discover -v
 | **小米 MiMo API** | MiMo 开放平台控制台 | 内嵌安全网页登录 / Cookie | 账户余额（现金 / 赠送）、Token Plan 本月用量 | 最多 5 账号 |
 | **阶跃星辰 (StepFun)** | 阶跃星辰开放平台 | 内嵌安全网页登录 / Cookie + 开放平台 API Key | 账户余额（充值 / 赠送）、STEP plan 5 小时 / 每周窗口或月度积分池、套餐名与到期日 | 最多 5 账号 |
 | **CC Switch** | 本机多模型路由历史 | 本机 SQLite 数据库只读事务 | 今日/7天/30天/全部 Token、缓存命中率、估算费用 | 本机聚合 |
-| **本机 Agent 会话账本** | Codex CLI、Claude Code、Gemini CLI、Antigravity、OpenCode、MiniMax Code、Kimi Code、Kimi 桌面端、ZCode、WorkBuddy、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 会话日志只读直读（未装 CC Switch 也可读） | 今日/7天/30天/全部 Token、按模型分组、缓存命中率、估算费用 | 本机历史 |
+| **本机 Agent 会话账本** | Codex CLI、Claude Code、Gemini CLI、Antigravity（CLI+桌面端）、OpenCode、MiniMax Code、Kimi Code、Kimi 桌面端、ZCode、WorkBuddy、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 会话日志只读直读（未装 CC Switch 也可读） | 今日/7天/30天/全部 Token、按模型分组、缓存命中率、估算费用 | 本机历史 |
 
 ---
 

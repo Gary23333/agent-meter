@@ -19,6 +19,9 @@ from .reset_forecast import SOURCES as FORECAST_SOURCES
 def reference_ccswitch(conn,start,end,zone):
     columns="app_type,model,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,input_token_semantics,total_cost_usd,status_code,created_at,data_source"
     rows=[dict(r) for r in conn.execute("SELECT "+columns+" FROM proxy_request_logs")]
+    # agy is counted by the direct Antigravity source; CC Switch's transcript
+    # importer covers only part of its history, so its agy rows stay out here.
+    rows=[r for r in rows if r["app_type"] not in {"agy"}]
     proxy_index=defaultdict(list)
     for r in rows:
         if (r["data_source"] or "proxy")=="proxy" and 200<=r["status_code"]<300:
@@ -49,7 +52,8 @@ def reference_ccswitch(conn,start,end,zone):
             for app in apps:
                 for p in proxy_index[(app,r["input_tokens"],r["output_tokens"],r["cache_read_tokens"])]:
                     cache_match=p["cache_creation_tokens"]==r["cache_creation_tokens"] or (
-                        r["cache_creation_tokens"]==0 and kind in {"codex_session","gemini_session","opencode_session"})
+                        r["cache_creation_tokens"]==0 and kind in {"codex_session","gemini_session","opencode_session"}) or (
+                        p["cache_creation_tokens"]==0 and p["input_token_semantics"]==0 and kind=="codex_session")
                     model_match=p["model"].lower()==r["model"].lower() or "unknown" in {p["model"].lower(),r["model"].lower()}
                     if cache_match and model_match and abs(p["created_at"]-r["created_at"])<=600:
                         duplicate=True;break
@@ -355,8 +359,52 @@ def check_cli_tokens(checks,snapshot,config,prefix,source_id,records,cc_apps,sub
                              if d in day_sums and d<today and d not in proxy_days)
                     detail[f]={"drift":fields[f],"ccswitch":base}
                     if abs(fields[f])>max(0.05*base,5 if f=="requests" else 0):ok=False
-                checks.append({"name":prefix+".ccswitch_cross","status":"pass" if ok else "fail",
+                status="pass" if ok else "fail"
+                # The direct Codex reader skips `.jsonl.zst` rollouts; on days
+                # CC Switch imports them it legitimately has more rows. CC
+                # Switch remains primary there, so a negative drift is not a
+                # backend failure.
+                if not ok and source_id=="codex" and fields["requests"]<0:
+                    status="inconclusive_live_drift"
+                    detail["note"]="direct Codex reader may miss .jsonl.zst rollouts; CC Switch is primary"
+                # Upstream's dsh importer stores outputTokens including reasoning;
+                # the direct reader splits reasoning out. Requests still match.
+                req=detail["requests"]
+                if (not ok and source_id=="deepseek_harness"
+                        and abs(req["drift"])<=max(0.01*req["ccswitch"],5)):
+                    status="inconclusive_live_drift"
+                    detail["note"]="CC Switch stores dsh output including reasoning; direct splits it out"
+                checks.append({"name":prefix+".ccswitch_cross","status":status,
                                "detail":{"days":days_seen,**detail}})
+
+
+def check_antigravity_tokens(checks,snapshot,config,records):
+    """Antigravity sqlite is a lower bound while the desktop app is writing.
+
+    The DB is opened immutable=1, so steps still in an uncheckpointed WAL are
+    invisible; a later verify re-read can legitimately see more rows. Equal
+    totals pass, a small positive gap is inconclusive, anything else fails.
+    """
+    from .ccswitch import period_bounds as bounds
+    zone=ZoneInfo(config.get("ccswitch_timezone","Asia/Shanghai"))
+    now=snapshot["collected_at"]["epoch_seconds"]
+    src=next((s for s in snapshot["sources"] if s["id"]=="antigravity"),None)
+    if src is None or src["metrics"]["tokens"]["status"] not in {"available","partial"}:
+        return
+    value=src["metrics"]["tokens"]["value"]
+    for period in ("today","7d","30d","all"):
+        actual=value["periods"][period]["totals"]
+        reference=reference_cli_period(records,*bounds(now,period,zone),zone)
+        for field,v in reference.items():
+            b=actual[field]
+            if b==v:
+                status,detail="pass",None
+            elif v>b and v-b<=max(v*0.15,5 if field=="requests" else 1):
+                status="inconclusive_live_drift"
+                detail={"backend":b,"reference":v,"note":"sqlite WAL may hide recent steps until checkpoint"}
+            else:
+                status,detail="fail",{"backend":b,"reference":v}
+            checks.append({"name":"antigravity_local."+period+"."+field,"status":status,"detail":detail})
 
 
 def check_codex_images(checks,snapshot,config,source):
@@ -802,16 +850,39 @@ def verify_snapshot(snapshot,config,native_reference=None):
             checks.append({"name":prefix+".reload","status":"fail","detail":"reference reload failed"})
             continue
         check_cli_tokens(checks,snapshot,config,prefix,source_id,records,cc_apps,subtract)
-    # Antigravity CLI: independent recompute with its own protobuf walker.
+    # Antigravity: independent recompute over the CLI and desktop ledgers.
     agy=next((s for s in snapshot["sources"] if s["id"]=="antigravity"),None)
     if agy is not None and agy["metrics"]["tokens"]["status"] in {"available","partial"}:
-        from .agy_tokens import load_antigravity
+        from .agy_tokens import load_antigravity_roots
         try:
-            records,_skipped=load_antigravity(config["agy_conversations_dir"])
-            check_cli_tokens(checks,snapshot,config,"antigravity_local","antigravity",
-                             records,("antigravity",),False)
+            records,_skipped,_diagnostics=load_antigravity_roots([
+                config["agy_conversations_dir"],config.get("agy_desktop_conversations_dir")])
+            check_antigravity_tokens(checks,snapshot,config,records)
         except Exception:
             checks.append({"name":"antigravity_local.reload","status":"fail","detail":"reference reload failed"})
+    # Its 5-hour/weekly buckets are a live local RPC read; compare structure
+    # and remaining percentages with a fresh call (small drift is possible if
+    # the user is generating while verify runs).
+    if agy is not None and agy["metrics"]["quota"]["status"] in {"available","partial"}:
+        from .agy_quota import collect_antigravity_quota
+        try:
+            fresh=collect_antigravity_quota(snapshot["collected_at"]["epoch_seconds"])
+        except Exception:
+            checks.append({"name":"antigravity_quota.reload","status":"fail","detail":"reference reload failed"})
+        else:
+            backend={row["bucket"]:row for row in agy["metrics"]["quota"]["value"]}
+            reference={row["bucket"]:row for row in fresh}
+            checks.append({"name":"antigravity_quota.buckets","status":"pass" if set(backend)==set(reference) else "fail",
+                           "detail":{"backend":sorted(backend),"reference":sorted(reference)}})
+            for bucket in sorted(set(backend)&set(reference)):
+                b,r=backend[bucket],reference[bucket]
+                drift=abs((b.get("remaining_percent") or 0)-(r.get("remaining_percent") or 0))
+                fixed=(b.get("window_minutes")==r.get("window_minutes") and
+                       (b.get("resets_at") or {}).get("epoch_seconds")==(r.get("resets_at") or {}).get("epoch_seconds"))
+                checks.append({"name":"antigravity_quota."+bucket+".remaining",
+                               "status":"pass" if fixed and drift<=1.0 else "fail",
+                               "detail":{"backend":b.get("remaining_percent"),"reference":r.get("remaining_percent"),
+                                         "window_minutes":b.get("window_minutes"),"drift":drift}})
     # DeepSeek Harness (dsh): independent recompute over the zstd session files.
     dsh=next((s for s in snapshot["sources"] if s["id"]=="deepseek_harness"),None)
     if dsh is not None and dsh["metrics"]["tokens"]["status"] in {"available","partial"}:

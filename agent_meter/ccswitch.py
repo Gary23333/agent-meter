@@ -7,7 +7,14 @@ from pathlib import Path
 from .ccswitch_sql import effective_filter, folded_app, fresh_input_sql
 from .model import DISPLAY_ZONE, SourceError, account_key, decimal_string, integer, metric, source, timestamp
 
-SUPPORTED_SCHEMA = {20}
+# 20 = v4.0.5 era, 24 = v4.0.22 (migrations 21-24 only add tables/columns:
+# session_usage_dedup, session_log_sync.parser_state; token semantics unchanged).
+SUPPORTED_SCHEMA = {20, 24}
+# CC Switch 4.0.22's agy importer reads brain transcripts and covered only 3
+# of the 19 local history days on this machine, missing steps in old
+# conversations. The conversation DBs are the complete ledger, so the direct
+# antigravity source is primary and agy rows stay out of CC Switch totals.
+DIRECT_PRIMARY_APPS = ("agy",)
 TOKEN_COLUMNS = {"app_type", "provider_id", "model", "pricing_model", "input_tokens", "output_tokens",
                  "cache_read_tokens", "cache_creation_tokens", "input_token_semantics", "total_cost_usd"}
 
@@ -82,7 +89,10 @@ def app_imported_days(path, zone, app):
 
     CC Switch stays primary for those days, so direct readers of the same
     CLI's local logs must skip them or the two would add up. Returns
-    (days, state) with state in {checked, ccswitch_absent, ccswitch_read_failed}.
+    (days, state) with state in {checked, ccswitch_absent,
+    ccswitch_read_failed, ccswitch_unsupported_schema}. An unsupported
+    schema means CC Switch cannot contribute those rows either, so the
+    caller must not exclude anything.
     """
     path = Path(path).expanduser()
     if not path.is_file():
@@ -93,6 +103,9 @@ def app_imported_days(path, zone, app):
         conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
         try:
             conn.execute("PRAGMA query_only=ON")
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version not in SUPPORTED_SCHEMA:
+                return set(), "ccswitch_unsupported_schema"
             rows = conn.execute("SELECT created_at FROM proxy_request_logs WHERE app_type IN (" + marks + ")", apps).fetchall()
         finally:
             conn.close()
@@ -102,7 +115,7 @@ def app_imported_days(path, zone, app):
 
 
 def rollup_bounds(start, end, zone=DISPLAY_ZONE):
-    # Mirrors v4.0.5: only fully covered local days, with its 23:59 rule.
+    # Mirrors v4.0.22: only fully covered local days, with its 23:59 rule.
     lo = hi = None
     if start is not None:
         dt = datetime.fromtimestamp(start, zone)
@@ -124,7 +137,8 @@ def _register_mcode_resolver(conn, models):
 
 
 def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE, price_table=None, mcode_models=None):
-    detail_conditions = [effective_filter("l")]
+    app_conditions = [f"l.app_type <> '{app}'" for app in DIRECT_PRIMARY_APPS]
+    detail_conditions = [effective_filter("l")] + app_conditions
     params = []
     for expr, value in (("l.created_at >= ?", start), ("l.created_at <= ?", end)):
         if value is not None:
@@ -136,7 +150,7 @@ def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE, price_table=None, m
     raw_count = conn.execute("SELECT COUNT(*) FROM proxy_request_logs l WHERE " + raw_where, params).fetchone()[0]
     retained_count = conn.execute("SELECT COUNT(*) FROM proxy_request_logs l WHERE " + detail_where, params).fetchone()[0]
     lower, upper = rollup_bounds(start, end, zone)
-    roll_conditions, roll_params = [], []
+    roll_conditions, roll_params = [f"r.app_type <> '{app}'" for app in DIRECT_PRIMARY_APPS], []
     if lower is not None:
         roll_conditions.append("r.date >= ?")
         roll_params.append(lower.isoformat())
@@ -222,8 +236,9 @@ def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE, price_table=None, m
             "excluded_partial_rollup_days": excluded_days,
             "period_status": "partial" if excluded_days else "available",
             "total_is_lower_bound": bool(excluded_days),
-            "coverage": "ccswitch_imported_local_history", "dedup_rule": "ccswitch_v4.0.5_600_second_heuristic",
-            "cost_kind": "api_equivalent_estimate_not_bill"}
+            "coverage": "ccswitch_imported_local_history", "dedup_rule": "ccswitch_v4.0.22_600_second_heuristic",
+            "cost_kind": "api_equivalent_estimate_not_bill",
+            "direct_primary_apps": list(DIRECT_PRIMARY_APPS)}
 
 
 def collect_ccswitch(path, now, zone=DISPLAY_ZONE, mcode_db=None, price_table=None):
@@ -244,7 +259,8 @@ def collect_ccswitch(path, now, zone=DISPLAY_ZONE, mcode_db=None, price_table=No
                            "unpriced_detail_requests": data["totals"]["unpriced_detail_requests"],
                            "rollup_pricing_completeness": "unknown"} for p, data in periods.items()}},
             status="partial" if any(p["totals"]["unpriced_detail_requests"] for p in periods.values()) else "available")
-        out["diagnostics"].update({"schema_version": version, "reference_version": "4.0.5",
+        out["diagnostics"].update({"schema_version": version, "reference_version": "4.0.22",
                                   "last_import_at": timestamp(last_sync), "read_only": True,
+                                  "direct_primary_apps": list(DIRECT_PRIMARY_APPS),
                                   "source_timezone": str(zone), "coverage_complete": False})
         return out

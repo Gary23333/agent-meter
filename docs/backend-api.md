@@ -44,7 +44,7 @@
 
 ## CC Switch 统计
 
-适配数据库 schema 20，查询规则参考固定版 4.0.5，读取使用只读连接和一致事务。只查询用量列；历史统计不读取聊天正文。
+适配数据库 schema 20 与 24（本机 CC Switch 4.0.22；21–24 迁移只加表/加列，token 语义未变），查询规则参考固定版 4.0.22（commit `b76426741ef93069e2f374ac01ca7ef5760e1d0e`），读取使用只读连接和一致事务。只查询用量列；历史统计不读取聊天正文。4.0.22 的会话导入新增 `agy_session`、`dsh_session`、`kimi_session`、`mcode_session` 等来源；其中 `agy` 由 Antigravity 直读账本为主（见下文），CC Switch 统计中剔除 `app_type='agy'` 的行，避免与部分导入重复。`agy`/`dsh` 在展示口径上分别折叠为 `antigravity`/`deepseek_harness`；这是本项目的合并映射，不是上游行为。`app_imported_days` 会先校验 `user_version`：schema 不在支持集合时返回 `ccswitch_unsupported_schema` 且**不剔除任何日期**，避免 CC Switch 读不了时把直读来源整日清空。
 
 按 `today`、`7d`、`30d`、`all` 返回新增输入、输出、缓存读取、缓存写入、请求数、模型分组与估算费用。总 token 是归一后的四个分项之和。缓存读取占缓存相关输入的比例作为命中率，分母为零时留空。
 
@@ -66,7 +66,7 @@ CC Switch 日汇总的源时区默认按本机研究设置为北京时间，可�
 
 注意各来源 tokens 指标是**单账本口径**：与 CC Switch 重叠的日期已按日剔除（`ccswitch_overlap.excluded_days`），因此装了 CC Switch 的机器上 Codex/Claude/MiniMax Code 直读来源的 periods 会是全 0——这是防双算的设计，不是故障。展示层（菜单栏"本机消耗"页与账户卡片的 token 行）必须在客户端把 CC Switch 与各直读来源合并后按 app 归因，不能直接展示单来源指标；合并链路只有 Swift 侧 `LocalUsage.merged` 一份实现，账户卡片经 `LocalUsage.appTotals` 按 app 投影同一函数的结果。按 app 的日序列在当前快照中不存在（CC Switch 的 daily_buckets 不分 app），需要时以后端增加按 app 日汇总为前提，不做客户端拼凑。
 
-覆盖矩阵中，同一 provider 存在专用 `local_session_history` 来源且其 tokens 可用时，token 字段由该来源署名，cost 仍归 CC Switch；专用来源不可用时回落到 CC Switch 历史署名。用户在应用内关闭 workbuddy 时其本地 token 记录一并停止；zcode/opencode/gemini 与 ccswitch 一样属于本机历史，不提供应用内开关，可通过配置 `disabled_sources` 或 CLI `--disable` 关闭。stale 恢复不会用旧的本地 token 记录覆盖新采集值。
+覆盖矩阵中，同一 provider 存在专用 `local_session_history` 来源且其 tokens 可用时，token 字段由该来源署名，cost 仍归 CC Switch；专用来源不可用时回落到 CC Switch 历史署名。`antigravity` 已升级为 `account` scope，且 CC Switch 统计不再含 `agy` 行，覆盖矩阵直接由直读账本署名。用户在应用内关闭 workbuddy 时其本地 token 记录一并停止；zcode/opencode/gemini 与 ccswitch 一样属于本机历史，不提供应用内开关，可通过配置 `disabled_sources` 或 CLI `--disable` 关闭。stale 恢复不会用旧的本地 token 记录覆盖新采集值。
 
 ## Qoder CN 本地积分账本（仅账户卡片）
 
@@ -86,7 +86,7 @@ Qoder CN CLI 的会话日志（`~/.qoder-cn/projects/**/*.jsonl`，Claude Code �
 
 ## CLI 会话日志直读（无 CC Switch 也可用）
 
-Codex CLI、Claude Code、Gemini CLI 与 MiniMax Code 的会话历史增加直读采集器，口径已与本机 CC Switch 4.0.5 的导入结果逐日对齐验证（共享日完全一致，差异仅为同步滞后）：
+Codex CLI、Claude Code、Gemini CLI 与 MiniMax Code 的会话历史增加直读采集器。Codex/Claude/Gemini/MiniMax Code 的直读口径曾在 CC Switch 4.0.5 时代逐日对齐验证（共享日一致）；4.0.22 新增 `.jsonl.zst` 压缩 rollout 与 `token_usage_record`，直读 Codex 目前只读未压缩 `.jsonl`，因此 CC Switch 导入日可能比直读多（CC Switch 为主时总量不受影响，verify 将这类负漂移记为 `inconclusive_live_drift`）。
 
 | 来源 | 数据位置 | 去重规则 | 附着位置 |
 | --- | --- | --- | --- |
@@ -94,24 +94,43 @@ Codex CLI、Claude Code、Gemini CLI 与 MiniMax Code 的会话历史增加直�
 | Claude Code | `~/.claude/projects/**/*.jsonl` | 同一 `requestId` 的多条流式记录取时间戳最新的一条（跨文件全局去重）；sidechain 子代理记录计入 | 附着在 `claude` 来源 |
 | Gemini CLI | `~/.gemini/tmp/*/chats/session-*.jsonl` | 同一消息 id 取最新记录；fresh = input − cached；output = output + thoughts | 独立来源 `gemini`（scope `local_session_history`） |
 | MiniMax Code | `~/.minimax/v2/sqlite/runtime-state.sqlite` 的 `local_runtime_token_usage` 表 | 每行一次请求，input 已是新鲜值 | 附着在 `minimax_code` 来源 |
-| Antigravity CLI (agy) | `~/.gemini/antigravity-cli/conversations/*.db` 的 `steps.metadata` protobuf | 每个 LLM 步（step_type=15）一次调用的 usage 子消息；模型名取自按序对齐的 `gen_metadata` 行 | 独立来源 `antigravity`（scope `local_session_history`） |
+| Antigravity (agy CLI 与桌面端) | `~/.gemini/antigravity-cli/conversations/*.db` 与 `~/.gemini/antigravity/conversations/*.db` 的 `steps.metadata` protobuf | 每个 LLM 步（step_type=15）一次调用的 usage 子消息；模型名取自按序对齐的 `gen_metadata` 行；跨两个目录按会话 UUID 去重（取 mtime、size 较大者） | 独立来源 `antigravity`（scope `account`）；token 进本机消耗，5 小时/周额度进账户卡 |
 
-Antigravity 的 usage 字段是从本机数据（agy 1.3.2）解码验证的：f2=单次输入、f3=含思考的输出总量、f9=思考部分（f3−f9=f10 恒成立）；两个恒定字段（f1=1319、f6=24）未能识别，按不臆测原则不计入指标并以 `cache_semantics=unverified_constants_excluded` 声明，cache_hit_rate 为 null 而非零。数据库以 `mode=ro&immutable=1` 打开（agy 的 schema 在未检查点的 WAL 中）；活跃会话尚未落盘主库的最新几步不可见，采集为下界。本机数据显示其历史自 2026-06-17 开始，恰为 Gemini CLI 最后一次记录之日，`gemini` 与 `antigravity` 两来源互补不重叠。
+Antigravity 的 usage 字段在本机（agy 1.3.2 / 桌面 2.28.2）解码并交叉验证：f2=新鲜输入、f3=含思考的输出总量、f5=缓存读取、f9=思考部分、f10=不含思考的输出（f3−f9=f10 在 155/155 条带 token 字段的 transcript 上成立）；f5 与转录里的 `cache_read_tokens` 在 155/155 条上逐位一致。f1/f6 随会话变化但在会话内恒定，未能识别，按不臆测原则不计入指标。所有已检查步骤没有 cache write（转录字段为 null/0），故 `cache_write=0`，`cache_semantics=f5_cache_read_verified_cache_write_absent`。数据库以 `mode=ro&immutable=1` 打开（agy 的 schema 在未检查点的 WAL 中）；活跃会话尚未落盘主库的最新几步不可见，采集为下界。CLI 与桌面两个目录合并为一个账本，跨目录按会话 UUID 去重。本机数据显示 CLI 历史自 2026-06-17 开始，恰为 Gemini CLI 最后一次记录之日，`gemini` 与 `antigravity` 两来源互补不重叠。
+
+**主来源**：CC Switch 4.0.22 的 `agy_session` 导入读取 brain transcript；本机只覆盖 19 个历史日中的 3 个（10-09、10-14、10-31，共 155 条），且 10-09 比直读少 7 步。因此 agy 改为**直读为主**：`ccswitch_overlap.excluded_days` 为空、`ccswitch_overlap.direct_primary=true`、`observed_imported_days` 保留实际观察到的导入日；CC Switch 统计中剔除 `app_type='agy'` 行。这样既不叠加，也不因上游部分导入丢历史。verify 对四个周期做独立重算；因 WAL checkpoint 可能在快照后才露出新步，较小的正漂移记为 `inconclusive_live_drift`，反向漂移仍失败。
+
+### Antigravity 桌面端 5 小时/周额度（本地 RPC）
+
+额度只在 Antigravity 应用运行时读取，不访问外网、不复用 OAuth 凭据：采集器 `agent_meter/agy_quota.py` 用 `ps` 找到带 `--app_data_dir antigravity`（桌面优先，其次 `antigravity-cli`）的 `language_server` 进程，解析其 `--csrf_token` 与 `--override_ide_version`；再用 `lsof` 找该进程的 localhost 监听端口，只对 `http://127.0.0.1:<port>` POST `exa.language_server_pb.LanguageServerService/<Method>`，请求头 `x-codeium-csrf-token`，body `{}`。
+
+| 项 | 契约 |
+| --- | --- |
+| 方法 | `RetrieveUserQuotaSummary`（主）；失败时退化为 `GetUserStatus.cascadeModelConfigData` 的逐模型 `quotaInfo`（仅保留带 `resetTime` 的模型，`source=agy_language_server_models`） |
+| 输出 | `quota` 指标为 rows 数组：`{bucket, group, window, window_minutes, used_percent, remaining_percent, remaining_fraction, resets_at, description, source}` |
+| 窗口 | 上游 `window` 字段直接映射：`5h`→300 分钟，`weekly`→10080 分钟；本机看到 Gemini Models（5h/weekly）、Claude and GPT models（5h/weekly）、Gemini 4 Argon（weekly）共 5 个桶 |
+| 数值 | `remaining_percent=remainingFraction*100`，`used_percent=(1−remainingFraction)*100`；`resets_at` 为上游 `resetTime` 的时间戳合同对象 |
+| 隐私 | 不读取、不返回、不记录 `GetUserStatus` 中的姓名、邮箱、token；只连 127.0.0.1 |
+| 失败 | 没有运行中的服务 → `antigravity_language_server_not_running`（quota 指标 `not_connected`）；RPC/解析失败 → `antigravity_quota_unreadable`（`error`）。token 账本不受影响，来源整体标 `partial` |
+| 配置 | `agy_conversations_dir`（CLI，默认 `~/.gemini/antigravity-cli/conversations`）与 `agy_desktop_conversations_dir`（桌面，默认 `~/.gemini/antigravity/conversations`） |
+| UI | 来源 `antigravity`（scope `account`）进「账户额度」页：一张卡显示 5 小时/周额度条 + 本机 Token 今日/30 天/全部；应用关闭时额度区显示未连接，卡片因 token 账本仍在而保留 |
+| verify | 结构（bucket 集合、`window_minutes`、`resets_at`）逐项核对；`remaining_percent` 允许 1 个百分点漂移（用户可能正在生成） |
 
 ## DeepSeek Harness（dsh）本机会话账本
 
-DeepSeek Harness（dsh）把每个会话的账本写成 zstd 压缩的 JSONL：`~/.dsh/sessions/<编码后的项目路径>/<会话id>/session.v3.jsonl.zstd`（v3）或旧格式 `session.jsonl.zstd`。采集器 `agent_meter/dsh_tokens.py` 递归读取 `session*.jsonl.zstd`，只读 usage 字段、绝不读对话文本；解压优先用标准库 `compression.zstd`（Python ≥ 3.14，诊断记 `stdlib_compression_zstd`），否则调用 `zstd -dc`（`zstd_binary` 配置，记 `zstd_cli`），两者都不可用报 `zstd_unavailable`。
+DeepSeek Harness（dsh）把每个会话的账本写成 zstd 压缩的 JSONL：`~/.dsh/sessions/<编码后的项目路径>/<会话id>/session.v3.jsonl.zstd`（v3）、`session.v4.jsonl.zstd`（v4）或旧格式 `session.jsonl.zstd`。采集器 `agent_meter/dsh_tokens.py` 递归读取 `session*.jsonl.zstd`，只读 usage 字段、绝不读对话文本；解压优先用标准库 `compression.zstd`（Python ≥ 3.14，诊断记 `stdlib_compression_zstd`），否则调用 `zstd -dc`（`zstd_binary` 配置，记 `zstd_cli`），两者都不可用报 `zstd_unavailable`。
 
-两代 schema 的 usage 位置（本机 20,578 条记录验证，2026-10-18）：
+三代 schema 的 usage 位置（本机 v3/旧格式 20,578 条验证于 2026-10-18，v4 5,044 条验证于 2026-10-31）：
 
 | 代 | usage 位置 | 模型位置 |
 | --- | --- | --- |
 | v3 | `type=="assistant/message"` 的 `data.usage`（`inputTokens/outputTokens/cacheReadTokens/reasoningTokens/totalTokens`） | `data.message.source.model` |
+| v4 | 同 v3 的 `assistant/message.data.usage`；新增 `cacheWriteTokens`，不再有 `reasoningTokens` | `data.message.source.model` |
 | 旧 | `type=="assistant/chunk"` 的 `data.chunk.usage` 为渐进值（早期可为 0），同 (turn, step) 随后的 `assistant/message` 的 `data.usage` 是最终值（无 totalTokens） | 同文件最近一条 `type=="request/header"` 的 `data.header.config.model`，没有则 unknown |
 
-v3 的 `data.stream` 数组可能内嵌一份相同的 usage 块——只读 `data.usage`，绝不重复计数。字段拆分：`fresh_input=inputTokens`（未命中缓存的新鲜输入）、`output=outputTokens−reasoningTokens`、`reasoning=reasoningTokens`、`cache_read=cacheReadTokens`、`cache_write=0`（无该字段）。去重：同文件内按 `(turn, step)` 保留时间戳最大的一条（`last_usage_per_turn_step`，last-wins 同时覆盖 chunk+message 成对重复与渐进 0 值）；跨文件不去重（每文件独立会话）。`time` 为毫秒 epoch，换算成秒后再分桶。
+v3/v4 的 `data.stream` 数组可能内嵌一份相同的 usage 块——只读 `data.usage`，绝不重复计数。字段拆分：`fresh_input=inputTokens`（未命中缓存的新鲜输入）、`output=outputTokens−reasoningTokens`（v4 无 reasoning 字段，按 0）、`reasoning=reasoningTokens`、`cache_read=cacheReadTokens`、`cache_write=cacheWriteTokens`（v4 本机全部为 0，缺失记 0）。去重：同文件内按 `(turn, step)` 保留时间戳最大的一条（`last_usage_per_turn_step`，last-wins 同时覆盖 chunk+message 成对重复与渐进 0 值）；跨文件不去重（每文件独立会话）。`time` 为毫秒 epoch，换算成秒后再分桶。
 
-独立来源 `deepseek_harness`（scope `local_session_history`），分组 app 名 `dsh`。与 CC Switch 无重叠（其 app_type 不含 dsh），仍按统一模式调用 `app_imported_days` 保持诊断一致。错误码：目录不存在或没有任何 `session*.jsonl.zstd` → `dsh_sessions_not_found`（not_connected）；单文件解压/解析失败只跳过并计入 `diagnostics.skipped_session_files`，不炸整个来源。diagnostics 另有 v3/旧格式文件数与 `decompression_route`。配置项 `dsh_sessions_dir`（默认 `~/.dsh/sessions`）与 `zstd_binary`（默认 `shutil.which("zstd")`）。verify 对四个周期做独立重算对账（与 CC Switch 的交叉对账因无重叠日自动跳过）。
+独立来源 `deepseek_harness`（scope `local_session_history`），分组 app 名 `dsh`。CC Switch 4.0.22 新增 `dsh_session` 导入，因此按统一模式调用 `app_imported_days`：CC Switch 已导入的日期从直读中剔除。本机 CC Switch 的 dsh 覆盖 28 个日期，30 天 5,043 轮 / 1.22 亿 token、全部 15,250 轮 / 40.25 亿 token；直读原始 15,272 轮与 CC Switch 相差 22 轮（0.14%）。上游 dsh 导入把 `outputTokens` 原样入库（含 reasoning），直读按项目口径把 reasoning 拆出，所以 output 分项会漂移；verify 在请求数一致时把该交叉核对标为 `inconclusive_live_drift`，其余分项在容差内。错误码：目录不存在或没有任何 `session*.jsonl.zstd` → `dsh_sessions_not_found`（not_connected）；单文件解压/解析失败只跳过并计入 `diagnostics.skipped_session_files`，不炸整个来源。diagnostics 另有 v3/v4/旧格式文件数与 `decompression_route`。配置项 `dsh_sessions_dir`（默认 `~/.dsh/sessions`）与 `zstd_binary`（默认 `shutil.which("zstd")`）。verify 对四个周期做独立重算对账。
 
 ## Kimi 桌面端本地会话账本
 

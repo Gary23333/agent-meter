@@ -90,6 +90,7 @@ class CodexTests(unittest.TestCase):
         db = Path(tmp) / "cc.db"
         conn = sqlite3.connect(db)
         conn.execute("CREATE TABLE proxy_request_logs(id INTEGER PRIMARY KEY, created_at INTEGER, data_source TEXT, app_type TEXT)")
+        conn.execute("PRAGMA user_version=20")
         conn.executemany("INSERT INTO proxy_request_logs(created_at,data_source,app_type) VALUES(?,?,?)", rows)
         conn.commit()
         conn.close()

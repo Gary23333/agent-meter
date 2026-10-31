@@ -2,9 +2,10 @@
 
 ## CC Switch
 
-The SQL filtering and token normalization in `agent_meter/ccswitch_sql.py` and the MiniMax parsing in `agent_meter/minimax.py` are adapted from CC Switch 4.0.5.
+The SQL filtering and token normalization in `agent_meter/ccswitch_sql.py` are adapted from CC Switch 4.0.22. The MiniMax parsing in `agent_meter/minimax.py` remains adapted from CC Switch 4.0.5.
 
-Source: https://github.com/farion1231/cc-switch/tree/2db86e94da13365caae55bb08d09295e31500d21
+CC Switch 4.0.22 source: https://github.com/farion1231/cc-switch/tree/b76426741ef93069e2f374ac01ca7ef5760e1d0e
+CC Switch 4.0.5 source (MiniMax parsing): https://github.com/farion1231/cc-switch/tree/2db86e94da13365caae55bb08d09295e31500d21
 
 MIT License
 

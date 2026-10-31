@@ -110,6 +110,7 @@ class OpenCodeTests(unittest.TestCase):
             cc = Path(tmp) / "cc.db"
             conn = sqlite3.connect(cc)
             conn.execute("CREATE TABLE proxy_request_logs(id integer primary key, created_at integer, data_source text, app_type text)")
+            conn.execute("PRAGMA user_version=20")
             conn.execute("INSERT INTO proxy_request_logs(created_at,data_source,app_type) VALUES(?, 'opencode_session', 'opencode')",
                          [int(datetime(2026, 10, 8, 12, tzinfo=ZONE).timestamp())])
             conn.commit(); conn.close()
