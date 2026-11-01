@@ -1,11 +1,11 @@
 <!-- WORKSPACE-STATUS-START -->
 ## 当前入口与目录约定
 
-2026-10-30 整理。发布版本 0.9.6，包含性能与分享优化、统一人民币展示及人民币价格配置修复。
+2026-11-01 更新。发布版本 0.9.8（会话活动页签与轻量活动端点），已推送 GitHub 并发布 Release v0.9.8。
 
 - 目录导览：[STRUCTURE.md](STRUCTURE.md)。
 - AI 接手先读 [AGENTS.md](AGENTS.md)，再按任务阅读相应模块文档。
-- Git：当前内容已提交到本地 `main`，旧分支历史可从主线追溯，旧文件保留在恢复归档；未向远端推送。
+- Git：`main` 已推送到 `github.com/Gary23333/agent-meter`，二进制发布在 GitHub Releases（v0.9.8 起）。
 - 旧副本与旧包恢复位置：同级 `vibrcoding-整理恢复-2026-10-30/整理前完整快照/NEW-agent 统计/`。
 - 本次核验为目录、版本、引用与 Git 状态检查；下文既有测试数字属于对应历史批次。
 
