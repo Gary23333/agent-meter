@@ -1,5 +1,7 @@
 import sqlite3
+import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, time as datetime_time, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -84,6 +86,75 @@ def period_bounds(now, period, zone=DISPLAY_ZONE):
     return end - days * 86400, end
 
 
+_IMPORTED_DAYS_CACHE = ContextVar("ccswitch_imported_days_cache", default=None)
+
+
+class ImportedDaysCache:
+    """Thread-safe imported-day results bounded to one collector run."""
+
+    def __init__(self):
+        self._values = {}
+        self._key_locks = {}
+        self._lock = threading.Lock()
+        self._token = None
+
+    def __enter__(self):
+        self._token = _IMPORTED_DAYS_CACHE.set(self)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        _IMPORTED_DAYS_CACHE.reset(self._token)
+        self._token = None
+        with self._lock:
+            self._values.clear()
+            self._key_locks.clear()
+
+    @contextmanager
+    def activate(self):
+        """Make this run's cache visible inside a worker thread."""
+        token = _IMPORTED_DAYS_CACHE.set(self)
+        try:
+            yield
+        finally:
+            _IMPORTED_DAYS_CACHE.reset(token)
+
+    def get(self, key, loader):
+        with self._lock:
+            result = self._values.get(key)
+            key_lock = self._key_locks.setdefault(key, threading.Lock())
+        if result is None:
+            # Only identical keys serialize; different apps still read in parallel.
+            with key_lock:
+                with self._lock:
+                    result = self._values.get(key)
+                if result is None:
+                    days, state = loader()
+                    result = (frozenset(days), state)
+                    with self._lock:
+                        self._values[key] = result
+        return set(result[0]), result[1]
+
+
+def _read_imported_days(path, zone, app):
+    if not path.is_file():
+        return set(), "ccswitch_absent"
+    apps = {"claude": ("claude", "claude-desktop")}.get(app, (app,))
+    marks = ",".join("?" * len(apps))
+    try:
+        conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=3)
+        try:
+            conn.execute("PRAGMA query_only=ON")
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version not in SUPPORTED_SCHEMA:
+                return set(), "ccswitch_unsupported_schema"
+            rows = conn.execute("SELECT DISTINCT created_at FROM proxy_request_logs WHERE app_type IN (" + marks + ")", apps).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return set(), "ccswitch_read_failed"
+    return {datetime.fromtimestamp(r[0], zone).date().isoformat() for r in rows}, "checked"
+
+
 def app_imported_days(path, zone, app):
     """Local days CC Switch recorded for an app (any data source, folded).
 
@@ -94,24 +165,12 @@ def app_imported_days(path, zone, app):
     schema means CC Switch cannot contribute those rows either, so the
     caller must not exclude anything.
     """
-    path = Path(path).expanduser()
-    if not path.is_file():
-        return set(), "ccswitch_absent"
-    apps = {"claude": ("claude", "claude-desktop")}.get(app, (app,))
-    marks = ",".join("?" * len(apps))
-    try:
-        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
-        try:
-            conn.execute("PRAGMA query_only=ON")
-            version = conn.execute("PRAGMA user_version").fetchone()[0]
-            if version not in SUPPORTED_SCHEMA:
-                return set(), "ccswitch_unsupported_schema"
-            rows = conn.execute("SELECT created_at FROM proxy_request_logs WHERE app_type IN (" + marks + ")", apps).fetchall()
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return set(), "ccswitch_read_failed"
-    return {datetime.fromtimestamp(r[0], zone).date().isoformat() for r in rows}, "checked"
+    path = Path(path).expanduser().resolve()
+    cache = _IMPORTED_DAYS_CACHE.get()
+    key = (str(path), str(zone), app)
+    if cache is not None:
+        return cache.get(key, lambda: _read_imported_days(path, zone, app))
+    return _read_imported_days(path, zone, app)
 
 
 def rollup_bounds(start, end, zone=DISPLAY_ZONE):
@@ -148,7 +207,6 @@ def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE, price_table=None, m
     raw_conditions = [x for x in detail_conditions[1:]]
     raw_where = " AND ".join(raw_conditions) or "1=1"
     raw_count = conn.execute("SELECT COUNT(*) FROM proxy_request_logs l WHERE " + raw_where, params).fetchone()[0]
-    retained_count = conn.execute("SELECT COUNT(*) FROM proxy_request_logs l WHERE " + detail_where, params).fetchone()[0]
     lower, upper = rollup_bounds(start, end, zone)
     roll_conditions, roll_params = [f"r.app_type <> '{app}'" for app in DIRECT_PRIMARY_APPS], []
     if lower is not None:
@@ -202,6 +260,7 @@ def summarize(conn, start=None, end=None, zone=DISPLAY_ZONE, price_table=None, m
                 target[dest] += integer(row[src])
             target[kind + "_requests"] += row["requests"]
             target["estimated_cost_usd"] += Decimal(row["cost"])
+    retained_count = sum(row["detail_requests"] for row in groups.values())
     # Rows CC Switch could not price (unknown model) get an API-equivalent
     # estimate once the model is resolved, but only in USD so the source's
     # unit stays consistent; CC Switch's own non-zero estimates are kept.

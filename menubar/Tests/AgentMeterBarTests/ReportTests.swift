@@ -45,6 +45,23 @@ final class ReportTests: XCTestCase {
         XCTAssertNil(ReportData.build(snapshot: try snapshot("[]"), period: .today, now: Date()))
     }
 
+    func testMergedCacheReusesOnlyCurrentSnapshotPeriods() throws {
+        let first = try snapshot("[]")
+        let second = try snapshot("[]")
+        let cache = LocalUsageMergedCache()
+        let value: JSON = .object(["totals": .object(["total_tokens": .number(42)])])
+
+        XCTAssertEqual(cache.value(for: first, period: .today) { value }, value)
+        XCTAssertEqual(cache.value(for: first, period: .today) { .null }, value)
+        XCTAssertEqual(cache.computations, 1)
+        XCTAssertEqual(cache.value(for: first, period: .month) { value }, value)
+        XCTAssertEqual(cache.computations, 2)
+        XCTAssertEqual(cache.value(for: second, period: .today) { .null }, .null)
+        XCTAssertEqual(cache.computations, 3)
+        XCTAssertEqual(cache.value(for: second, period: .today) { value }, .null)
+        XCTAssertEqual(cache.computations, 3, "Empty projections should be cached too")
+    }
+
     func testDateRangeUsesBeijingCalendar() throws {
         let snap = try snapshot("""
         [{"id":"kimi","metrics":{"tokens":{"value":{"periods":{"7d":{"totals":{},"groups":[]}}}}}}]

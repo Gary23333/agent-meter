@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .ccswitch import collect_ccswitch
+from .ccswitch import ImportedDaysCache, collect_ccswitch
 from .agy_tokens import collect_antigravity_sessions
 from .agy_quota import collect_antigravity_quota
 from .claude_code import collect_claude, collect_claude_web
@@ -283,8 +283,16 @@ def collect(config=None,now=None):
         base=key.split("#",1)[0]
         return base in config["disabled_sources"] or base in user_off
     sources=[]
-    with ThreadPoolExecutor(max_workers=min(16,max(4,len(jobs)))) as pool:
-        futures={key:pool.submit(safe_collect,key,scope,now,fn) for key,(scope,fn) in jobs.items()
+    imported_days=ImportedDaysCache()
+    def with_imported_days(fn):
+        def run():
+            with imported_days.activate():
+                return fn()
+        return run
+    # The context exits only after every worker finishes, then clears all
+    # entries so a later collection always observes the current database.
+    with imported_days, ThreadPoolExecutor(max_workers=min(16,max(4,len(jobs)))) as pool:
+        futures={key:pool.submit(safe_collect,key,scope,now,with_imported_days(fn)) for key,(scope,fn) in jobs.items()
                  if not switched_off(key)}
         # Parse the local session logs alongside the network jobs. submit()
         # runs immediately, so the user switches must gate each one.
@@ -302,7 +310,7 @@ def collect(config=None,now=None):
             ("minimax_design",lambda:collect_design_tokens(config["design_opencode_db"],config["opencode_db"],now)),
         ):
             if not switched_off(provider):
-                token_futures[provider]=pool.submit(fn)
+                token_futures[provider]=pool.submit(with_imported_days(fn))
         # Codex 内置生图的按张统计（文件 + 历史库调用数），与账户网络无关。
         image_futures={}
         if not switched_off("codex"):

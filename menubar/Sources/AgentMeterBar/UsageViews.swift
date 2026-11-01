@@ -392,6 +392,38 @@ private struct PeriodSummary: View {
 }
 
 
+/// Keeps one snapshot's four period projections. Account cards, the usage tab
+/// and reports share these values; the 20-second countdown clock must not
+/// recompute every local ledger group. A new snapshot replaces the whole cache
+/// so old aggregate trees are released instead of accumulating between polls.
+final class LocalUsageMergedCache {
+    private let lock = NSLock()
+    private var identity: UUID?
+    private var values: [Period: JSON?] = [:]
+    private(set) var computations = 0
+
+    func value(for snapshot: Snapshot, period: Period, compute: () -> JSON?) -> JSON? {
+        lock.lock()
+        if identity == snapshot.identity, let cached = values[period] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        let computed = compute()
+
+        lock.lock()
+        if identity != snapshot.identity {
+            identity = snapshot.identity
+            values.removeAll()
+        }
+        values[period] = computed
+        computations += 1
+        lock.unlock()
+        return computed
+    }
+}
+
 /// One local-usage view summing every local token ledger: CC Switch's imports
 /// plus the direct readers (Kimi Code, ZCode, OpenCode, WorkBuddy, and the
 /// Codex / Claude Code / Gemini / MiniMax Code session logs). They record
@@ -399,6 +431,8 @@ private struct PeriodSummary: View {
 /// it never imported — so the sum has no double counting, and the tab works
 /// on machines without CC Switch at all.
 enum LocalUsage {
+    private static let mergedCache = LocalUsageMergedCache()
+
     /// Per-app totals from the same merged chain the usage tab renders, so an
     /// account card's token rows can never disagree with the tab. Keys are the
     /// group app names; callers map provider ids ("minimax_code" → "mcode").
@@ -473,6 +507,12 @@ enum LocalUsage {
     }
 
     static func merged(snapshot: Snapshot, period: Period) -> JSON? {
+        mergedCache.value(for: snapshot, period: period) {
+            computeMerged(snapshot: snapshot, period: period)
+        }
+    }
+
+    private static func computeMerged(snapshot: Snapshot, period: Period) -> JSON? {
         var base: JSON?
         var totals: [String: JSON] = ["requests": .number(0), "fresh_input": .number(0), "output": .number(0),
                                       "cache_read": .number(0), "cache_write": .number(0), "total_tokens": .number(0)]

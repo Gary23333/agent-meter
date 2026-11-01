@@ -1,14 +1,17 @@
 import json
 import sqlite3
 import tempfile
+import threading
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from agent_meter.ccswitch import (app_imported_days, collect_ccswitch, readonly_database,
                                   rollup_bounds, summarize, validate_schema)
-from agent_meter.model import SourceError
+from agent_meter.collector import collect
+from agent_meter.model import SourceError, metric
 from agent_meter.prices import PriceTable
 from agent_meter.verify import reference_ccswitch
 from tests.support import database, insert
@@ -200,6 +203,59 @@ class CCSwitchTests(unittest.TestCase):
         self.assertEqual(result['totals']['fresh_input'],90)
         self.assertEqual(result['raw_detail_records'],3)
         for k,v in expected.items():self.assertEqual(result['totals'][k],v,k)
+
+    def test_retained_detail_count_excludes_rollup_requests(self):
+        insert(self.c,'proxy',input_tokens=100,created_at=1000)
+        insert(self.c,'session',input_tokens=100,created_at=1100,data_source='codex_session')
+        self.c.execute("INSERT INTO usage_daily_rollups(date,request_count,success_count) "
+                       "VALUES('1970-01-01',7,7)")
+        self.c.commit()
+        with readonly_database(self.path) as c:
+            result=summarize(c)
+        self.assertEqual(result['raw_detail_records'],2)
+        self.assertEqual(result['deduplicated_detail_records'],1)
+        self.assertEqual(result['suppressed_duplicate_records'],1)
+        self.assertEqual(result['totals']['requests'],8)
+        self.assertEqual(sum(g['detail_requests'] for g in result['groups']),1)
+
+    def test_collect_cache_is_shared_and_cleared_between_runs(self):
+        insert(self.c,'first',created_at=1000)
+        barrier=threading.Barrier(2)
+        real_connect=sqlite3.connect
+        disabled=["ccswitch","kimi","qoder","minimax_code","dreamina","minimax_design",
+                  "deepseek_api","workbuddy","trae_cn","zcode","opencode","gemini","antigravity",
+                  "deepseek_harness","kimi_desktop","mimo","stepfun","volcengine","reset_forecast"]
+        config={"runtime_dir":self.tmp.name,"app_roots":[],"ccswitch_db":str(self.path),
+                "disabled_sources":disabled}
+
+        def fake_days(*args,**kwargs):
+            # Both workers request the same key concurrently; only one may read SQLite.
+            barrier.wait(5)
+            days,state=app_imported_days(self.path,ZoneInfo('Asia/Shanghai'),'codex')
+            return metric({"periods":{},"observed_days":sorted(days),"overlap_state":state})
+
+        def dead(*args,**kwargs):
+            raise SourceError("connection_failed")
+
+        with patch('agent_meter.ccswitch.sqlite3.connect',side_effect=real_connect) as connect, \
+                patch('agent_meter.collector.collect_codex',side_effect=dead), \
+                patch('agent_meter.collector.collect_claude',side_effect=dead), \
+                patch('agent_meter.collector.codex_tokens_metric',side_effect=fake_days), \
+                patch('agent_meter.collector.claude_tokens_metric',side_effect=fake_days), \
+                patch('agent_meter.collector.codex_image_metric',return_value=metric({"count":0})):
+            first=collect(config,now=2000)
+            self.assertEqual(connect.call_count,1)
+            for source_id in ('codex','claude'):
+                source=next(s for s in first['sources'] if s['id']==source_id)
+                self.assertEqual(source['metrics']['tokens']['value']['observed_days'],['1970-01-01'])
+
+            insert(self.c,'second',created_at=86400)
+            second=collect(config,now=2000)
+            self.assertEqual(connect.call_count,2)
+            for source_id in ('codex','claude'):
+                source=next(s for s in second['sources'] if s['id']==source_id)
+                self.assertEqual(source['metrics']['tokens']['value']['observed_days'],
+                                 ['1970-01-01','1970-01-02'])
 
     def test_app_imported_days_requires_supported_schema(self):
         # If the CC Switch reader cannot run, direct readers must not exclude
