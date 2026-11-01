@@ -146,6 +146,33 @@ wire.jsonl 口径（与 CLI Kimi Code 相同）：
 
 与已接 CLI `kimi` 来源的关系：两者按 session id 与逐条 usage 记录比对**零重叠**（2026-10-26 实测 153 个会话 / 7,896 轮 / 约 6.36 亿 token，覆盖 2026-06-05 至今），因此**不合并也不剔除**：不套用 CC Switch 式重叠剔除，两条账本各自独立汇总；CC Switch 的 `kimi-for-coding` 是它路由的另一客户端，与这两个账本都不重叠。verify 对四个周期的 totals 与按模型分项做独立重算对账。
 
+## 会话活动（GET /v1/activity，schema 1）
+
+`agent_meter/activity.py` 提供一个**独立于全量快照的轻量活动视图**：只扫最近窗口（`activity_window_hours`，默认 24 小时），按会话/线程聚合，绝不触发完整账户采集与全历史解析；文件源先按 mtime 预过滤（窗口外文件不解压不解析），解析结果进独立的 4 MB 小缓存（不挤占 token 账本的 16 MB 共享缓存）。服务端 `SnapshotService.activity()` 额外做 3 秒 TTL 防抖（配置变更即失效重算），菜单栏活动页按 5 秒（页签可见）/15 秒（后台有进行中）/120 秒（空闲）轮询该端点。**只读 usage、status 与路径元数据；绝不读提示词、对话正文、工具输出与会话标题**。费用按 USD 价格表逐模型匹配估算（`estimated_cost_usd`，无匹配模型的行留空——未计价 ≠ 0）。
+
+响应字段：`schema_version=1`、`generated_at`、`window_hours`、`idle_after_minutes`、`window_start`、`activities[]`、`sources_meta`（各来源 `available`/`not_connected`/`error` + 活动行数；单来源失败不拖垮端点）。
+
+状态词汇（分级严格，`unknown` 绝不等于失败）：
+
+| 状态 | 判定依据 |
+| --- | --- |
+| `running` 进行中 | 最近事件在空闲阈值内（`activity_idle_minutes`，默认 15 分钟）——必须有明确活动证据 |
+| `suspected_ended` 疑似结束 | 超过空闲阈值没有新事件；不宣称成功 |
+| `completed` / `failed` / `cancelled` | **只接受明确状态事件** |
+| `unknown` 未知 | 日志截断、状态值不认识、覆盖不足 |
+
+每行带 `granularity`（行的粒度）与 `status_basis`（`recency`=按最近活动推断 / `explicit_event`=明确事件）、`notes`（粒度局限的稳定键）。**回合完成 ≠ 整个会话完成，子代理完成 ≠ 根任务完成，停止写入不能算成功，应用退出也不能算失败**——因此会话行的自身状态只取 `running`/`suspected_ended`（recency），明确的终态事件降一级放在 `turn_statuses` / `last_turn_status` / `recent_turns`（最多 5 个回合的时间线：起止、终态、模型、步数、token）。`subagent` 标注子代理会话（ZCode `sess_subagent_*`、Claude `isSidechain`、Kimi 非 main agent）。
+
+| 来源（app） | granularity | 会话状态依据 | 明确终态事件的出处 | 项目路径 |
+| --- | --- | --- | --- | --- |
+| `zcode` | `turn` | recency | `model_usage.status`（completed/error/cancelled，按 turn 聚合）；0 token 行不用于推断状态 | `session.directory` |
+| `deepseek_harness` | `turn_steps` | recency | v4/v3 `turn/end` 的 `data.reason.kind`（completed→completed、aborted→cancelled、其余→unknown）；usage 仍按 (turn, step) last-wins 去重 | v4 `session` 头行的 `cwd`（不解码目录名，避免 `-` 歧义） |
+| `kimi` / `kimi_desktop` | `steps` | recency | `turn.ended` 的 `reason`（completed→completed 等，未知值→unknown）；`usageScope=session` 记录照旧排除 | 无（别名用 workspace 目录名，不透明但稳定） |
+| `codex_images` | `image_call` | **explicit** | `thread_items` 的 imageGeneration 调用状态：generating→running、最后调用 failed→failed、completed→completed（该库 3.5 GB，`history_threads` 走 600 秒进程内缓存，进行中状态最多滞后 10 分钟；调用状态只代表调用，不代表整个 Codex 会话） | 无 |
+| `claude` / `gemini` / `opencode` | `recent_activity` | recency only | 无终态事件（停止写入 ≠ 成功）；Claude 读 assistant 行的 `message.usage` 与 `cwd`、Gemini 读 `tokens` 行（fresh=input−cached）、OpenCode 读 `message.data.tokens` | Claude `cwd`；OpenCode `session.directory`；Gemini 无（项目哈希不可解 → 未归属） |
+
+隐私与性能红线：配置项 `activity_window_hours`/`activity_idle_minutes` 只影响本端点；窗口过滤按事件时间而不是文件时间；dsh 损坏文件跳过计数不报错；ZCode/OpenCode 侧 schema 不满足时该来源 `not_connected`（`unsupported_zcode_usage_schema`/`unsupported_opencode_schema`）。`GET /v1/activity` 与快照端点同样受 Bearer token、Host 白名单与无 query 参数限制；**调用它绝不会触发 `/v1/refresh` 式全量采集**（有测试断言）。
+
 ## 本地价格表与 API 等价估算
 
 `GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}, peak_multipliers, aliases}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（含 2026-10-15 与 2026-10-28 增补）：取有官方刊例的一侧币种，另一侧按 7.25 汇率折算并在 GET 的 `converted_patterns` 中列出（双向：仅 USD 刊例的折成 CNY，仅 CNY 刊例的国产模型折成 USD）；用户编辑过的条目移出该列表。CNY 表中，官方人民币刊例的模型优先于 `models.dev` 目录的美元折算值（目录按美元下发，折算可能覆盖国内价），目录只在没有官方人民币价时参与折算。匹配规则（2026-10-15 起先归一化再匹配）：两侧都取最后一个 `/` 之后的模型 id、转小写并把 `.` 统一成 `-`（`account:bigmodel-coding-plan/GLM-5.3-Flash`、`glm-5-3-flash`、`GLM-5.3.Flash` 都命中 `glm-5.3-flash`），归一化后精确命中优先、否则取最长子串 pattern；快照里的 `model` 字段保留原始拼写。
