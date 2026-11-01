@@ -46,9 +46,13 @@ HISTORY_CACHE_MAX = 4
 
 _png_cache = {}       # path -> ((mtime_ns, size), width, height)
 _history_cache = {}   # path -> (stamp, expires_at, statuses|None)
+_thread_cache = {}    # path -> (stamp, expires_at, threads|None)
 
 HISTORY_SQL = ("SELECT created_at_ms, json_extract(item_json,'$.status')"
                " FROM thread_items WHERE item_type='imageGeneration'")
+
+THREAD_HISTORY_SQL = ("SELECT thread_id, created_at_ms, json_extract(item_json,'$.status')"
+                      " FROM thread_items WHERE item_type='imageGeneration'")
 
 
 def resolve_quality(quality):
@@ -210,6 +214,61 @@ def history_statuses(history_db, now=None):
         oldest = min(_history_cache, key=lambda k: _history_cache[k][1])
         del _history_cache[oldest]
     return statuses
+
+
+def read_history_threads(history_db):
+    """[(thread_id, created_at_ms, status)]；读不到返回 None（与 statuses 同样降级）。
+
+    活动页按 thread 聚合需要 thread_id；该库很大，只 select 三个标量，
+    绝不 select item_json 整列。
+    """
+    path = Path(history_db).expanduser()
+    if not path.is_file():
+        return None
+    uri = path.resolve().as_uri()
+    conn = None
+    try:
+        try:
+            conn = sqlite3.connect(uri + "?mode=ro", uri=True, timeout=3)
+            conn.execute("PRAGMA query_only=ON")
+            rows = conn.execute(THREAD_HISTORY_SQL).fetchall()
+        except sqlite3.Error:
+            if conn is not None:
+                conn.close()
+            conn = sqlite3.connect(uri + "?immutable=1", uri=True, timeout=3)
+            conn.execute("PRAGMA query_only=ON")
+            rows = conn.execute(THREAD_HISTORY_SQL).fetchall()
+        return [(row[0], row[1], row[2]) for row in rows
+                if isinstance(row[0], str) and isinstance(row[1], int)
+                and not isinstance(row[1], bool)]
+    except (sqlite3.Error, OSError, ValueError):
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def history_threads(history_db, now=None):
+    """带进程内缓存的 per-thread 调用列表；None 也会被缓存（TTL 与 statuses 一致）。"""
+    if history_db is None:
+        return None
+    path = Path(history_db).expanduser()
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = str(path)
+    stamp = (st.st_mtime_ns, st.st_size)
+    current = time.time() if now is None else float(now)
+    cached = _thread_cache.get(key)
+    if cached is not None and cached[0] == stamp and current < cached[1]:
+        return cached[2]
+    threads = read_history_threads(path)
+    _thread_cache[key] = (stamp, current + HISTORY_TTL_SECONDS, threads)
+    if len(_thread_cache) > HISTORY_CACHE_MAX:
+        oldest = min(_thread_cache, key=lambda k: _thread_cache[k][1])
+        del _thread_cache[oldest]
+    return threads
 
 
 def _money(usd, currency):

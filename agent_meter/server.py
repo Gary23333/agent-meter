@@ -82,6 +82,11 @@ def make_server(service,token,port=8769):
                                     "sync":catalog_status(service.config["runtime_dir"]),
                                     "converted_patterns":sorted(table.converted)})
                 return
+            if route.path=="/v1/activity":
+                # Lightweight recent-activity scan; independent of the full snapshot.
+                try:self.send_json(200,service.activity())
+                except Exception:self.send_json(500,{"error":"activity_failed"})
+                return
             if route.path not in {"/v1/snapshot","/v1/coverage","/v1/sources"}:
                 self.send_json(404,{"error":"not_found"});return
             try:

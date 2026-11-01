@@ -142,6 +142,22 @@ struct BackendClient {
         return json
     }
 
+    /// Recent session/turn activity. A lightweight local scan on the backend;
+    /// unlike snapshot() this never triggers full account collection.
+    func activity() async throws -> ActivityFeed {
+        let r = try request("v1/activity", timeout: 30)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        if http.statusCode == 401 { throw BackendError.unauthorized }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+        guard let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return ActivityFeed(json)
+    }
+
     func snapshot(force: Bool) async throws -> Snapshot {
         let r = try request(force ? "v1/refresh" : "v1/snapshot", method: force ? "POST" : "GET", timeout: 120)
         let data: Data, resp: URLResponse

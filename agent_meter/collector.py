@@ -84,7 +84,9 @@ def default_config():
             "codexbar_binary":shutil.which("codexbar"),"enable_codexbar":False,
             # 即梦 is read from its web page by the app; the CLI route is opt-in.
             "enable_dreamina_cli":False,
-            "disabled_sources":[],"timeout_seconds":20,"codex_timeout_seconds":45,"cache_ttl_seconds":120}
+            "disabled_sources":[],"timeout_seconds":20,"codex_timeout_seconds":45,"cache_ttl_seconds":120,
+            # 会话活动页：只扫最近窗口，空闲阈值判定「进行中」证据。
+            "activity_window_hours":24,"activity_idle_minutes":15}
 
 
 def _raise(error):
@@ -411,6 +413,46 @@ class SnapshotService:
         self.snapshot=None
         self.last_refresh=0
         self.generation=0
+        # Activity endpoint: an independent lightweight scan with its own
+        # short cache; it must never wait behind a full snapshot collection.
+        self.activity_lock=threading.Lock()
+        self._activity=None
+        self._activity_at=0
+        self._activity_generation=-1
+
+    def activity(self,now=None):
+        """Recent session/turn activity, cached for a few seconds.
+
+        The cache also invalidates on any config change (generation bump),
+        so price edits re-cost the rows on the next read.
+        """
+        from .activity import collect_activity
+        from .prices import load_prices
+        current=self.clock() if now is None else float(now)
+        ttl=min(3,max(1,int(self.config.get("cache_ttl_seconds",120))//40))
+        with self.lock:
+            generation=self.generation
+            if self._activity is not None and generation==self._activity_generation \
+                    and current-self._activity_at<ttl:
+                return copy.deepcopy(self._activity)
+        with self.activity_lock:
+            with self.lock:
+                generation=self.generation
+                current=self.clock() if now is None else float(now)
+                if self._activity is not None and generation==self._activity_generation \
+                        and current-self._activity_at<ttl:
+                    return copy.deepcopy(self._activity)
+                config=self.config
+            try:
+                table=load_prices(config["runtime_dir"],"USD")
+            except Exception:
+                table=None
+            payload=collect_activity(config,now=current,table=table)
+            with self.lock:
+                self._activity=payload
+                self._activity_at=current
+                self._activity_generation=generation
+            return copy.deepcopy(payload)
 
     def _invalidate(self):
         self.last_refresh=0

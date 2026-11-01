@@ -133,6 +133,8 @@ final class UsageStore {
         await pushPreferences()
         await fetch(force: false)
         startLoops()
+        // 会话活动 uses its own lightweight endpoint and cadence.
+        ActivityTracker.shared.start()
         loops.append(Task { [weak self] in
             while !Task.isCancelled {
                 await self?.syncModelCatalog()

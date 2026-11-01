@@ -1,11 +1,12 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case accounts, forecast, usage, apps
+    case accounts, activity, forecast, usage, apps
     var id: String { rawValue }
     var label: String {
         switch self {
         case .accounts: return "账户额度"
+        case .activity: return "会话活动"
         case .forecast: return "重置预测"
         case .usage: return "本机消耗"
         case .apps: return "应用覆盖"
@@ -146,6 +147,7 @@ struct PanelView: View {
             if let error = store.errorMessage { ErrorBanner(message: error) }
             switch Tab(rawValue: tabRaw) ?? .accounts {
             case .accounts: AccountsView(snapshot: snapshot, now: store.now)
+            case .activity: ActivityView()
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now)
             case .apps: AppsView(snapshot: snapshot)
