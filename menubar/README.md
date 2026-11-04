@@ -12,13 +12,13 @@
 - **多账号**：网页登录来源每个最多 5 个账号（「连接网页账户」里「添加账号…」，可填备注如「主号」「小号」）。每个账号单独成卡、单独进行情条和提醒，余额不相加。后端第一个账号仍用原来源 id（如 `qoder`），其余为 `qoder#2`… 并带 `account_label`。
 - **即梦网页登录**：登录时记录页面接口的字段结构（`.runtime/dreamina-discovery.json`，不含值）。之后 App 每 30 分钟在隐藏网页视图里打开已登录的即梦页面，只从页面**自身**发出的 `subscription/user_info`、`benefits/user_credit` 响应中取白名单字段（会员等级、到期、续费、是否取消续费、会员 / 赠送 / 购买积分及各自失效时间），uid 只转成匿名账户指纹，经 `PUT /v1/observations` 交给后端内存。即梦只走网页登录：第一个登录账号为 `dreamina`，其余为 `dreamina#2`…（无备注时显示「账号 N」）；CLI 路线保留但默认关闭（配置 `enable_dreamina_cli`）。不伪造签名、msToken、x-bogus，也不重放请求。即梦没有单独的「积分更新时间」字段，会员积分失效时间按原值显示，不推算。
 - **Kimi Code 本机 Token**：读取 `~/.kimi-code/sessions/**/agents/*/wire.jsonl` 中每轮唯一的 `usage.record`（`usageScope=turn`）；`step.end`、消息元数据、`subagent.completed` 是同一数据的重复，不计入；`session` 范围记录含义未确认，排除并计数。按文件 mtime / size 缓存（全量约 0.3 秒，增量约 0.05 秒）。
-- **本机消耗合并**：「本机消耗」把 CC Switch 历史与各直读账本（Kimi Code、ZCode、OpenCode、WorkBuddy 及四家 CLI 会话日志）合成一份（总量、构成、按应用、模型排行）。不同来源记录不同客户端（CC Switch 里的 `kimi-for-coding` 是经它路由的 Claude Code，不是 Kimi Code 应用；CC Switch 已导入的日子直读侧动态剔除），相加不重复。估算费用 = CC Switch 自带 USD 估价 + 本地价格表估算（USD 按固定汇率 1:7.25 换算为人民币后相加），按应用与模型排行各带金额，无定价模型按用量列名。
-- **API 密钥**：「连接网页账户 / API 密钥」里填写 DeepSeek、MiniMax Code（Token Plan），存入钥匙串，经同一内存通道交给后端；DeepSeek / MiniMax 仍兼容环境变量。
+- **本机消耗合并**：「本机消耗」把全部本机账本合成一份（总量、构成、按应用、模型排行）：各直读账本（Kimi Code / Kimi 桌面端、ZCode、OpenCode、WorkBuddy、Codex / Claude Code + Claude 桌面端 local-agent / Gemini / MiniMax Code、Antigravity、DeepSeek Harness）加一次性历史导入 `imported_history`。每个账本独立计量，不做跨账本日期剔除；历史导入只补本地账本没有数据的日期或按模型补差。估算费用统一由本地价格表逐模型计算（USD 按固定汇率 1:7.25 换算为人民币后相加），按应用与模型排行各带金额，无定价模型按用量列名。
+- **API 密钥**：「连接网页账户 / API 密钥」里填写 DeepSeek、MiniMax Code（Token Plan），存入钥匙串，经同一内存通道交给后端；MiniMax Code 还支持环境变量 `MINIMAX_TOKEN_PLAN_KEY` 与 `<runtime>/secrets/minimax_code.json`（迁移脚本一次性写入，0600），DeepSeek 仍兼容 `DEEPSEEK_API_KEY`。
 - **ZCode**（实验性）：「连接网页账户」里登录智谱开放平台并打开 Coding Plan 用量页，自动捕获页面自己发往 bigmodel.cn 的查询凭据（只回放给同一允许的主机）；也可粘贴 Coding Plan API Key。显示 5 小时 / 每周额度（已用 / 总量、周重置时间）与 MCP 月度次数，最多 5 个账号。重置卡只在 ZCode 桌面端，当前路线不读取。
 - **火山方舟 Coding Plan**：推荐在「连接网页账户」里登录火山引擎控制台并停在 Coding Plan 订阅页，App 记下页面自己的 `GetCodingPlanUsage` 请求（地址与 CSRF 头）和登录 Cookie，后端只回放这一个允许的查询，不需要任何密钥；也可填写访问控制里的 AccessKey（AK/SK）走签名的 OpenAPI。方舟控制台的 API Key 只能调用模型、无法查询用量，误填时会提示。两条路线都不发模型请求、不消耗额度，显示 5 小时 / 每周 / 每月三个窗口与重置时间，最多 5 个账号。
 - **小米 MiMo API**：在内嵌窗口登录 MiMo 开放平台控制台，读取账户余额（现金 / 赠送）与 Token Plan 本月用量；只转发控制台自身的 Cookie。MiMo 的推理 API Key 无权查询余额。
 - **阶跃星辰 (StepFun)**：「连接网页账户」里登录 `platform.stepfun.com` 并停在「订阅 / 用量」页，App 只保留页面自己的 `Oasis-Token`（控制台会话里其余 Cookie 会让查询接口拒绝请求），读取账户余额（充值 / 赠送）与 STEP plan 用量——老 Coding Plan 的 5 小时 / 每周窗口，或 Token Plan 的月度积分池——外加套餐名与到期日。也可粘贴开放平台 API Key，走官方 `GET /v1/accounts`，但只能读余额。最多 5 个账号。
-- **Claude Code**：设置菜单「读取 Claude 额度」可单独关闭（经 `PUT /v1/preferences`，关闭后不读钥匙串也不请求）。开启时优先用 claude.ai 网页登录，否则读 Claude Code 的钥匙串登录，查询 5 小时 / 7 天窗口；不刷新令牌。
+- **Claude Code**：设置菜单「读取 Claude 额度」可单独关闭（经 `PUT /v1/preferences`，关闭后不读钥匙串也不请求）。本地 Claude Code 与 Claude 桌面端 local-agent 的 token 历史不受该开关影响，仍按本机账本计入。开启时优先用 claude.ai 网页登录，否则读 Claude Code 的钥匙串登录，查询 5 小时 / 7 天窗口；不刷新令牌。
 - **界面风格**：面板标题栏的调色板按钮或设置菜单「界面风格」，在四套风格间切换（立即生效、记住选择）：「极简」黑白排版、无卡片无阴影；「原生」macOS 系统实色卡片；「极光」毛玻璃与彩色光斑（默认）；「霓虹」赛博霓虹，固定深色，背景光效由 Core Animation 驱动。网页账户窗口跟随同一风格。
 - **统一卡片结构**：各供应商账户卡按同一顺序显示：额度窗口（短窗口在前，均为进度条，「1 周」统一写作「7 天」）→ 余额与积分包（缩进）→ 积分更新 → 重置卡（明细紧跟其后）→ 续费 / 会员到期 → Token。倒计时 3 天内统一标橙，不按品牌色着色。
 - **自定义排序**：设置菜单「调整卡片顺序…」，拖动或用箭头排序；账户卡片、顶部仪表、菜单栏行情、提醒都按此顺序。
@@ -27,7 +27,7 @@
 - **一键打开**：每张账户卡、「未接入」行、驾驶舱仪表、按应用行、应用覆盖列表都可直接打开对应应用（按后端发现的路径）；Qoder 有 CN / CN IDE 两个应用时弹出选择；没有桌面应用的即梦、DeepSeek 打开官网。
 - **账户额度**：Codex 环形余量、重置倒计时、逐张重置卡到期；Kimi 多窗口进度条；MiniMax Design 钱包、积分包失效、积分更新与续费倒计时；即梦积分；DeepSeek 余额旁新增网页用量「今日 / 近 3 天 / 近 7 天」金额、Token 与请求数，附近 7 日金额柱图（仅展示、不计入本机消耗）；未接入来源及原因。
 - **本机消耗**：全部本机账本今日 / 7 天 / 30 天 / 全部的 Token 总量、API 等价估算费用、输入/输出/缓存构成、按应用和模型排行（含金额、模型名去掉供应方前缀）；下界、无定价请求与未计价模型单独标注。
-- **应用覆盖**：每个已发现应用十一类指标的接入状态。
+- **应用**页按应用归集近期会话和十一类指标。每张卡片显示今日 Token，展开后可查看累计直读、历史导入、指标状态和会话详情。无近期会话的已安装应用，以及只有本机账本的 CLI 同样可查看。
 - 时间按北京时间显示，倒计时本地每 20 秒更新；每 5 分钟读取一次快照（后端缓存 120 秒），刷新按钮调用 `POST /v1/refresh`。失败时保留上次数据并提示。
 
 ## 报告与内存优化

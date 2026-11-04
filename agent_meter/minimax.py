@@ -5,9 +5,7 @@ Read credentials in memory only; never execute provider usage scripts.
 """
 import json
 import os
-import sqlite3
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from .model import SourceError, metric, number, source, timestamp
 from .transport import get_json
@@ -37,35 +35,30 @@ def normalize_minimax(payload,now):
     return out
 
 
-def credential_from_ccswitch(path):
-    """Select a unique current MiniMax endpoint/key, without running scripts."""
-    path=Path(path).expanduser()
-    if not path.is_file():return None,None
-    conn=sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=3)
+def credential_from_local_store(runtime_dir):
+    """API key copied once into the project's own runtime store (0600)."""
+    path = Path(runtime_dir).expanduser() / "secrets" / "minimax_code.json"
+    if not path.is_file():
+        return None, None
     try:
-        conn.execute('PRAGMA query_only=ON')
-        keys=set()
-        for (text,) in conn.execute('SELECT settings_config FROM providers WHERE is_current=1'):
-            try:
-                config=json.loads(text)
-                env=config.get('env',{})
-                base=env.get('ANTHROPIC_BASE_URL')
-                key=env.get('ANTHROPIC_AUTH_TOKEN') or env.get('ANTHROPIC_API_KEY')
-                host=urlsplit(base or '').hostname
-                if host in {'api.minimaxi.com','api.minimax.cn','api.minimax.io'} and isinstance(key,str) and key:
-                    keys.add((key,'global' if host=='api.minimax.io' else 'cn'))
-            except (ValueError,AttributeError,TypeError):continue
-        if len(keys)>1:raise SourceError('multiple_minimax_accounts_require_selection')
-        return next(iter(keys)) if keys else (None,None)
-    finally:conn.close()
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None, None
+    key = data.get("api_key") if isinstance(data, dict) else None
+    region = data.get("region", "cn") if isinstance(data, dict) else "cn"
+    if not isinstance(key, str) or not key:
+        return None, None
+    return key, (region if region in {"cn", "global"} else "cn")
 
 
-def collect_minimax(ccswitch_db,now,timeout=15,app_key=None):
-    key=app_key or os.environ.get('MINIMAX_TOKEN_PLAN_KEY')
-    region=os.environ.get('MINIMAX_REGION','cn')
-    origin=('menubar_app' if app_key else 'environment') if key else 'ccswitch_current_provider'
-    if not key:key,region=credential_from_ccswitch(ccswitch_db)
-    if not key:raise SourceError('minimax_credential_not_connected')
+def collect_minimax(runtime_dir, now, timeout=15, app_key=None):
+    key = app_key or os.environ.get('MINIMAX_TOKEN_PLAN_KEY')
+    region = os.environ.get('MINIMAX_REGION', 'cn')
+    origin = ('menubar_app' if app_key else 'environment') if key else 'local_store'
+    if not key:
+        key, region = credential_from_local_store(runtime_dir)
+    if not key:
+        raise SourceError('minimax_credential_not_connected')
     if region not in {'cn','global'}:raise SourceError('invalid_minimax_region')
     # Current official FAQ endpoint; strictly validate the response contract.
     domain='www.minimax.cn' if region=='cn' else 'www.minimax.io'

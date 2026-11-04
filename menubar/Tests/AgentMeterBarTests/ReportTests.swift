@@ -8,7 +8,9 @@ final class ReportTests: XCTestCase {
 
     func testMixedSourcesConvertToSingleCurrencyAndPreserveReasoning() throws {
         let snap = try snapshot("""
-        [{"id":"ccswitch","scope":"local_imported_history","metrics":{"tokens":{"value":{"periods":{"7d":{"totals":{"total_tokens":100,"output":20,"estimated_cost_usd":2},"groups":[]}}}}}},
+        [{"id":"imported_history","scope":"local_imported_history","metrics":{
+           "tokens":{"value":{"periods":{"7d":{"totals":{"total_tokens":100,"output":20,"requests":4},"groups":[{"app":"codex","model":"gpt-5.4","total_tokens":100,"output":20}]}}}},
+           "cost":{"value":{"basis":"local_price_table","unit":"USD","periods":{"7d":{"amount":2,"models":{"gpt-5.4":2}}}}}}},
          {"id":"deepseek_harness","scope":"local_session_history","metrics":{
            "tokens":{"value":{"periods":{"7d":{"totals":{"total_tokens":50,"fresh_input":20,"output":10,"reasoning":20},"groups":[{"app":"dsh","model":"deepseek-v4","total_tokens":50,"reasoning":20,"peak":{"total_tokens":30},"offpeak":{"total_tokens":20}}]}}}},
            "cost":{"value":{"basis":"local_price_table","unit":"CNY","periods":{"7d":{"amount":3,"peak_models":{"deepseek-v4":2},"offpeak_models":{"deepseek-v4":1}}}}}}}]
@@ -25,6 +27,21 @@ final class ReportTests: XCTestCase {
         XCTAssertEqual(report.deepseek.totalTokens, 50)
         XCTAssertEqual(report.deepseek.peakCosts["CNY"], 2)
         XCTAssertEqual(report.deepseek.offpeakCosts["CNY"], 1)
+        XCTAssertTrue(report.sourceNote.contains("历史导入"))
+    }
+
+    func testSharedImportedModelCostsBelongToEachApp() throws {
+        let snap = try snapshot("""
+        [{"id":"imported_history","scope":"local_imported_history","metrics":{
+          "tokens":{"value":{"periods":{"7d":{"totals":{"total_tokens":15},"groups":[
+            {"app":"codex","model":"shared","total_tokens":10},{"app":"claude","model":"shared","total_tokens":5}]}}}},
+          "cost":{"value":{"basis":"local_price_table","unit":"CNY","periods":{"7d":{"amount":"3","models":{"shared":"3"},
+            "app_models":{"codex":{"shared":"2"},"claude":{"shared":"1"}}}}}}}}]
+        """)
+        let data = try XCTUnwrap(LocalUsage.merged(snapshot: snap, period: .week))
+        XCTAssertEqual(data["groups"].array.map { LocalUsage.groupCost($0, data: data)["CNY"] }, [2, 1])
+        XCTAssertEqual(Catalog.applicationID("codex_images"), "codex")
+        XCTAssertEqual(Catalog.applicationID("kimi_chat"), "kimi_desktop")
     }
 
     func testImageOnlyReportAndUnknownCalls() throws {
@@ -37,7 +54,7 @@ final class ReportTests: XCTestCase {
         XCTAssertEqual(report.totalTokens, 0)
         XCTAssertFalse(report.hasTokenUsage)
         XCTAssertEqual(report.costText, "—")
-        XCTAssertFalse(report.sourceNote.contains("CC Switch"))
+        XCTAssertTrue(report.sourceNote.contains("本机记录"))
         XCTAssertTrue(report.imageUsage?.partial == true)
     }
 

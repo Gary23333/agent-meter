@@ -1,15 +1,14 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case accounts, activity, forecast, usage, apps
+    case accounts, apps, forecast, usage
     var id: String { rawValue }
     var label: String {
         switch self {
         case .accounts: return "账户额度"
-        case .activity: return "会话活动"
         case .forecast: return "重置预测"
         case .usage: return "本机消耗"
-        case .apps: return "应用覆盖"
+        case .apps: return "应用"
         }
     }
 }
@@ -18,12 +17,14 @@ struct PanelView: View {
     @Environment(UsageStore.self) private var store
     @AppStorage("panelTab") private var tabRaw = Tab.accounts.rawValue
 
+    private var selectedTab: Tab { tabRaw == "activity" ? .apps : (Tab(rawValue: tabRaw) ?? .accounts) }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             if let snapshot = store.snapshot { CockpitStrip(snapshot: snapshot, now: store.now) }
             PillTabs(items: Tab.allCases, title: { $0.label },
-                     selection: Binding(get: { Tab(rawValue: tabRaw) ?? .accounts }, set: { tabRaw = $0.rawValue }))
+                     selection: Binding(get: { selectedTab }, set: { tabRaw = $0.rawValue }))
                 .padding(.horizontal, 14)
                 .padding(.bottom, 10)
 
@@ -145,12 +146,11 @@ struct PanelView: View {
     @ViewBuilder private func tabContent(_ snapshot: Snapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let error = store.errorMessage { ErrorBanner(message: error) }
-            switch Tab(rawValue: tabRaw) ?? .accounts {
+            switch selectedTab {
             case .accounts: AccountsView(snapshot: snapshot, now: store.now)
-            case .activity: ActivityView()
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now)
-            case .apps: AppsView(snapshot: snapshot)
+            case .apps: ActivityView(snapshot: snapshot)
             }
         }
         .padding(14)
@@ -193,7 +193,7 @@ struct PanelView: View {
             if let s = store.snapshot {
                 let summary = s.summary
                 Image(systemName: "square.stack.3d.up").font(.system(size: 10))
-                Text("\(Int(summary["applications"].double ?? 0)) 个应用 · \(Int(summary["available_fields"].double ?? 0)) 项已采集 · \(Int(summary["partial_fields"].double ?? 0)) 项部分")
+                Text("\(Int(summary["application_groups"].double ?? summary["applications"].double ?? 0)) 个应用 · \(Int(summary["available_fields"].double ?? 0)) 项已采集 · \(Int(summary["partial_fields"].double ?? 0)) 项部分")
             } else {
                 Text("本机只读 · 127.0.0.1:8769")
             }
@@ -290,73 +290,6 @@ struct ErrorBanner: View {
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.orange.opacity(0.1)))
     }
 }
-
-struct AppsView: View {
-    let snapshot: Snapshot
-
-    var body: some View {
-        let rows = snapshot.coverage.sorted { ($0.collected, $0.installed ? 1 : 0) > ($1.collected, $1.installed ? 1 : 0) }
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                legend("available", "已采集")
-                legend("partial", "部分")
-                legend("stale", "过期")
-                legend("error", "失败")
-                legend("not_connected", "未连接")
-                legend("not_supported", "未接入")
-            }
-            .padding(.horizontal, 2)
-            Card {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                    if i > 0 { Divider().opacity(0.28) }
-                    HStack(spacing: 7) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.name).font(.system(size: 12, weight: row.collected > 0 ? .semibold : .regular))
-                                .themeForeground(row.collected > 0 ? .primary : .secondary)
-                                .lineLimit(1)
-                            Text(row.installed ? (row.version.map { "v" + $0 } ?? "已安装") : "仅有历史记录")
-                                .font(.system(size: 9.5)).themeForeground(.tertiary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        HStack(spacing: 3) {
-                            ForEach(row.fields, id: \.name) { f in
-                                RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(Catalog.statusColor(f.status).opacity(f.status == "not_supported" || f.status == "not_provided" ? 0.38 : 0.88))
-                                    .frame(width: 7, height: 12)
-                                    .help("\(f.name)：\(Catalog.statusLabel(f.status))")
-                            }
-                        }
-                        .frame(width: 107, alignment: .leading)
-                        if row.installed, let path = row.path, path.hasSuffix(".app") {
-                            Button { AppLauncher.open(.init(id: path, name: row.name, path: path, url: nil)) } label: {
-                                Image(nsImage: AppLauncher.icon(atPath: path)).resizable().frame(width: 18, height: 18)
-                            }
-                            .buttonStyle(.plain)
-                            .help("打开 " + row.name)
-                        }
-                        Text("\(row.collected)/\(row.fields.count)")
-                            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
-                            .themeForeground(row.collected > 0 ? .primary : .tertiary)
-                            .frame(width: 34, alignment: .trailing)
-                    }
-                    .frame(minHeight: 32)
-                }
-            }
-            Text("每格对应一类指标：额度、重置、重置卡、积分、Token、费用、续费、续费倒计时、续费金额、积分更新、积分更新倒计时。")
-                .font(.system(size: 10)).themeForeground(.tertiary)
-                .padding(.horizontal, 2)
-        }
-    }
-
-    private func legend(_ status: String, _ text: String) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2).fill(Catalog.statusColor(status).opacity(status == "not_supported" ? 0.35 : 0.9))
-                .frame(width: 7, height: 10)
-            Text(text).font(.system(size: 10)).themeForeground(.secondary)
-        }
-    }
-}
-
 
 /// Cockpit row: one gauge per account, its quota windows as concentric rings
 /// (5 小时 outside, 7 天 inside); click opens the app.

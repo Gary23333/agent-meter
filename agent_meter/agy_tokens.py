@@ -18,10 +18,7 @@ usage.1 and usage.6 vary by conversation but stay constant across its steps
 and could not be identified; per the project's no-guessing rule they are
 excluded from the metrics. No checked step carried a cache-write value (the
 transcript field is null/zero), so cache_write is recorded as 0 and the
-diagnostics declare the decoded semantics. Databases are opened with
-mode=ro&immutable=1 because agy keeps its schema in an uncheckpointed WAL:
-rows still only in the WAL of a live conversation are not visible, so an
-active conversation's newest steps appear after the next checkpoint. On this
+diagnostics declare the decoded semantics. A read-only transaction includes committed WAL rows. On this
 machine the history starts 2026-06-17, exactly when the retired Gemini CLI
 wrote its last chat, so the gemini and antigravity sources are complementary,
 never overlapping. Only usage fields are read, never conversation text.
@@ -31,8 +28,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .ccswitch import app_imported_days
-from .cli_sessions import _file_records, _metric_value, _model, _nonneg, _prune
+from .cli_sessions import _metric_value, _model, _nonneg, _prune
+from .record_cache import records_cache, wal_stamp
 from .model import SourceError, metric, source
 
 LLM_STEP_TYPE = 15
@@ -103,11 +100,12 @@ def _generation_model(blob):
     return "unknown"
 
 
-def _parse_conversation(path):
+def _read_conversation(path, options):
     """[(epoch, model, input, output_total, thinking)] for one db file."""
-    conn = sqlite3.connect("file:" + str(path) + "?mode=ro&immutable=1", uri=True, timeout=3)
+    conn = sqlite3.connect(path.resolve().as_uri() + options, uri=True, timeout=3)
     try:
         conn.execute("PRAGMA query_only=ON")
+        conn.execute("BEGIN")
         steps = conn.execute("SELECT metadata FROM steps WHERE step_type=? ORDER BY idx",
                              (LLM_STEP_TYPE,))
         gens = iter(conn.execute("SELECT data FROM gen_metadata ORDER BY idx"))
@@ -126,6 +124,18 @@ def _parse_conversation(path):
         return records
     finally:
         conn.close()
+
+
+def _parse_conversation(path):
+    try:
+        return _read_conversation(path, "?mode=ro")
+    except sqlite3.OperationalError:
+        # A checkpointed WAL-mode database in a read-only directory may
+        # refuse to open without SHM. Its main file is complete only if no
+        # committed frames in a WAL could be lost.
+        if wal_stamp(path):
+            raise
+        return _read_conversation(path, "?mode=ro&immutable=1")
 
 
 def load_antigravity_roots(roots):
@@ -149,7 +159,8 @@ def load_antigravity_roots(roots):
                 stat = path.stat()
             except OSError:
                 continue
-            candidate = (stat.st_mtime_ns, stat.st_size, path)
+            wal = wal_stamp(path)
+            candidate = (max(stat.st_mtime_ns, wal[1] if wal else 0), stat.st_size, path)
             previous = chosen.get(path.stem)
             if previous is None:
                 chosen[path.stem] = candidate
@@ -160,21 +171,25 @@ def load_antigravity_roots(roots):
     records = []
     seen = set()
     skipped = len(roots) - len(present)
+    failed = 0
     for _mtime, _size, path in sorted(chosen.values(), key=lambda item: str(item[2])):
         seen.add(str(path))
         try:
-            file_records = _file_records(path, _parse_conversation)
+            file_records = records_cache.read(path, _parse_conversation, "_parse_conversation", sqlite_wal=True)
         except (sqlite3.Error, OSError):
+            failed += 1
             skipped += 1
             continue
         if not file_records:
             skipped += 1
             continue
-        records.extend((t, model, inp, out, think, cache_read, 0)
+        records.extend((t, model, inp, max(0, out - think), min(out, think), cache_read, 0)
                        for t, model, inp, out, think, cache_read in file_records)
     _prune(seen, "_parse_conversation")
     diagnostics = {"roots_declared": len(roots), "roots_present": len(present),
-                   "duplicate_conversation_ids": duplicates}
+                   "unreadable_dbs": failed, "duplicate_conversation_ids": duplicates}
+    if failed and failed == len(chosen):
+        raise SourceError("agy_conversations_unreadable")
     return records, skipped, diagnostics
 
 
@@ -183,32 +198,18 @@ def load_antigravity(root):
     return records, skipped
 
 
-def collect_antigravity_sessions(root, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai"),
+def collect_antigravity_sessions(root, now, zone=ZoneInfo("Asia/Shanghai"),
                                 desktop_root=None):
     roots = [root] if desktop_root is None else [root, desktop_root]
     records, skipped, diagnostics = load_antigravity_roots(roots)
-    # CC Switch's agy importer reads brain transcripts: on this machine it
-    # covered 3 of 19 history days and missed steps in old conversations.
-    # The conversation DBs are the complete ledger, so this source stays
-    # primary and does not skip CC Switch days (CC Switch excludes agy rows).
-    observed_agy, state_agy = app_imported_days(ccswitch_db, zone, "agy")
-    observed_old, state_old = app_imported_days(ccswitch_db, zone, "antigravity")
-    if state_agy == "checked" or state_old == "checked":
-        overlap_state = "checked"
-    elif state_agy == "ccswitch_absent" and state_old == "ccswitch_absent":
-        overlap_state = "ccswitch_absent"
-    else:
-        overlap_state = "ccswitch_read_failed"
     out = source("antigravity", "account", now)
-    value = _metric_value(records, now, zone, set(), "antigravity",
-                          "antigravity_conversations", "one_usage_per_llm_step", overlap_state)
+    value = _metric_value(records, now, zone, "antigravity",
+                          "antigravity_conversations", "one_usage_per_llm_step")
     # usage.5 is cache-read and matched the app's transcript field on every
     # checked step; cache-write is absent in all checked steps.
     value["cache_semantics"] = "f5_cache_read_verified_cache_write_absent"
     value["skipped_conversation_dbs"] = skipped
-    value["ccswitch_overlap"]["direct_primary"] = True
-    value["ccswitch_overlap"]["observed_imported_days"] = sorted(observed_agy | observed_old)
     out["diagnostics"].update(diagnostics)
-    out["diagnostics"]["ccswitch_policy"] = "direct_primary"
-    out["metrics"]["tokens"] = metric(value)
+    out["metrics"]["tokens"] = metric(value, status="partial" if diagnostics["unreadable_dbs"] else "available",
+                                     reason="agy_conversations_unreadable" if diagnostics["unreadable_dbs"] else None)
     return out

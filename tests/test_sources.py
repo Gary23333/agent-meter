@@ -132,7 +132,7 @@ class SourceTests(unittest.TestCase):
             second=collect_codex('unused',NOW+60,cwd=tmp,rpc_factory=TimeoutRPC)
             self.assertEqual(second['status'],'stale')
             self.assertEqual(second['diagnostics']['reason'],'rpc_timeout')
-            self.assertEqual(second['metrics']['quota']['status'],'available')
+            self.assertEqual(second['metrics']['quota']['status'],'stale')
             self.assertEqual(second['metrics']['tokens']['value']['lifetime_tokens'],100)
             self.assertEqual(second['observed_at']['epoch_seconds'],NOW)
             # The cache keeps normalized metrics only, never the raw account id.

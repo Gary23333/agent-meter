@@ -41,7 +41,7 @@ enum Catalog {
         case "mimo": return Brand(name: "MiMo API", symbol: "bolt.horizontal.fill", tint: Color(red: 1.0, green: 0.42, blue: 0.0))
         case "stepfun": return Brand(name: "阶跃星辰", symbol: "figure.stairs", tint: Color(red: 0.15, green: 0.55, blue: 0.95))
         case "reset_forecast": return Brand(name: "重置预测", symbol: "clock.arrow.2.circlepath", tint: Color(red: 0.42, green: 0.36, blue: 0.92))
-        case "ccswitch": return Brand(name: "CC Switch", symbol: "arrow.triangle.swap", tint: .orange)
+        case "imported_history": return Brand(name: "历史导入", symbol: "clock.arrow.circlepath", tint: Color(red: 0.45, green: 0.47, blue: 0.52))
         case "opencode": return Brand(name: "OpenCode", symbol: "terminal.fill", tint: Color(red: 0.45, green: 0.40, blue: 0.90))
         case "gemini": return Brand(name: "Gemini CLI", symbol: "diamond.fill", tint: Color(red: 0.26, green: 0.52, blue: 0.96))
         case "antigravity": return Brand(name: "Antigravity", symbol: "paperplane.fill", tint: Color(red: 0.30, green: 0.47, blue: 0.95))
@@ -106,6 +106,13 @@ enum Catalog {
         let map: [String: String] = [
             "source_does_not_return_field": "来源未返回此项",
             "cli_not_available": "未找到命令行工具",
+            "dsh_sessions_unreadable": "部分 DeepSeek Harness 会话日志无法读取",
+            "codex_state_not_found": "未找到 Codex 会话索引",
+            "codex_state_unreadable": "无法读取 Codex 会话索引",
+            "codex_rollout_unreadable": "部分 Codex 日志无法读取",
+            "unsupported_codex_state_schema": "Codex 会话索引格式暂未支持",
+            "agy_conversations_unreadable": "部分 Antigravity 会话库无法读取",
+            "local_only_mode": "本次仅采集本机账本",
             "rpc_timeout": "Codex 账户读取超时，正在使用上次数据",
             "rpc_disconnected": "Codex 后台连接已断开，正在使用上次数据",
             "rpc_request_failed": "Codex 服务暂时无法返回数据，正在使用上次数据",
@@ -118,7 +125,7 @@ enum Catalog {
             "qoder_sdk_not_installed": "未安装 Qoder SDK",
             "qoder_not_authenticated": "Qoder 未登录",
             "qoder_usage_unavailable": "Qoder 未返回用量",
-            "minimax_credential_not_connected": "未填写 API Key，CC Switch 中也没有可用的 MiniMax 供应方",
+            "minimax_credential_not_connected": "未填写 API Key，且网页登录不可用时无法查询",
             "deepseek_credential_not_connected": "未填写 API Key（在「连接网页账户 / API 密钥」里填写）",
             "zcode_credential_not_connected": "未连接（在「连接网页账户」里登录智谱开放平台，或粘贴 Coding Plan API Key）",
             "zcode_quota_api_error": "智谱返回错误",
@@ -284,6 +291,11 @@ enum Catalog {
         case nil: return ""
         default: return unit!
         }
+    }
+
+    static func applicationID(_ raw: String) -> String {
+        ["mcode": "minimax_code", "dsh": "deepseek_harness", "agy": "antigravity",
+         "kimi_chat": "kimi_desktop", "codex_images": "codex"][raw] ?? raw
     }
 
     static func appLabel(_ app: String) -> String {

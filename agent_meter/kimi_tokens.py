@@ -18,8 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
-from .ccswitch import period_bounds
-from .model import SourceError, metric, timestamp
+from .model import SourceError, metric, period_bounds, timestamp
 
 FIELDS = ("inputOther", "output", "inputCacheRead", "inputCacheCreation")
 MARKER = b'"usage.record"'
@@ -126,6 +125,8 @@ def collect_kimi_tokens(home, now, zone=ZoneInfo("Asia/Shanghai")):
         p["timezone"] = str(zone)
     daily = defaultdict(int)
     for t, _, fresh, out, read, write in records:
+        if t > now:
+            continue
         daily[datetime.fromtimestamp(t, zone).date().isoformat()] += fresh + out + read + write
     return metric({
         "periods": periods,

@@ -41,7 +41,7 @@ def read_credentials(home, timeout, security="/usr/bin/security"):
         except OSError:
             raise SourceError("claude_keychain_unavailable") from None
         if result.returncode == SECURITY_ITEM_NOT_FOUND:
-            # No claude.ai login: e.g. Claude Code runs on API keys / CC Switch providers.
+            # No claude.ai login: e.g. Claude Code runs on API keys / custom providers.
             raise SourceError("claude_subscription_login_missing")
         if result.returncode:
             raise SourceError("claude_keychain_denied")

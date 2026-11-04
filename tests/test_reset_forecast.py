@@ -331,7 +331,7 @@ class CollectTests(unittest.TestCase):
 
 class ServiceTests(unittest.TestCase):
     def config(self, tmp, **extra):
-        out = {"app_roots": [], "runtime_dir": tmp, "ccswitch_db": str(Path(tmp)/"none.db")}
+        out = {"app_roots": [], "runtime_dir": tmp, }
         out.update(extra)
         return out
 

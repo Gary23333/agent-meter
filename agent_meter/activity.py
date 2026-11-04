@@ -29,9 +29,12 @@ import json
 import time
 from pathlib import Path, PurePath
 
-from . import opencode_tokens, zcode_local
+from . import opencode_tokens, peak, zcode_local
+from .applications import app_id
+from .cli_sessions import _readonly_sqlite, _claude_paths
 from .codex_images import history_threads, resolve_history_db
-from .dsh_tokens import _ZSTD_ERRORS, _decompressed, _key_part, _route
+from .dsh_tokens import _key_part
+from .zstd_io import ZSTD_ERRORS as _ZSTD_ERRORS, decompressed as _decompressed, route as _route
 from .model import DISPLAY_ZONE, SourceError, timestamp
 from .record_cache import RecordCache
 
@@ -106,14 +109,42 @@ def _sort_key(row):
     return (STATUS_RANK.get(row["status"], 5), -stamp)
 
 
-def _cost_usd(table, model, tokens):
-    if table is None or not model or not tokens:
+def _cost_record(buckets, model, when, fresh, output, reasoning, read, write):
+    key = (model, not peak.is_offpeak(when))
+    bucket = buckets.setdefault(key, dict.fromkeys(TOKEN_KEYS, 0))
+    for field, value in zip(TOKEN_KEYS, (fresh, output, reasoning, read, write)):
+        bucket[field] += _nonneg(value)
+
+
+def _cost_usd(table, buckets):
+    if table is None or not buckets:
         return None
-    pattern = table.match(model)
-    if pattern is None:
-        return None
-    cost = table.cost_for(tokens, pattern)
-    return float(round(cost, 6))
+    total = 0
+    for (model, at_peak), counts in buckets.items():
+        pattern = table.match(model)
+        if not pattern:
+            return None
+        total += table.cost_for(counts, pattern, peak=at_peak)
+    return float(round(total, 6))
+
+
+def codex_activities(db_path, window_start, idle_seconds, now):
+    # Only thread metadata. The index's tokens_used is lifetime usage and
+    # cannot be attributed to this activity window.
+    with _readonly_sqlite(db_path, "codex_state_not_found", "codex_state_unreadable") as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(threads)")}
+        if not {"id", "cwd", "created_at", "updated_at"} <= cols:
+            raise SourceError("unsupported_codex_state_schema")
+        recency = "coalesce(recency_at,updated_at)" if "recency_at" in cols else "updated_at"
+        model = "model" if "model" in cols else "NULL"
+        subagent = "agent_role IS NOT NULL" if "agent_role" in cols else "0"
+        rows = conn.execute(f"SELECT id,cwd,created_at,{recency},{model},{subagent} FROM threads "
+                            f"WHERE {recency} BETWEEN ? AND ?", (window_start, now))
+        return [_activity("codex", "recent_activity", status=_recency_status(last, now, idle_seconds)[0],
+                          status_basis="recency", session_id=sid, project_path=cwd,
+                          started_at=start, last_event_at=last, last_model=name, subagent=sub,
+                          notes=NOTE_RECENCY_ONLY)
+                for sid, cwd, start, last, name, sub in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +163,8 @@ def zcode_activities(db_path, window_start, idle_seconds, now):
             "SELECT started_at, COALESCE(completed_at, started_at), session_id, turn_id,"
             " model_id, status, input_tokens, output_tokens, reasoning_tokens,"
             " cache_creation_input_tokens, cache_read_input_tokens"
-            " FROM model_usage WHERE started_at >= ? ORDER BY started_at",
-            (int(window_start * 1000),)).fetchall()
+            " FROM model_usage WHERE started_at BETWEEN ? AND ? ORDER BY started_at",
+            (int(window_start * 1000), int(now * 1000))).fetchall()
         directories = {}
         if {"id", "directory"} <= {r[1] for r in conn.execute("PRAGMA table_info(session)")}:
             directories = {r[0]: r[1] for r in conn.execute("SELECT id, directory FROM session")
@@ -143,12 +174,13 @@ def zcode_activities(db_path, window_start, idle_seconds, now):
             reasoning, cache_write, cache_read in rows:
         state = sessions.setdefault(session_id, {
             "started": None, "last": None, "requests": 0,
-            "tokens": dict.fromkeys(TOKEN_KEYS, 0), "models": {}, "turns": {}})
+            "tokens": dict.fromkeys(TOKEN_KEYS, 0), "costs": {}, "models": {}, "turns": {}})
         state["started"] = started_ms if state["started"] is None else min(state["started"], started_ms)
         state["last"] = ended_ms if state["last"] is None else max(state["last"], ended_ms)
         state["requests"] += 1
         for key, value in zip(TOKEN_KEYS, (fresh, output, reasoning, cache_read, cache_write)):
             state["tokens"][key] += _nonneg(value)
+        _cost_record(state["costs"], model_id, started_ms/1000, fresh, output, reasoning, cache_read, cache_write)
         state["models"][model_id] = ended_ms
         if turn_id:
             turn = state["turns"].setdefault(turn_id, {"start": None, "end": None,
@@ -178,7 +210,7 @@ def zcode_activities(db_path, window_start, idle_seconds, now):
             last_model=max(state["models"], key=state["models"].get) if state["models"] else None,
             requests=state["requests"], tokens=_tokens_dict(**state["tokens"]),
             subagent=session_id.startswith("sess_subagent"), notes=NOTE_TURN_NOT_SESSION,
-            extra={"turn_statuses": turn_statuses,
+            extra={"_costs": state["costs"], "turn_statuses": turn_statuses,
                    "last_turn_status": last_turn["status"] if last_turn else None,
                    "turns": len(state["turns"]) or None, "recent_turns": recent}))
     return out
@@ -196,7 +228,7 @@ def codex_image_activities(history_db, window_start, idle_seconds, now):
     per_thread = {}
     for thread_id, created_ms, status in threads:
         seconds = created_ms / 1000
-        if seconds < window_start:
+        if not window_start <= seconds <= now:
             continue
         state = per_thread.setdefault(thread_id, {
             "started": seconds, "last": seconds, "calls": 0, "failed": 0, "generating": 0,
@@ -208,7 +240,8 @@ def codex_image_activities(history_db, window_start, idle_seconds, now):
             state["failed"] += 1
         elif status == "generating":
             state["generating"] += 1
-        state["last_status"] = status if isinstance(status, str) else "unknown"
+        if seconds == state["last"]:
+            state["last_status"] = status if isinstance(status, str) else "unknown"
     out = []
     for thread_id, state in sorted(per_thread.items()):
         generating = state["generating"] > 0
@@ -220,9 +253,6 @@ def codex_image_activities(history_db, window_start, idle_seconds, now):
             status, basis = "completed", "explicit_event"
         else:
             status, basis = "unknown", "explicit_event"
-        # Recent event recency wins over a possibly 600 s-stale explicit status.
-        if not generating and status != "running" and now - state["last"] <= idle_seconds:
-            status, basis = "running", "recency"
         out.append(_activity(
             "codex_images", "image_call", status=status, status_basis=basis,
             session_id=thread_id, started_at=state["started"], last_event_at=state["last"],
@@ -303,16 +333,17 @@ def _kimi_session_activities(root, app, window_start, idle_seconds, now):
         state = sessions.setdefault(str(session_dir), {
             "workspace": session_dir.parent.name, "started": None, "last": None,
             "requests": 0, "tokens": dict.fromkeys(TOKEN_KEYS, 0),
-            "models": {}, "reasons": [], "turns": {}, "agents": {agent_dir}})
+            "models": {}, "costs": {}, "reasons": [], "turns": {}, "agents": {agent_dir}})
         state["agents"].add(agent_dir)
         for when, model, fresh, output, cache_read, cache_write in usage:
-            if when < window_start:
+            if not window_start <= when <= now:
                 continue
             state["requests"] += 1
             state["tokens"]["fresh_input"] += fresh
             state["tokens"]["output"] += output
             state["tokens"]["cache_read"] += cache_read
             state["tokens"]["cache_write"] += cache_write
+            _cost_record(state["costs"], model, when, fresh, output, 0, cache_read, cache_write)
             state["models"][model] = max(state["models"].get(model, 0), when)
             state["started"] = when if state["started"] is None else min(state["started"], when)
             state["last"] = when if state["last"] is None else max(state["last"], when)
@@ -320,25 +351,28 @@ def _kimi_session_activities(root, app, window_start, idle_seconds, now):
             existing = state["turns"].get(turn_id)
             if existing is None or (turn["end"] or 0) >= (existing["end"] or 0):
                 state["turns"][turn_id] = turn
-        for turn_id, turn in state["turns"].items():
-            if turn["start"]:
-                start = turn["start"] / 1000
-                state["started"] = start if state["started"] is None else min(state["started"], start)
-            if turn["end"]:
-                end = turn["end"] / 1000
-                state["last"] = end if state["last"] is None else max(state["last"], end)
-                if end >= window_start:
-                    state["reasons"].append((turn["end"], turn["reason"]))
     out = []
     for session_dir, state in sorted(sessions.items()):
+        visible_turns = {}
+        for turn_id, turn in state["turns"].items():
+            times = [t/1000 for t in (turn["start"], turn["end"]) if t and window_start <= t/1000 <= now]
+            if not times:
+                continue
+            visible_turns[turn_id] = turn
+            state["started"] = min([*times, state["started"]] if state["started"] else times)
+            state["last"] = max([*times, state["last"]] if state["last"] else times)
+            if turn["end"] and window_start <= turn["end"]/1000 <= now:
+                state["reasons"].append((turn["end"], turn["reason"]))
         last_event = state["last"]
+        if last_event is None:
+            continue
         status, basis = _recency_status(last_event, now, idle_seconds)
         turn_statuses = {}
         for _, reason in state["reasons"]:
             mapped = _terminal_status(reason)
             turn_statuses[mapped] = turn_statuses.get(mapped, 0) + 1
-        last_reason = max(state["reasons"])[1] if state["reasons"] else None
-        subagent = any(agent != "main" for agent in state["agents"])
+        last_reason = max(state["reasons"], key=lambda item: item[0])[1] if state["reasons"] else None
+        subagent = "main" not in state["agents"]
         out.append(_activity(
             app, "steps", status=status, status_basis=basis,
             session_id=Path(session_dir).name, project_path=None,
@@ -349,9 +383,9 @@ def _kimi_session_activities(root, app, window_start, idle_seconds, now):
             last_model=max(state["models"], key=state["models"].get) if state["models"] else None,
             requests=state["requests"] or None, tokens=_tokens_dict(**state["tokens"]) if state["requests"] else None,
             subagent=subagent, notes=NOTE_TURN_NOT_SESSION,
-            extra={"workspace": state["workspace"], "turn_statuses": turn_statuses,
+            extra={"_costs": state["costs"], "workspace": state["workspace"], "turn_statuses": turn_statuses,
                    "last_turn_status": _terminal_status(last_reason) if last_reason else None,
-                   "turns": len(state["turns"]) or None}))
+                   "turns": len(visible_turns) or None}))
     return out
 
 
@@ -480,9 +514,9 @@ def dsh_activities(sessions_dir, zstd_binary, window_start, idle_seconds, now):
         state["records"].extend(records)
     out = []
     for session_dir, state in sorted(sessions.items()):
-        records = [r for r in state["records"] if r["time"] and r["time"] / 1000 >= window_start]
+        records = [r for r in state["records"] if r["time"] and window_start <= r["time"] / 1000 <= now]
         tokens = dict.fromkeys(TOKEN_KEYS, 0)
-        models = {}
+        models, costs = {}, {}
         started = state["created"] / 1000 if state["created"] else None
         last = None
         for record in records:
@@ -493,6 +527,7 @@ def dsh_activities(sessions_dir, zstd_binary, window_start, idle_seconds, now):
             tokens["reasoning"] += reasoning
             tokens["cache_read"] += record["cache_read"]
             tokens["cache_write"] += record["cache_write"]
+            _cost_record(costs, record["model"], when, fresh, max(0, output-reasoning), reasoning, record["cache_read"], record["cache_write"])
             models[record["model"]] = when
             started = when if started is None else min(started, when)
             last = when if last is None else max(last, when)
@@ -503,6 +538,12 @@ def dsh_activities(sessions_dir, zstd_binary, window_start, idle_seconds, now):
                 continue
             mapped = _terminal_status(turn["reason"]) if turn["reason"] else "unknown"
             turn_statuses[mapped] = turn_statuses.get(mapped, 0) + 1
+        for turn in state["turns"].values():
+            for stamp in (turn["start"], turn["end"]):
+                if stamp and window_start <= stamp / 1000 <= now:
+                    last = max(last or 0, stamp / 1000)
+        if last is None:
+            continue
         recent_turns = sorted(state["turns"].items(), key=lambda kv: kv[1]["end"] or 0)[-RECENT_TURNS_LIMIT:]
         for turn_id, turn in recent_turns:
             recent.append({"turn": turn_id, "started_at": timestamp(turn["start"] / 1000) if turn["start"] else None,
@@ -521,7 +562,7 @@ def dsh_activities(sessions_dir, zstd_binary, window_start, idle_seconds, now):
             last_event_at=last, last_model=max(models, key=models.get) if models else None,
             requests=len(records) or None, tokens=_tokens_dict(**tokens) if records else None,
             notes=NOTE_TURN_NOT_SESSION,
-            extra={"turn_statuses": turn_statuses, "last_turn_status": last_turn,
+            extra={"_costs": costs, "turn_statuses": turn_statuses, "last_turn_status": last_turn,
                    "turns": len(state["turns"]) or None, "recent_turns": recent}))
     return out
 
@@ -532,7 +573,7 @@ def dsh_activities(sessions_dir, zstd_binary, window_start, idle_seconds, now):
 
 def _parse_claude_session(path):
     """(cwd, usage rows) for one transcript; message text never kept."""
-    rows, cwd = [], None
+    rows, cwd = {}, None
     with open(path, "rb") as handle:
         for line in handle:
             if b'"usage"' not in line or b'"message"' not in line:
@@ -560,24 +601,26 @@ def _parse_claude_session(path):
             details = usage.get("output_tokens_details")
             thinking = details.get("thinking_tokens") if isinstance(details, dict) else 0
             model = message.get("model")
-            rows.append({
+            key = o.get("requestId") or message.get("id") or o.get("uuid") or len(rows)
+            rows[key] = {
                 "time": seconds,
                 "model": model if isinstance(model, str) and model else "unknown",
                 "fresh": _nonneg(usage.get("input_tokens")),
                 "write": _nonneg(usage.get("cache_creation_input_tokens")),
                 "read": _nonneg(usage.get("cache_read_input_tokens")),
-                "output": _nonneg(usage.get("output_tokens")),
-                "reasoning": _nonneg(thinking) if not isinstance(thinking, bool) else 0,
-                "sidechain": bool(o.get("isSidechain"))})
-    return cwd, rows
+                "output": max(0, _nonneg(usage.get("output_tokens")) - _nonneg(thinking)),
+                "reasoning": min(_nonneg(usage.get("output_tokens")), _nonneg(thinking)),
+                "sidechain": bool(o.get("isSidechain"))}
+    return cwd, list(rows.values())
 
 
-def claude_activities(projects_dir, window_start, idle_seconds, now):
+def claude_activities(projects_dir, window_start, idle_seconds, now, desktop_root=None):
     root = Path(projects_dir)
-    if not root.is_dir():
+    paths = _claude_paths(root, desktop_root)
+    if not paths and not root.is_dir():
         raise SourceError("claude_projects_not_found")
     out = []
-    for path in root.glob("*/*.jsonl"):
+    for path in paths:
         try:
             mtime = path.stat().st_mtime
         except OSError:
@@ -588,11 +631,11 @@ def claude_activities(projects_dir, window_start, idle_seconds, now):
             cwd, rows = activity_cache.read(path, _parse_claude_session, ("activity_claude",))
         except OSError:
             continue
-        rows = [row for row in rows if row["time"] >= window_start]
+        rows = [row for row in rows if window_start <= row["time"] <= now]
         if not rows:
             continue
         tokens = dict.fromkeys(TOKEN_KEYS, 0)
-        models = {}
+        models, costs = {}, {}
         sidechain = True
         for row in rows:
             tokens["fresh_input"] += row["fresh"]
@@ -601,15 +644,16 @@ def claude_activities(projects_dir, window_start, idle_seconds, now):
             tokens["output"] += row["output"]
             tokens["reasoning"] += row["reasoning"]
             models[row["model"]] = row["time"]
+            _cost_record(costs, row["model"], row["time"], row["fresh"], row["output"], row["reasoning"], row["read"], row["write"])
             sidechain = sidechain and row["sidechain"]
         times = [row["time"] for row in rows]
-        status, basis = _recency_status(mtime, now, idle_seconds)
+        status, basis = _recency_status(max(times), now, idle_seconds)
         out.append(_activity(
             "claude", "recent_activity", status=status, status_basis=basis,
             session_id=path.stem, project_path=cwd, started_at=min(times),
-            last_event_at=mtime, last_model=max(models, key=models.get),
+            last_event_at=max(times), last_model=max(models, key=models.get),
             requests=len(rows), tokens=_tokens_dict(**tokens),
-            subagent=sidechain, notes=NOTE_RECENCY_ONLY))
+            subagent=sidechain, notes=NOTE_RECENCY_ONLY, extra={"_costs": costs}))
     return out
 
 
@@ -672,23 +716,24 @@ def gemini_activities(gemini_dir, window_start, idle_seconds, now):
             session_id, rows = activity_cache.read(path, _parse_gemini_chat, ("activity_gemini",))
         except OSError:
             continue
-        rows = [row for row in rows if row["time"] >= window_start]
+        rows = [row for row in rows if window_start <= row["time"] <= now]
         if not rows:
             continue
         tokens = dict.fromkeys(TOKEN_KEYS, 0)
-        models = {}
+        models, costs = {}, {}
         for row in rows:
             tokens["fresh_input"] += row["fresh"]
             tokens["output"] += row["output"]
             tokens["cache_read"] += row["read"]
             models[row["model"]] = row["time"]
+            _cost_record(costs, row["model"], row["time"], row["fresh"], row["output"], 0, row["read"], 0)
         times = [row["time"] for row in rows]
-        status, basis = _recency_status(mtime, now, idle_seconds)
+        status, basis = _recency_status(max(times), now, idle_seconds)
         out.append(_activity(
             "gemini", "recent_activity", status=status, status_basis=basis,
             session_id=session_id or path.stem, project_path=None, started_at=min(times),
-            last_event_at=mtime, last_model=max(models, key=models.get),
-            requests=len(rows), tokens=_tokens_dict(**tokens), notes=NOTE_RECENCY_ONLY))
+            last_event_at=max(times), last_model=max(models, key=models.get),
+            requests=len(rows), tokens=_tokens_dict(**tokens), notes=NOTE_RECENCY_ONLY, extra={"_costs": costs}))
     return out
 
 
@@ -707,15 +752,15 @@ def opencode_activities(db_path, window_start, idle_seconds, now):
                            if isinstance(r[1], str) and r[1]}
         sessions = {}
         for time_created, session_id, data in conn.execute(
-                "SELECT time_created, session_id, data FROM message WHERE time_created >= ?",
-                (int(window_start * 1000),)):
+                "SELECT time_created, session_id, data FROM message WHERE time_created BETWEEN ? AND ?",
+                (int(window_start * 1000), int(now * 1000))):
             parsed = opencode_tokens._tokens(data)
             if parsed is None:
                 continue
             model, fresh, output, reasoning, cache_read, cache_write = parsed
             state = sessions.setdefault(session_id, {
                 "started": None, "last": None, "requests": 0,
-                "tokens": dict.fromkeys(TOKEN_KEYS, 0), "models": {}})
+                "tokens": dict.fromkeys(TOKEN_KEYS, 0), "costs": {}, "models": {}})
             when = time_created / 1000
             state["requests"] += 1
             state["tokens"]["fresh_input"] += fresh
@@ -723,6 +768,7 @@ def opencode_activities(db_path, window_start, idle_seconds, now):
             state["tokens"]["reasoning"] += reasoning
             state["tokens"]["cache_read"] += cache_read
             state["tokens"]["cache_write"] += cache_write
+            _cost_record(state["costs"], model, when, fresh, output, reasoning, cache_read, cache_write)
             state["models"][model] = when
             state["started"] = when if state["started"] is None else min(state["started"], when)
             state["last"] = when if state["last"] is None else max(state["last"], when)
@@ -735,7 +781,7 @@ def opencode_activities(db_path, window_start, idle_seconds, now):
             started_at=state["started"], last_event_at=state["last"],
             last_model=max(state["models"], key=state["models"].get),
             requests=state["requests"], tokens=_tokens_dict(**state["tokens"]),
-            notes=NOTE_RECENCY_ONLY))
+            notes=NOTE_RECENCY_ONLY, extra={"_costs": state["costs"]}))
     return out
 
 
@@ -761,7 +807,12 @@ def collect_activity(config, now=None, table=None):
 
     entries = []
 
+    disabled = set(config.get("disabled_sources", [])) | set((config.get("preferences") or {}).get("disabled_sources", []))
+
     def run(name, fn):
+        if app_id(name) in disabled and name != "claude":
+            entries.append((name, [], {"status": "not_connected", "reason": "disabled_by_user", "activities": 0}))
+            return
         try:
             rows = fn()
             meta = {"status": "available", "activities": len(rows)}
@@ -772,6 +823,7 @@ def collect_activity(config, now=None, table=None):
         entries.append((name, rows, meta))
 
     run("zcode", lambda: zcode_activities(config["zcode_usage_db"], window_start, idle_seconds, now))
+    run("codex", lambda: codex_activities(config["codex_state_db"], window_start, idle_seconds, now))
     run("codex_images", lambda: codex_image_activities(config["codex_history_db"], window_start, idle_seconds, now))
     run("kimi", lambda: _kimi_session_activities(Path(config["home"]) / ".kimi-code/sessions",
                                                  "kimi", window_start, idle_seconds, now))
@@ -779,7 +831,8 @@ def collect_activity(config, now=None, table=None):
                                                          "kimi_desktop", window_start, idle_seconds, now))
     run("deepseek_harness", lambda: dsh_activities(config["dsh_sessions_dir"], config.get("zstd_binary"),
                                                    window_start, idle_seconds, now))
-    run("claude", lambda: claude_activities(config["claude_projects_dir"], window_start, idle_seconds, now))
+    run("claude", lambda: claude_activities(config["claude_projects_dir"], window_start, idle_seconds, now,
+                                             config.get("claude_desktop_sessions_dir")))
     run("gemini", lambda: gemini_activities(config["gemini_dir"], window_start, idle_seconds, now))
     run("opencode", lambda: opencode_activities(config["opencode_db"], window_start, idle_seconds, now))
 
@@ -788,8 +841,8 @@ def collect_activity(config, now=None, table=None):
         activities.extend(rows)
         sources_meta[name] = meta
     for row in activities:
-        if row["tokens"] is not None:
-            row["estimated_cost_usd"] = _cost_usd(table, row["last_model"], row["tokens"])
+        row["application_id"] = app_id(row["app"])
+        row["estimated_cost_usd"] = _cost_usd(table, row.pop("_costs", {}))
     activities.sort(key=_sort_key)
     return {
         "schema_version": 1,

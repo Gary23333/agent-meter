@@ -4,11 +4,8 @@
 messages carry data.tokens {total, input, output, reasoning,
 cache:{write,read}} where input is fresh (cache separate). Verified on
 this machine (2026-10-09): 12,324 token-bearing rows, all assistant, one
-per response. CC Switch imports the same OpenCode sessions
-(opencode_session rows, 94 records on 2026-09-29 vs 95 here): days CC
-Switch already imported are excluded from this source and stay counted
-by CC Switch, so the two never add up. Only token/model fields are
-selected; message text stays in the database.
+per response. Only token/model fields are selected; message text stays in
+the database.
 """
 import json
 import sqlite3
@@ -18,8 +15,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
-from .ccswitch import app_imported_days, period_bounds
-from .model import SourceError, metric, source, timestamp
+from .model import SourceError, metric, period_bounds, source, timestamp
 
 COLUMNS = {"time_created", "data"}
 
@@ -50,28 +46,19 @@ def validate_schema(conn):
         raise SourceError("unsupported_opencode_schema")
 
 
-def ccswitch_imported_days(path, zone):
-    """Local days CC Switch already imported for OpenCode (it stays primary)."""
-    return app_imported_days(path, zone, "opencode")
-
-
 def _close(bucket_values):
     """Attach total_tokens to a peak/off-peak accumulator."""
     bucket_values["total_tokens"] = peak.total(bucket_values)
     return bucket_values
 
 
-def summarize(rows, start, end, excluded):
+def summarize(rows, start, end):
     """rows are (day, ts_ms, model, fresh, output, reasoning, read, write)."""
     out = {"requests": 0, "fresh_input": 0, "output": 0, "reasoning": 0, "cache_read": 0, "cache_write": 0}
     split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
     models = {}
     model_splits = {}
-    excluded_here = set()
     for day, t, model, fresh, output, reasoning, cache_read, cache_write in rows:
-        if day in excluded:
-            excluded_here.add(day)
-            continue
         if (start is not None and t < start * 1000) or t > end * 1000:
             continue
         values = {"fresh_input": fresh, "output": output, "reasoning": reasoning,
@@ -98,11 +85,10 @@ def summarize(rows, start, end, excluded):
                         "total_tokens": sum(v[k] for k in ("fresh_input", "output", "reasoning", "cache_read", "cache_write")),
                         "peak": _close(model_splits[m]["peak"]),
                         "offpeak": _close(model_splits[m]["offpeak"])}
-                       for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])],
-            "excluded_ccswitch_days": sorted(excluded_here)}
+                       for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])]}
 
 
-def _tokens(data):
+def _tokens(data, *, include_agent=False):
     """Extract (model, fresh, output, reasoning, read, write) from a message row."""
     try:
         o = json.loads(data)
@@ -120,18 +106,23 @@ def _tokens(data):
               nonneg(cache.get("read")), nonneg(cache.get("write")))
     if any(v is None for v in values):
         return None
+    fresh, output, reasoning, read, write = values
+    if 0 < reasoning <= output and tokens.get("total") == fresh + output + read + write:
+        values = (fresh, output - reasoning, reasoning, read, write)
     model = o.get("modelID")
     model = model if isinstance(model, str) and 0 < len(model) < 120 else "unknown"
+    if include_agent:
+        agent = o.get("agent")
+        return (model, agent if isinstance(agent, str) and 0 < len(agent) < 60 else "unknown", *values)
     return (model, *values)
 
 
-def collect_opencode_tokens(path, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai")):
-    excluded, overlap_state = ccswitch_imported_days(ccswitch_db, zone)
+def collect_opencode_tokens(path, now, zone=ZoneInfo("Asia/Shanghai")):
     with readonly_database(path) as conn:
         validate_schema(conn)
         rows = []
         malformed = 0
-        for time_created, data in conn.execute("SELECT time_created, data FROM message"):
+        for time_created, data in conn.execute("SELECT time_created, data FROM message WHERE time_created <= ?", (now*1000,)):
             parsed = _tokens(data)
             if parsed is None:
                 if '"tokens"' in (data or ""):
@@ -139,13 +130,11 @@ def collect_opencode_tokens(path, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai
                 continue
             day = datetime.fromtimestamp(time_created / 1000, zone).date().isoformat()
             rows.append((day, time_created, *parsed))
-    periods = {p: summarize(rows, *period_bounds(now, p, zone), excluded) for p in ("today", "7d", "30d", "all")}
+    periods = {p: summarize(rows, *period_bounds(now, p, zone)) for p in ("today", "7d", "30d", "all")}
     for p in periods.values():
         p["timezone"] = str(zone)
     daily = {}
     for day, t, model, fresh, output, reasoning, cache_read, cache_write in rows:
-        if day in excluded:
-            continue
         daily[day] = daily.get(day, 0) + fresh + output + reasoning + cache_read + cache_write
     out = source("opencode", "local_session_history", now)
     out["metrics"]["tokens"] = metric({
@@ -154,7 +143,6 @@ def collect_opencode_tokens(path, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
         "coverage": "opencode_local_message_db",
         "dedup_rule": "one_assistant_message_per_response",
-        "ccswitch_overlap": {"state": overlap_state, "excluded_days": sorted(excluded)},
         "malformed_token_rows": malformed,
     })
     return out

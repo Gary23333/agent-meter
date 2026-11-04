@@ -9,31 +9,29 @@ from zoneinfo import ZoneInfo
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root))
-from agent_meter.ccswitch import collect_ccswitch
+from agent_meter.applications import application_usage
 from agent_meter.collector import coverage_matrix, coverage_summary
+from agent_meter.imported_history import collect_imported_history
 from agent_meter.model import SCHEMA_VERSION, metric, source, timestamp
-from tests.support import database, insert
 
 now = int(time.time())
 today = datetime.fromtimestamp(now, ZoneInfo("Asia/Shanghai")).date()
 output = root / ".runtime/readme-demo/snapshot.json"
 output.parent.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(dir=output.parent) as temp:
-    db_path = Path(temp) / "synthetic-history.db"
-    db = database(db_path)
+    detail = []
     for day in range(7):
-        for i, (app, model, base, cost) in enumerate([
-            ("codex", "gpt-5.4", 32000, "0.12"),
-            ("claude", "claude-sonnet-4.6", 24000, "0.09"),
-            ("gemini", "gemini-2.5-pro", 16000, "0.06"),
+        for i, (app, model, base) in enumerate([
+            ("codex", "gpt-5.4", 32000),
+            ("claude", "claude-sonnet-4.6", 24000),
+            ("gemini", "gemini-2.5-pro", 16000),
         ]):
             for turn in range(8):
-                insert(db, f"demo-{day}-{i}-{turn}", app_type=app, model=model,
-                       input_tokens=base, output_tokens=base // 4,
-                       cache_read_tokens=base * 2, cache_creation_tokens=base // 8,
-                       total_cost_usd=cost, created_at=now - day * 86400 - turn * 60)
-    db.close()
-    history = collect_ccswitch(db_path, now)
+                detail.append([app, model, now - day * 86400 - turn * 60,
+                               base, base // 4, base * 2, base // 8])
+    store = Path(temp) / "imported-history.json"
+    store.write_text(json.dumps({"schema": 1, "imported_at": now, "detail": detail, "daily": [], "apps": {}}))
+    history = collect_imported_history(store, now)
 
 def account(provider, scope, plan):
     row = source(provider, scope, now)
@@ -103,9 +101,9 @@ sources = [codex, kimi, design, history, forecast]
 apps = [{"name": name, "provider": provider, "installed": True, "path": None,
          "version": None, "bundle_id": None} for name, provider in [
     ("Codex", "codex"), ("Kimi Code", "kimi"), ("MiniMax Design", "minimax_design"),
-    ("Claude Code", "claude"), ("Gemini CLI", "gemini"), ("CC Switch", "ccswitch")]]
+    ("Claude Code", "claude"), ("Gemini CLI", "gemini")]]
 coverage = coverage_matrix(apps, sources)
 output.write_text(json.dumps({"schema_version": SCHEMA_VERSION, "collected_at": timestamp(now),
-    "served_from_cache": False, "sources": sources, "coverage": coverage,
+    "served_from_cache": False, "sources": sources, "application_usage": application_usage(sources), "coverage": coverage,
     "coverage_summary": coverage_summary(coverage)}, ensure_ascii=False, indent=2) + "\n")
 print(output)

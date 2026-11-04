@@ -132,7 +132,7 @@ def make_server(service,token,port=8769):
                 self.send_json(200,{"disabled_sources":sorted(set(off))});return
             if self.path=="/v1/prices":
                 try:
-                    from .prices import PRICE_KEYS, save_prices
+                    from .prices import PRICE_KEYS
                     from .model import SourceError
                     if not isinstance(body,dict) or set(body)-{"currency","models","aliases","peak_multipliers"} \
                             or body.get("currency") not in {"USD","CNY"} or not isinstance(body.get("models"),dict) \
@@ -145,9 +145,7 @@ def make_server(service,token,port=8769):
                             raise ValueError()
                     aliases=body.get("aliases",{})
                     peak_multipliers=body.get("peak_multipliers")
-                    saved=save_prices(service.config["runtime_dir"],body["currency"],body["models"],
-                                      aliases,peak_multipliers)
-                    service.set_prices(body["currency"],body["models"],aliases,peak_multipliers)
+                    saved=service.set_prices(body["currency"],body["models"],aliases,peak_multipliers)
                     self.send_json(200,saved);return
                 except (ValueError, SourceError):
                     self.send_json(400,{"error":"invalid_prices"});return

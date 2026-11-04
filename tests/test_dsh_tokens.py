@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from agent_meter import dsh_tokens
+from agent_meter import zstd_io
 from agent_meter.collector import collect
 from agent_meter.dsh_tokens import collect_dsh_sessions
 from agent_meter.model import SourceError
@@ -23,14 +23,14 @@ from agent_meter.model import SourceError
 NOW = int(datetime(2026, 10, 9, 4, 0, tzinfo=timezone.utc).timestamp())
 ZONE = ZoneInfo("Asia/Shanghai")
 LOCAL_TODAY = "2026-10-09"
-ROUTE = dsh_tokens._route(shutil.which("zstd"))
+ROUTE = zstd_io.route(shutil.which("zstd"))
 
 
 def write_zstd(path, records):
     path.parent.mkdir(parents=True, exist_ok=True)
     data = ("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n").encode()
-    if dsh_tokens._HAS_STDLIB_ZSTD:
-        path.write_bytes(dsh_tokens._zstd.compress(data))
+    if zstd_io.HAS_STDLIB_ZSTD:
+        path.write_bytes(zstd_io._zstd.compress(data))
     else:
         with open(path, "wb") as handle:
             subprocess.run([shutil.which("zstd"), "-zc"], input=data, stdout=handle, check=True)
@@ -94,7 +94,7 @@ class DshTokenTests(unittest.TestCase):
                 v3_message(ms_at(9, 11), 1, 2, "mimo-v2.5-pro", 50, 30, reasoning=5, stream_copy=True),
                 v3_message(ms_at(8), 2, 1, "deepseek-v4-flash", 10, 3, reasoning=1, cache_read=7),
             ])
-            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)
             self.assertEqual((out["id"], out["scope"]), ("deepseek_harness", "local_session_history"))
             allp = totals(out)
             # fresh 160; output (40-10)+(30-5)+(3-1)=57; reasoning 16; read 207 — stream copy not re-counted.
@@ -124,7 +124,7 @@ class DshTokenTests(unittest.TestCase):
                 v4_message(ms_at(9, 10), 1, 1, "deepseek-flash", 100, 40, cache_read=200, cache_write=3),
                 v4_message(ms_at(9, 11), 1, 2, "deepseek-flash", 50, 30, cache_read=20),
             ])
-            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)
             allp = totals(out)
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"],
                               allp["reasoning"], allp["cache_read"], allp["cache_write"]),
@@ -142,7 +142,7 @@ class DshTokenTests(unittest.TestCase):
                 v3_message(ms_at(9, 10), 1, 1, "m", 100, 40, reasoning=10, cache_read=200),
                 v3_message(ms_at(9, 11), 1, 1, "m", 150, 45, reasoning=5, cache_read=210),  # later wins
             ])
-            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)
             allp = totals(out)
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["cache_read"]), (1, 150, 210))
 
@@ -156,7 +156,7 @@ class DshTokenTests(unittest.TestCase):
                           "usage": {"inputTokens": 1, "outputTokens": 2, "cacheReadTokens": 0,
                                     "reasoningTokens": 0, "totalTokens": 3}}},  # no message.source
             ])
-            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)
             model_groups = out["metrics"]["tokens"]["value"]["periods"]["all"]["groups"]
             self.assertEqual([g["model"] for g in model_groups], ["deepseek-v4-pro"])
 
@@ -170,7 +170,7 @@ class DshTokenTests(unittest.TestCase):
                 legacy_chunk(ms_at(9, 11), 2, 1, 10, 2),
                 legacy_final(ms_at(9, 11), 2, 1, 12, 3, reasoning=1),                     # same ts, later line wins
             ])
-            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)
             allp = totals(out)
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"],
                               allp["reasoning"], allp["cache_read"]), (2, 62, 17, 6, 80))
@@ -189,7 +189,7 @@ class DshTokenTests(unittest.TestCase):
                 legacy_header(ms_at(9, 10, 30), "model-b"),
                 legacy_final(ms_at(9, 10, 40), 1, 3, 3, 3),
             ])
-            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)
             models = {g["model"]: g["requests"] for g in out["metrics"]["tokens"]["value"]["periods"]["all"]["groups"]}
             self.assertEqual(models, {"unknown": 1, "model-a": 1, "model-b": 1})
 
@@ -204,7 +204,7 @@ class DshTokenTests(unittest.TestCase):
                 v3_message(int(datetime(2026, 8, 20, 10, tzinfo=ZONE).timestamp() * 1000),
                            1, 4, "m", 8, 8),                          # outside 30d
             ])
-            value = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)["metrics"]["tokens"]["value"]
+            value = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)["metrics"]["tokens"]["value"]
             self.assertEqual([value["periods"][p]["totals"]["requests"] for p in ("today", "7d", "30d", "all")],
                              [1, 2, 3, 4])
             self.assertEqual([b["date"] for b in value["daily_buckets"]],
@@ -218,28 +218,28 @@ class DshTokenTests(unittest.TestCase):
             write_zstd(root / "s2" / "session.v3.jsonl.zstd",
                        [v3_message(ms_at(9), 1, 1, "m", 999, 999)])
             (root / "s2" / "session.v3.jsonl.zstd").write_bytes(b"corrupt-not-zstd")
-            out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE)
             self.assertEqual(out["diagnostics"]["skipped_session_files"], 1)
             self.assertEqual(totals(out)["fresh_input"], 100)
 
     def test_missing_dir_and_no_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SourceError) as ctx:
-                collect_dsh_sessions(Path(tmp) / "none", Path(tmp) / "none.db", NOW, ZONE)
+                collect_dsh_sessions(Path(tmp) / "none", NOW, ZONE)
             self.assertEqual(ctx.exception.code, "dsh_sessions_not_found")
             empty = Path(tmp) / "empty"
             empty.mkdir()
             with self.assertRaises(SourceError) as ctx:
-                collect_dsh_sessions(empty, Path(tmp) / "none.db", NOW, ZONE)
+                collect_dsh_sessions(empty, NOW, ZONE)
             self.assertEqual(ctx.exception.code, "dsh_sessions_not_found")
 
     def test_zstd_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = sessions_root(tmp) / "p" / "s"
             write_zstd(root / "session.v3.jsonl.zstd", [v3_message(ms_at(9), 1, 1, "m", 1, 1)])
-            with patch.object(dsh_tokens, "_HAS_STDLIB_ZSTD", False):
+            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False):
                 with self.assertRaises(SourceError) as ctx:
-                    collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE, zstd_binary=None)
+                    collect_dsh_sessions(sessions_root(tmp), NOW, ZONE, zstd_binary=None)
                 self.assertEqual(ctx.exception.code, "zstd_unavailable")
 
     def test_zstd_cli_route_when_stdlib_missing(self):
@@ -252,8 +252,8 @@ class DshTokenTests(unittest.TestCase):
                 legacy_header(ms_at(9, 9), "m"),
                 legacy_final(ms_at(9, 10), 1, 1, 7, 3, reasoning=1, cache_read=5),
             ])
-            with patch.object(dsh_tokens, "_HAS_STDLIB_ZSTD", False):
-                out = collect_dsh_sessions(sessions_root(tmp), Path(tmp) / "none.db", NOW, ZONE, zstd_binary=binary)
+            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False):
+                out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE, zstd_binary=binary)
             self.assertEqual(out["diagnostics"]["decompression_route"], "zstd_cli")
             allp = totals(out)
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"],
@@ -261,7 +261,7 @@ class DshTokenTests(unittest.TestCase):
 
 
 class DshCollectorIntegrationTests(unittest.TestCase):
-    ALL = ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
+    ALL = ["codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
            "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity", "mimo",
            "stepfun", "volcengine", "reset_forecast"]
 
@@ -272,7 +272,6 @@ class DshCollectorIntegrationTests(unittest.TestCase):
                        [v3_message(ms_at(9), 1, 1, "mimo-v2.5-pro", 100, 40, reasoning=10, cache_read=200)])
             config = {"runtime_dir": tmp, "app_roots": [],
                       "dsh_sessions_dir": str(sessions_root(tmp)), "zstd_binary": shutil.which("zstd"),
-                      "ccswitch_db": str(Path(tmp) / "none.db"),
                       "disabled_sources": list(self.ALL)}
             snap = collect(config, now=NOW)
             dsh = next(s for s in snap["sources"] if s["id"] == "deepseek_harness")

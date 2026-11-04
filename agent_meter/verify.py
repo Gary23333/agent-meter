@@ -11,65 +11,8 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .ccswitch import readonly_database, summarize, validate_schema, period_bounds
-from .model import METRICS, SourceError, timestamp
+from .model import DISPLAY_ZONE, METRICS, SourceError, period_bounds, timestamp
 from .reset_forecast import SOURCES as FORECAST_SOURCES
-
-
-def reference_ccswitch(conn,start,end,zone):
-    columns="app_type,model,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,input_token_semantics,total_cost_usd,status_code,created_at,data_source"
-    rows=[dict(r) for r in conn.execute("SELECT "+columns+" FROM proxy_request_logs")]
-    # agy is counted by the direct Antigravity source; CC Switch's transcript
-    # importer covers only part of its history, so its agy rows stay out here.
-    rows=[r for r in rows if r["app_type"] not in {"agy"}]
-    proxy_index=defaultdict(list)
-    for r in rows:
-        if (r["data_source"] or "proxy")=="proxy" and 200<=r["status_code"]<300:
-            proxy_index[(r["app_type"],r["input_tokens"],r["output_tokens"],r["cache_read_tokens"])].append(r)
-    totals=dict(requests=0,successful_requests=0,fresh_input=0,output=0,cache_read=0,cache_write=0)
-    cost=Decimal(0)
-
-    def add(r,count,successes):
-        nonlocal cost
-        value=r["input_tokens"]
-        if r["app_type"] in ("codex","gemini","grokbuild") and r["input_token_semantics"]!=2:
-            deduction=r["cache_read_tokens"]+(r["cache_creation_tokens"] if r["input_token_semantics"]==1 else 0)
-            if deduction<=value:value-=deduction
-        totals["requests"]+=count
-        totals["successful_requests"]+=successes
-        totals["fresh_input"]+=value
-        totals["output"]+=r["output_tokens"]
-        totals["cache_read"]+=r["cache_read_tokens"]
-        totals["cache_write"]+=r["cache_creation_tokens"]
-        cost+=Decimal(r["total_cost_usd"])
-
-    for r in rows:
-        if (start is not None and r["created_at"]<start) or (end is not None and r["created_at"]>end):continue
-        duplicate=False
-        kind=r["data_source"] or "proxy"
-        if kind in {"session_log","codex_session","gemini_session","opencode_session"}:
-            apps=[r["app_type"]]+(["claude-desktop"] if r["app_type"]=="claude" else [])
-            for app in apps:
-                for p in proxy_index[(app,r["input_tokens"],r["output_tokens"],r["cache_read_tokens"])]:
-                    cache_match=p["cache_creation_tokens"]==r["cache_creation_tokens"] or (
-                        r["cache_creation_tokens"]==0 and kind in {"codex_session","gemini_session","opencode_session"}) or (
-                        p["cache_creation_tokens"]==0 and p["input_token_semantics"]==0 and kind=="codex_session")
-                    model_match=p["model"].lower()==r["model"].lower() or "unknown" in {p["model"].lower(),r["model"].lower()}
-                    if cache_match and model_match and abs(p["created_at"]-r["created_at"])<=600:
-                        duplicate=True;break
-                if duplicate:break
-        if not duplicate:add(r,1,int(200<=r["status_code"]<300))
-    for raw in conn.execute("SELECT app_type,date,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,input_token_semantics,total_cost_usd,request_count,success_count FROM usage_daily_rollups"):
-        r=dict(raw)
-        day=datetime.strptime(r["date"],"%Y-%m-%d").date()
-        midnight=int(datetime.combine(day,time(),zone).timestamp())
-        # Upstream treats the entire final minute as fully covered.
-        final_minute=int(datetime.combine(day,time(23,59),zone).timestamp())
-        if (start is None or start<=midnight) and (end is None or end>=final_minute):
-            add(r,r["request_count"],r["success_count"])
-    totals["total_tokens"]=sum(totals[k] for k in ("fresh_input","output","cache_read","cache_write"))
-    totals["estimated_cost_usd"]=str(cost)
-    return totals
 
 
 def reference_zcode(conn,start,end):
@@ -215,14 +158,14 @@ def reference_qoder_credits(root,now,zone):
     return periods
 
 
-def reference_opencode(conn,start,end,excluded,zone):
+def reference_opencode(conn,start,end,zone):
     row={"requests":0,"fresh_input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0}
-    for created,role,inp,out,reasoning,read,write in conn.execute(
+    for created,role,inp,out,reasoning,read,write,total in conn.execute(
             "SELECT time_created,json_extract(data,'$.role'),json_extract(data,'$.tokens.input'),"
             "json_extract(data,'$.tokens.output'),json_extract(data,'$.tokens.reasoning'),"
-            "json_extract(data,'$.tokens.cache.read'),json_extract(data,'$.tokens.cache.write') FROM message"):
-        if role!="assistant" or inp is None:continue
-        if datetime.fromtimestamp(created/1000,zone).date().isoformat() in excluded:continue
+            "json_extract(data,'$.tokens.cache.read'),json_extract(data,'$.tokens.cache.write'),json_extract(data,'$.tokens.total') FROM message"):
+        if role!="assistant" or any(type(v) is not int or v<0 for v in (inp,out,reasoning,read,write)):continue
+        if reasoning<=out and total==inp+out+read+write:out-=reasoning
         seconds=created/1000
         if (start is not None and seconds<start) or seconds>end:continue
         row["requests"]+=1;row["fresh_input"]+=inp;row["output"]+=out or 0
@@ -231,30 +174,19 @@ def reference_opencode(conn,start,end,excluded,zone):
     return row
 
 
-def reference_opencode_excluded(ccswitch_db,zone):
-    try:
-        conn=sqlite3.connect(Path(ccswitch_db).expanduser().resolve().as_uri()+"?mode=ro",uri=True,timeout=3)
-        try:
-            conn.execute("PRAGMA query_only=ON")
-            return {datetime.fromtimestamp(r[0],zone).date().isoformat() for r in conn.execute(
-                "SELECT created_at FROM proxy_request_logs WHERE app_type='opencode'")}
-        finally:conn.close()
-    except (sqlite3.Error,OSError):
-        return None
-
-
 def reference_design_tokens(conn,start,end,excluded,zone):
     """Independent recompute over the @hilo message table, session-level exclusion."""
     row={"requests":0,"fresh_input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0}
     sql=("SELECT time_created,json_extract(data,'$.role'),json_extract(data,'$.tokens.input'),"
          "json_extract(data,'$.tokens.output'),json_extract(data,'$.tokens.reasoning'),"
-         "json_extract(data,'$.tokens.cache.read'),json_extract(data,'$.tokens.cache.write') FROM message")
+         "json_extract(data,'$.tokens.cache.read'),json_extract(data,'$.tokens.cache.write'),json_extract(data,'$.tokens.total') FROM message")
     params=()
     if excluded:
         sql+=" WHERE session_id NOT IN ("+",".join("?"*len(excluded))+")"
         params=tuple(excluded)
-    for created,role,inp,out,reasoning,read,write in conn.execute(sql,params):
-        if role!="assistant" or inp is None:continue
+    for created,role,inp,out,reasoning,read,write,total in conn.execute(sql,params):
+        if role!="assistant" or any(type(v) is not int or v<0 for v in (inp,out,reasoning,read,write)):continue
+        if reasoning<=out and total==inp+out+read+write:out-=reasoning
         seconds=created/1000
         if (start is not None and seconds<start) or seconds>end:continue
         row["requests"]+=1;row["fresh_input"]+=inp;row["output"]+=out or 0
@@ -266,127 +198,98 @@ def reference_design_tokens(conn,start,end,excluded,zone):
 def reference_cli_period(records,start,end,zone):
     """Independent single-loop recomputation over cli_sessions record tuples."""
     out={"requests":0,"fresh_input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0}
-    for t,_model,fresh,output,reasoning,read,write in records:
+    for t,_model,fresh,output,reasoning,read,write,*unknown in records:
         if start is not None and t<start:continue
         if t>end:continue
         out["requests"]+=1
+        if unknown:out["unclassified"]=out.get("unclassified",0)+unknown[0]
         out["fresh_input"]+=fresh;out["output"]+=output;out["reasoning"]+=reasoning
         out["cache_read"]+=read;out["cache_write"]+=write
     return out
 
 
-def reference_ccswitch_day_sums(ccswitch_db,zone,apps,subtract_cache_read):
-    """Per local-day sums from CC Switch rows for an app (folded, any source).
-
-    Also returns the days that contain proxy-routed rows: on those days the
-    upstream applies its own session/proxy dedup when summarizing, which a
-    raw-file reference cannot reproduce, so cross-checks skip them.
-    """
-    try:
-        conn=sqlite3.connect(Path(ccswitch_db).expanduser().resolve().as_uri()+"?mode=ro",uri=True,timeout=3)
-        try:
-            conn.execute("PRAGMA query_only=ON")
-            marks=",".join("?"*len(apps))
-            rows=conn.execute("SELECT created_at,COALESCE(data_source,'proxy'),input_tokens,output_tokens,"
-                              "cache_read_tokens,cache_creation_tokens"
-                              " FROM proxy_request_logs WHERE app_type IN ("+marks+")",tuple(apps)).fetchall()
-            last=conn.execute("SELECT MAX(last_synced_at) FROM session_log_sync").fetchone()[0]
-        finally:conn.close()
-    except (sqlite3.Error,OSError):
-        return None,None,None
-    days=defaultdict(lambda:{"requests":0,"fresh_input":0,"output":0,"cache_read":0,"cache_write":0})
-    proxy_days=set()
-    for created,source,inp,out,read,write in rows:
-        day=datetime.fromtimestamp(created,zone).date().isoformat()
-        if source=="proxy":
-            proxy_days.add(day)
-        fresh=inp-read if subtract_cache_read and inp>=read else inp
-        days[day]["requests"]+=1
-        days[day]["fresh_input"]+=fresh
-        days[day]["output"]+=out
-        days[day]["cache_read"]+=read
-        days[day]["cache_write"]+=write
-    return dict(days),last,proxy_days
+def reference_imported_history(store,start,end,zone):
+    """Independent recompute over the project-owned imported-history store."""
+    out={"requests":0,"fresh_input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0}
+    for _app,_model,t,fresh,output,read,write in store.get("detail") or []:
+        if (start is not None and t<start) or t>end:continue
+        out["requests"]+=1
+        out["fresh_input"]+=fresh;out["output"]+=output;out["cache_read"]+=read;out["cache_write"]+=write
+    for _app,_model,date,requests,fresh,output,read,write in store.get("daily") or []:
+        when=int(datetime.combine(datetime.fromisoformat(date).date(),time(),zone).timestamp())
+        if (start is not None and when<start) or when>end:continue
+        out["requests"]+=requests
+        out["fresh_input"]+=fresh;out["output"]+=output;out["cache_read"]+=read;out["cache_write"]+=write
+    out["total_tokens"]=sum(out[k] for k in ("fresh_input","output","reasoning","cache_read","cache_write"))
+    return out
 
 
-def check_cli_tokens(checks,snapshot,config,prefix,source_id,records,cc_apps,subtract_cache_read):
-    """Exact period recompute plus CC Switch cross-check on its imported days."""
-    from .ccswitch import period_bounds as bounds
-    zone=ZoneInfo(config.get("ccswitch_timezone","Asia/Shanghai"))
+def reference_codex_reported(config, end):
+    """Cross-check raw reported totals, independent of component parsing/model attribution."""
+    from .cli_sessions import _codex_log, _codex_logs, _rollout_priority
+    from .zstd_io import is_compressed, route
+    copies = defaultdict(list)
+    for key in ("codex_sessions_dir", "codex_archives_dir"):
+        for path in _codex_logs(Path(config[key])):
+            copies[path.stem if is_compressed(path) else path.name].append(path)
+    observed = 0
+    for paths in copies.values():
+        previous = None
+        path = max(paths, key=_rollout_priority)
+        binary = config.get("zstd_binary")
+        with _codex_log(path, route(binary) if is_compressed(path) else None, binary) as lines:
+            for line in lines:
+                if b'"token_count"' not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                payload = event.get("payload") if isinstance(event, dict) else None
+                if not isinstance(payload, dict) or payload.get("type") != "token_count":
+                    continue
+                info = payload.get("info") or {}
+                counters = info.get("total_token_usage")
+                if not isinstance(counters, dict):
+                    continue
+                current = counters.get("total_tokens")
+                if not isinstance(current, int):
+                    return None  # this schema has no independent reported total
+                if previous == current:
+                    continue
+                first = (info.get("last_token_usage") or {}).get("total_tokens", current)
+                delta = first if previous is None else current if current < previous else current - previous
+                previous = current
+                if timestamp(event["timestamp"])["epoch_seconds"] <= end:
+                    observed += delta
+    return observed
+
+
+def check_cli_tokens(checks,snapshot,config,prefix,source_id,records):
+    """Exact period recompute for one direct local reader."""
+    zone=DISPLAY_ZONE
     now=snapshot["collected_at"]["epoch_seconds"]
     src=next((s for s in snapshot["sources"] if s["id"]==source_id),None)
     if src is None or src["metrics"]["tokens"]["status"] not in {"available","partial"}:
         return
     value=src["metrics"]["tokens"]["value"]
-    excluded=set(value["ccswitch_overlap"]["excluded_days"])
-    # Exact recompute applies the same day exclusions as the collector; the
-    # cross-check below needs the unfiltered records on the imported days.
-    all_records=records
-    records=[r for r in records if datetime.fromtimestamp(r[0],zone).date().isoformat() not in excluded]
     for period in ("today","7d","30d","all"):
         actual=value["periods"][period]["totals"]
-        reference=reference_cli_period(records,*bounds(now,period,zone),zone)
+        reference=reference_cli_period(records,*period_bounds(now,period,zone),zone)
         for field,v in reference.items():
             checks.append({"name":prefix+"."+period+"."+field,
                            "status":"pass" if actual[field]==v else "fail",
                            "detail":None if actual[field]==v else {"backend":actual[field],"reference":v}})
-    # Machine-level alignment: on days CC Switch imported, the direct reader
-    # (without exclusions) must reproduce its sums modulo sync lag.
-    imported=value["ccswitch_overlap"]["excluded_days"]
-    if value["ccswitch_overlap"]["state"]=="checked" and imported:
-        day_sums,last_sync,proxy_days=reference_ccswitch_day_sums(config["ccswitch_db"],zone,cc_apps,subtract_cache_read)
-        if day_sums and isinstance(last_sync,(int,float)) and now-last_sync<=48*3600:
-            today=datetime.fromtimestamp(now,zone).date().isoformat()
-            mine=defaultdict(lambda:{"requests":0,"fresh_input":0,"output":0,"cache_read":0,"cache_write":0})
-            for t,_m,fresh,output,_r,read,write in all_records:
-                day=datetime.fromtimestamp(t,zone).date().isoformat()
-                if day not in imported:continue
-                mine[day]["requests"]+=1;mine[day]["fresh_input"]+=fresh
-                mine[day]["output"]+=output;mine[day]["cache_read"]+=read;mine[day]["cache_write"]+=write
-            fields={"requests":0,"fresh_input":0,"output":0,"cache_read":0,"cache_write":0}
-            days_seen=0
-            for day in imported:
-                if day>=today or day in proxy_days or day not in day_sums or day not in mine:continue
-                days_seen+=1
-                for field in fields:
-                    fields[field]+=mine[day][field]-day_sums[day][field]
-            if days_seen:
-                # Tolerance: sync lag (CC Switch misses the tail of recent
-                # files) and local log rotation. Requests 1% + 5, tokens 5%.
-                ok=True;detail={}
-                for f in fields:
-                    base=sum(day_sums[d][f] for d in imported
-                             if d in day_sums and d<today and d not in proxy_days)
-                    detail[f]={"drift":fields[f],"ccswitch":base}
-                    if abs(fields[f])>max(0.05*base,5 if f=="requests" else 0):ok=False
-                status="pass" if ok else "fail"
-                # The direct Codex reader skips `.jsonl.zst` rollouts; on days
-                # CC Switch imports them it legitimately has more rows. CC
-                # Switch remains primary there, so a negative drift is not a
-                # backend failure.
-                if not ok and source_id=="codex" and fields["requests"]<0:
-                    status="inconclusive_live_drift"
-                    detail["note"]="direct Codex reader may miss .jsonl.zst rollouts; CC Switch is primary"
-                # Upstream's dsh importer stores outputTokens including reasoning;
-                # the direct reader splits reasoning out. Requests still match.
-                req=detail["requests"]
-                if (not ok and source_id=="deepseek_harness"
-                        and abs(req["drift"])<=max(0.01*req["ccswitch"],5)):
-                    status="inconclusive_live_drift"
-                    detail["note"]="CC Switch stores dsh output including reasoning; direct splits it out"
-                checks.append({"name":prefix+".ccswitch_cross","status":status,
-                               "detail":{"days":days_seen,**detail}})
 
 
 def check_antigravity_tokens(checks,snapshot,config,records):
     """Antigravity sqlite is a lower bound while the desktop app is writing.
 
-    The DB is opened immutable=1, so steps still in an uncheckpointed WAL are
-    invisible; a later verify re-read can legitimately see more rows. Equal
+    The WAL-aware read transaction and the later verification transaction may
+    see different commits made by the running app. Equal
     totals pass, a small positive gap is inconclusive, anything else fails.
     """
-    from .ccswitch import period_bounds as bounds
-    zone=ZoneInfo(config.get("ccswitch_timezone","Asia/Shanghai"))
+    zone=DISPLAY_ZONE
     now=snapshot["collected_at"]["epoch_seconds"]
     src=next((s for s in snapshot["sources"] if s["id"]=="antigravity"),None)
     if src is None or src["metrics"]["tokens"]["status"] not in {"available","partial"}:
@@ -394,7 +297,7 @@ def check_antigravity_tokens(checks,snapshot,config,records):
     value=src["metrics"]["tokens"]["value"]
     for period in ("today","7d","30d","all"):
         actual=value["periods"][period]["totals"]
-        reference=reference_cli_period(records,*bounds(now,period,zone),zone)
+        reference=reference_cli_period(records,*period_bounds(now,period,zone),zone)
         for field,v in reference.items():
             b=actual[field]
             if b==v:
@@ -494,6 +397,14 @@ def verify_snapshot(snapshot,config,native_reference=None):
                         check(src["id"]+".tokens."+period+".peak_split."+label+"."+field,composed==value,
                               {"peak":bucket["peak"].get(field), "offpeak":bucket["offpeak"].get(field),
                                "reference":value})
+        if token_value and token_value.get("daily_buckets") is not None and "all" in token_value.get("periods", {}):
+            for period,window in token_value["periods"].items():
+                if "groups" in window:
+                    for field in ("total_tokens","requests"):
+                        check(src["id"]+"."+period+".model_groups."+field,
+                              sum(g.get(field,0) for g in window["groups"])==window["totals"].get(field))
+            all_tokens=token_value["periods"]["all"]["totals"].get("total_tokens")
+            check(src["id"]+".daily.all",sum(day["tokens"] for day in token_value["daily_buckets"])==all_tokens)
         if src["id"]=="codex" and src["metrics"]["quota"]["value"]:
             for i,q in enumerate(src["metrics"]["quota"]["value"]):
                 check("codex.quota."+str(i)+".remaining",q["remaining_percent"]==max(0,100-q["used_percent"]))
@@ -596,20 +507,7 @@ def verify_snapshot(snapshot,config,native_reference=None):
                     expires=[(c['expires_at'] or {}).get('epoch_seconds') for c in actual['cards']]
                     sort_key=lambda x:-1 if x is None else x
                     check('codex.native.cards.expiry_seconds',sorted(expires,key=sort_key)==sorted(expected_cards['expires_at'],key=sort_key))
-    cc=next((s for s in snapshot["sources"] if s["id"]=="ccswitch" and s["status"]=="available"),None)
-    if cc:
-        zone=ZoneInfo(config["ccswitch_timezone"])
-        now=snapshot["collected_at"]["epoch_seconds"]
-        with readonly_database(config["ccswitch_db"]) as conn:
-            validate_schema(conn)
-            for period in ("today","7d","30d","all"):
-                bounds=period_bounds(now,period,zone)
-                actual=summarize(conn,*bounds,zone=zone)["totals"]
-                expected=reference_ccswitch(conn,*bounds,zone)
-                for field,value in expected.items():
-                    equal=Decimal(actual[field])==Decimal(value) if field=="estimated_cost_usd" else actual[field]==value
-                    check("ccswitch."+period+"."+field,equal,{"backend":actual[field],"reference":value})
-    zone=ZoneInfo(config.get("ccswitch_timezone","Asia/Shanghai"))
+    zone=DISPLAY_ZONE
     now=snapshot["collected_at"]["epoch_seconds"]
     zc=next((s for s in snapshot["sources"] if s["id"]=="zcode" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
     if zc:
@@ -712,19 +610,10 @@ def verify_snapshot(snapshot,config,native_reference=None):
     oc=next((s for s in snapshot["sources"] if s["id"]=="opencode" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
     if oc:
         from .opencode_tokens import readonly_database as opencode_database
-        excluded=reference_opencode_excluded(config["ccswitch_db"],zone)
-        if excluded is None:
-            check("opencode.ccswitch_excluded_days.known",oc["metrics"]["tokens"]["value"]["ccswitch_overlap"]["state"]!="checked",
-                  {"backend":oc["metrics"]["tokens"]["value"]["ccswitch_overlap"]["state"]})
-        else:
-            check("opencode.ccswitch_excluded_days",
-                  oc["metrics"]["tokens"]["value"]["ccswitch_overlap"]["excluded_days"]==sorted(excluded),
-                  {"backend":oc["metrics"]["tokens"]["value"]["ccswitch_overlap"]["excluded_days"],"reference":sorted(excluded)})
         with opencode_database(config["opencode_db"]) as conn:
             for period in ("today","all"):
                 actual=oc["metrics"]["tokens"]["value"]["periods"][period]["totals"]
-                reference=reference_opencode(conn,*period_bounds(now,period,zone),
-                                             set(oc["metrics"]["tokens"]["value"]["ccswitch_overlap"]["excluded_days"]),zone)
+                reference=reference_opencode(conn,*period_bounds(now,period,zone),zone)
                 for field,value in reference.items():
                     check("opencode."+period+"."+field,actual[field]==value,{"backend":actual[field],"reference":value})
     # MiniMax Design agent tokens (attached to its account source): the
@@ -742,7 +631,7 @@ def verify_snapshot(snapshot,config,native_reference=None):
                   {"backend":overlap["state"]})
         else:
             check("minimax_design_local.opencode_excluded_sessions",
-                  overlap["state"]=="checked" and overlap["excluded_sessions"]==len(excluded),
+                  overlap["state"]==_state and overlap["excluded_sessions"]==len(excluded),
                   {"backend":overlap["excluded_sessions"],"reference":len(excluded)})
             with design_database(config["design_opencode_db"]) as conn:
                 for period in ("today","7d","30d","all"):
@@ -773,18 +662,26 @@ def verify_snapshot(snapshot,config,native_reference=None):
                 pattern=None
                 model=str(g.get("model",""))
                 key=normalize_model(model)
+                def lookup(target):
+                    if target in price_table.index:
+                        return price_table.index[target]
+                    best=None
+                    for candidate in price_table.index:
+                        if candidate in target and (best is None or len(candidate)>len(best)):
+                            best=candidate
+                    return price_table.index[best] if best is not None else None
                 if key:
-                    if key in price_table.index:
-                        pattern=price_table.index[key]
-                    else:
-                        best=None
-                        for candidate in price_table.index:
-                            if candidate in key and (best is None or len(candidate)>len(best)):
-                                best=candidate
-                        pattern=price_table.index.get(best) if best is not None else None
+                    # Same user binding rule as PriceTable.match: an alias wins
+                    # over the raw spelling, then exact/longest substring.
+                    bound=price_table.aliases.get(key)
+                    target=normalize_model(bound) if bound else None
+                    pattern=lookup(target) if target and target!=key else lookup(key)
                 split=isinstance(g.get("peak"),dict) and isinstance(g.get("offpeak"),dict)
                 breakdown="fresh_input" in g or (split and any(
                     "fresh_input" in part for part in (g["peak"],g["offpeak"])))
+                if g.get("unclassified"):
+                    unmatched.add(model+" (no breakdown)")
+                    if g["unclassified"]==g["total_tokens"]:continue
                 if pattern is None or not breakdown:
                     unmatched.add(str(g.get("model",""))+("" if breakdown else " (no breakdown)"))
                     continue
@@ -793,12 +690,13 @@ def verify_snapshot(snapshot,config,native_reference=None):
                     cost=Decimal(0)
                     for price,field in (("input","fresh_input"),("cache_read","cache_read"),
                                         ("cache_write","cache_write"),("output","output")):
-                        cost+=Decimal(str(row.get(field,0) or 0))*Decimal(str(prices[price]))*multiplier/Decimal(1000000)
+                        units=(row.get(field,0) or 0) + ((row.get("reasoning") or 0) if field=="output" else 0)
+                        cost+=Decimal(str(units))*Decimal(str(prices[price]))*multiplier/Decimal(1000000)
                     return cost
                 if split:
                     peak_part=amount_for(g["peak"],
                                          Decimal(str(price_table.peak_multipliers.get(pattern,1.0))).normalize())
-                    offpeak_part=amount_for(g["offpeak"],Decimal(1))
+                    offpeak_part=amount_for(g["offpeak"],Decimal(1))+amount_for(g.get("unsplit",{}),Decimal(1))
                     peak_total+=peak_part
                     offpeak_total+=offpeak_part
                     if peak_part:
@@ -832,24 +730,36 @@ def verify_snapshot(snapshot,config,native_reference=None):
                    "reference":{name:format(value,"f") for name,value in offpeak_models.items()}})
             check("prices."+src["id"]+"."+period+".unmatched",set(backend.get("unmatched_models") or [])==unmatched,
                   {"backend":backend.get("unmatched_models"),"reference":sorted(unmatched)})
-    # Direct CLI session readers: exact recompute plus CC Switch cross-check.
+    # Direct CLI session readers: exact recompute per local ledger.
     from . import cli_sessions as CS
-    for prefix,source_id,loader,kwargs,cc_apps,subtract in (
+    for prefix,source_id,loader,kwargs in (
         ("codex_local","codex",CS.load_codex,
-         (config.get("codex_sessions_dir"),config.get("codex_archives_dir")),("codex",),True),
-        ("claude_local","claude",CS.load_claude,(config.get("claude_projects_dir"),),("claude","claude-desktop"),False),
-        ("gemini_local","gemini",CS.load_gemini,(config.get("gemini_dir"),),("gemini",),True),
-        ("mcode_local","minimax_code",CS.load_mcode,(config.get("mcode_db"),),("mcode",),False),
+         (config.get("codex_sessions_dir"),config.get("codex_archives_dir"))),
+        ("claude_local","claude",CS.load_claude,(config.get("claude_projects_dir"),config.get("claude_desktop_sessions_dir"))),
+        ("gemini_local","gemini",CS.load_gemini,(config.get("gemini_dir"),)),
+        ("mcode_local","minimax_code",CS.load_mcode,(config.get("mcode_db"),)),
     ):
         src=next((s for s in snapshot["sources"] if s["id"]==source_id),None)
         if src is None or src["metrics"]["tokens"]["status"] not in {"available","partial"}:
             continue
         try:
-            records=loader(*kwargs)
+            records=loader(*kwargs,zstd_binary=config.get("zstd_binary")) if source_id=="codex" else loader(*kwargs)
         except Exception:
             checks.append({"name":prefix+".reload","status":"fail","detail":"reference reload failed"})
             continue
-        check_cli_tokens(checks,snapshot,config,prefix,source_id,records,cc_apps,subtract)
+        check_cli_tokens(checks,snapshot,config,prefix,source_id,records)
+    codex=next((s["metrics"]["tokens"] for s in snapshot["sources"] if s["id"]=="codex"),{})
+    if codex.get("status")=="available" and (codex.get("value") or {}).get("coverage")=="codex_cli_local_rollouts":
+        try:
+            declared=reference_codex_reported(config,now)
+        except (OSError,ValueError,SourceError,EOFError):
+            declared=None
+        if declared is None:
+            checks.append({"name":"codex_local.raw_reported_total","status":"inconclusive",
+                           "detail":"raw reported total unavailable"})
+        else:
+            actual=codex["value"]["periods"]["all"]["totals"]["total_tokens"]
+            check("codex_local.raw_reported_total",actual==declared,{"backend":actual,"raw_reported":declared})
     # Antigravity: independent recompute over the CLI and desktop ledgers.
     agy=next((s for s in snapshot["sources"] if s["id"]=="antigravity"),None)
     if agy is not None and agy["metrics"]["tokens"]["status"] in {"available","partial"}:
@@ -889,13 +799,48 @@ def verify_snapshot(snapshot,config,native_reference=None):
         from .dsh_tokens import load_dsh_sessions
         try:
             records,*_=load_dsh_sessions(config.get("dsh_sessions_dir"),config.get("zstd_binary"))
-            check_cli_tokens(checks,snapshot,config,"dsh_local","deepseek_harness",records,("dsh",),False)
+            check_cli_tokens(checks,snapshot,config,"dsh_local","deepseek_harness",records)
         except Exception:
             checks.append({"name":"dsh_local.reload","status":"fail","detail":"reference reload failed"})
+    # Project-owned imported history: independent recompute from the store.
+    ih=next((s for s in snapshot["sources"] if s["id"]=="imported_history"),None)
+    if ih is not None and ih["metrics"]["tokens"]["status"] in {"available","partial"}:
+        try:
+            store_path=config.get("history_store") or str(Path(config["runtime_dir"])/"imported-history.json")
+            store=json.loads(Path(store_path).read_text())
+            for period in ("today","7d","30d","all"):
+                actual=ih["metrics"]["tokens"]["value"]["periods"][period]["totals"]
+                reference=reference_imported_history(store,*period_bounds(now,period,zone),zone)
+                for field,value in reference.items():
+                    check("imported_history."+period+"."+field,actual[field]==value,
+                          {"backend":actual[field],"reference":value})
+            history=ih["metrics"]["tokens"]["value"]["history"]
+            check("imported_history.records",
+                  history["detail_records"]==len(store.get("detail") or []) and
+                  history["daily_records"]==len(store.get("daily") or []),
+                  {"backend":{"detail":history["detail_records"],"daily":history["daily_records"]}})
+        except Exception:
+            checks.append({"name":"imported_history.reload","status":"fail","detail":"reference reload failed"})
     # Codex 内置生图：按文件重扫 + 历史库调用数重查（Codex-only 指标）。
     codex_src=next((s for s in snapshot["sources"] if s["id"]=="codex"),None)
     if codex_src is not None:
         check_codex_images(checks,snapshot,config,codex_src)
+    if "application_usage" in snapshot:
+        usage=snapshot["application_usage"]
+        for period in ("today","7d","30d","all"):
+            rows=[windows[period] for windows in usage.values() if period in windows]
+            for key,field in (("total_tokens","tokens"), ("requests","requests")):
+                attributed=sum(row[key] for row in rows)
+                ledgers=sum(((((src["metrics"]["tokens"].get("value") or {}).get("periods") or {})
+                             .get(period, {}).get("totals") or {}).get(key,0)) for src in snapshot["sources"]
+                            if not src["id"].startswith("codexbar:") and "#" not in src["id"])
+                check("application_usage."+period+"."+key,attributed==ledgers,
+                      {"applications":attributed,"ledgers":ledgers})
+                for app,windows in usage.items():
+                    if period not in windows:continue
+                    row=windows[period]
+                    check("application_usage."+app+"."+period+"."+key,
+                          row[key]==sum((row.get(k) or {}).get(field,0) for k in ("direct","history")))
     measured=[]
     missing=[]
     for row in snapshot["coverage"]:
@@ -908,4 +853,4 @@ def verify_snapshot(snapshot,config,native_reference=None):
             "passed_checks":passed,"failed_checks":failed,"inconclusive_checks":len(checks)-passed-failed,"checks":checks,
             "collected_fields":measured,"uncollected_fields":missing,
             "all_requested_fields_collected":bool(snapshot.get('coverage')) and not missing,
-            "scope":"CC Switch compares independent Python aggregation with backend SQL in one read transaction. Optional native reference cross-checks Codex account identity, quota, reset times, credits and cards. Remaining checks validate normalized contracts; uncollected fields are gaps, not passing integrations."}
+            "scope":"Each local ledger is recomputed independently from its own files or database. Optional native reference cross-checks Codex account identity, quota, reset times, credits and cards. Remaining checks validate normalized contracts; uncollected fields are gaps, not passing integrations."}

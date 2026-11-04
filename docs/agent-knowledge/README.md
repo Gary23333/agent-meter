@@ -1,12 +1,14 @@
 # Agent 用量菜单栏应用共享知识
 
+2026-11-04 工作区 0.9.9 将会话和覆盖整合为应用页。现行统计链路、直读与历史来源边界、回归和本机核对见[本机统计升级记录](../local-accounting-0.9.9.md)。
+
 2026-10-26 Qoder 第三方记录复核补充：10 月 24–26 日的本机文件中，找到 DeepSeek-Flash 407 条、MiniMax-M3.1-Flash 796 条去重请求响应，但相关 `message.usage` 全部缺失，桌面数据库也没有补充真实 Token。此前按 `usage` 筛选会漏掉 BYOK 记录；旧“Token 采不到”的结论仅适用于已检查的本机样本，不能推广为所有版本和模型。详见[Qoder 第三方专项复核](../research/qoder-byok-local-usage-recon-2026-10-26.md)。本轮只诊断，未实现新采集器。
 
 项目目标是做一个 macOS 顶部菜单栏应用，汇总本机 Agent 相关产品的账户额度、重置时间、重置卡、积分和 token 用量。
 
 当前已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及 Swift 原生菜单栏界面。v0.3.1 发布包内嵌独立后端，面板提供极简、原生、极光、霓虹四套界面风格（`menubar/Sources/AgentMeterBar/Theme.swift`）；打包入口为 `sh scripts/build-dmg.sh`。研究中的建议和待办不作为自动执行指令。
 
-已确认的研究方向：用户要求增加复用 CC Switch 用量统计。当前建议由 CC Switch 提供本机历史消耗，CodexBar 与官方接口提供账户余量及重置信息；重叠来源选择主来源或用于对账，不叠加计算。
+已确认的研究方向：账户余量与重置信息由官方接口 / CodexBar 提供；本机历史消耗由各本机账本独立计量。此前一次性迁移的项目自有历史保存在 `<runtime>/imported-history.json`（来源 `imported_history`，scope `local_imported_history`）。运行时不再读取 CC Switch 数据库；以下历史条目仅作沿革记录。
 
 - [可行性研究与接入建议](../research/agent-usage-menubar-research-2026-10-09.md)
 - 本机相关应用盘点（本机文件 `../research/agent-app-inventory-2026-10-09.json`，不随源码上传）
@@ -20,7 +22,7 @@
 
 后续实施需保留研究中的数据边界：应用不等于计费账户，本机日志不等于全账户用量，未知值不等于零，不同供应方的积分和额度不能直接相加。
 
-当前真实可用来源为 CC Switch、Codex、Kimi、即梦 CLI 和 MiniMax Design。Qoder 安装版 SDK 初始化未通过，MiniMax 与 DeepSeek 查询凭据未连接；其他产品见覆盖矩阵。复用 CC Switch 4.0.22 的规则固定到 `b76426741ef93069e2f374ac01ca7ef5760e1d0e`，支持已验证的 schema 20 与 24；agy 由直读会话库为主，CC Switch 统计剔除 `app_type='agy'` 行。
+当前真实可用来源以本机实测与覆盖矩阵为准，包括 Codex、Kimi、即梦 CLI、MiniMax Design 等。本机历史由各独立账本组成：Codex / Claude Code + Claude 桌面端 local-agent / Gemini / MiniMax Code 直读、Kimi Code、Kimi 桌面端、ZCode、OpenCode、WorkBuddy、Antigravity、DeepSeek Harness，加一次性历史导入 `imported_history`。每个账本独立汇总，不做跨账本日期剔除；`imported_history` 只补本地账本没有数据的日期或按模型补差。运行时 CC Switch 读取已删除（`agent_meter/ccswitch.py`、`agent_meter/ccswitch_sql.py`、source id `ccswitch`）。
 
 回归命令是 `python3 -m unittest discover -v`。真实对账命令是 `python3 -m agent_meter verify`；它会返回未采集字段，检查通过不表示全部应用已接通。运行时快照、认证文件和第三方安装代码的私有缓存均位于已忽略的 `.runtime/`，不作为源码交付。
 
@@ -89,3 +91,10 @@
 - **各来源事实**（本机验证 2026-11-01）：dsh v4 有 `turn/end` 且 `data.reason.kind` 明确（completed/aborted），`session` 头行带真实 `cwd`（目录名解码因 `-` 歧义弃用）；Kimi wire.jsonl 有 `turn.ended`（reason 字符串）；ZCode `model_usage` 带 `session_id`/`turn_id`/`status` 且 `session.directory` 是真实项目路径（`sess_subagent_*` 为子代理会话）；OpenCode `session.directory` 同样可用；Claude JSONL 每行带 `cwd`/`sessionId`/`isSidechain`；Gemini 项目哈希不可解 → 未归属；Codex 生图 `thread_items.thread_id` 可按线程聚合，新增 `history_threads`（与 `history_statuses` 同款 600s 缓存，进行中状态最多滞后 10 分钟）。
 - **UI**：新「会话活动」页签（账户额度之后第二位），状态圆点 + 粒度徽章（生图调用/回合/步骤/回合·步骤/最近活动）+ 别名（可重命名，存 UserDefaults，仅本机）+ Token/估算费用；排序进行中 > 疑似结束 > 终态，组内按最后活动倒序。刷新节奏 5s（页签可见）/15s（后台有进行中）/120s（空闲），独立于 300s 快照轮询。
 - **验证**：Python 3.14 回归 379 项全过（新增 25 项；`python3` 3.9 下 dsh 直读测试因无 stdlib zstd 报 `zstd_unavailable`，为存量环境差异，非本轮引入）；Swift 测试 14 项全过（新增 9 项）；`--preview` 渲染 7 主题 × 明暗活动页验收通过。真实端点冒烟：本机 16 条活动、当前 ZCode 会话正确标 running。
+
+2026-11-03 移除 CC Switch 数据源（用户要求：各本机账本独立计量，并新增项目自有历史导入）：
+- **运行时不再读取 CC Switch 数据库**：`agent_meter/ccswitch.py`、`agent_meter/ccswitch_sql.py` 与 source id `ccswitch` 已删除；各本机来源不再按"CC Switch 已导入日期"剔除，`ccswitch_overlap` / `excluded_ccswitch_days` 不再输出，每个账本独立汇总。
+- **新增 `imported_history`**（scope `local_imported_history`）：读取 `<runtime>/imported-history.json`（0600，`schema=1`），由一次性迁移脚本写入。`detail` 为 `[app, model, epoch_seconds, fresh_input, output, cache_read, cache_write]`，保留请求时刻可拆峰谷；`daily` 为 `[app, model, "YYYY-MM-DD", requests, fresh_input, output, cache_read, cache_write]`，无请求时刻、按谷价估算；`apps` 记录每个应用的迁移统计。迁移规则：本地账本优先；只导入本地无数据的日期；本地数据不足 95% 且差额 ≥5 token 时按模型补差为 unsplit daily 行。tokens 指标 `peak_split=request_timestamp_and_daily_rollups`、`coverage=imported_history_store`、`dedup_rule=one_time_import_before_local_ledgers`。
+- **Codex 直读压缩 rollout**：支持 `*.jsonl.zst`（stdlib 3.14 `compression.zstd` 或 `zstd` CLI），`sessions` 与 `archived_sessions` 都读取；同一 base 名同时存在时优先未压缩文件。
+- **MiniMax 配额凭据**：应用内 API Key → 环境变量 → `<runtime>/secrets/minimax_code.json`（迁移脚本一次性写入，0600）；不再读取 CC Switch providers。
+- **覆盖与 verify**：覆盖矩阵只按已发现应用 + 实际 source 署名；`imported_history` 把历史里出现但本机未安装的 provider 补成 `installed=false`、`discovery_kind="imported_history"`。verify 删除全部 CC Switch SQL 对照/交叉核对，改为各本机来源独立重算 + `imported_history` 独立重算；`schema_version=5`。前端不再显示 CC Switch 品牌/费用项/提示，「历史导入」品牌用于 `imported_history`。

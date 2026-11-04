@@ -188,12 +188,9 @@ struct AccountCard: View {
 
     /// Account-side daily tokens (Codex), last 30 recorded days.
     @ViewBuilder private var dailyTokens: some View {
-        // The rows above use the merged chain, which carries no per-app daily
-        // series. A ledger whose days CC Switch also imported is partial here
-        // (missing days would read as zero-usage gaps), so only an
-        // overlap-free ledger is charted.
-        let overlap = source.metric("tokens")?.value["ccswitch_overlap"]["excluded_days"].array ?? []
-        let buckets = overlap.isEmpty ? source.metric("tokens")?.value["daily_buckets"].array ?? [] : []
+        // Each local ledger charts its own daily series over every date it
+        // recorded.
+        let buckets = source.metric("tokens")?.value["daily_buckets"].array ?? []
         let points: [(day: Date, tokens: Double)] = buckets
             .compactMap { b in
                 guard let d = Fmt.parseDay(b["date"].string), let t = b["tokens"].double else { return nil }
@@ -204,7 +201,7 @@ struct AccountCard: View {
         if points.count >= 3 {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("近 \(points.count) 个活跃日 · \(source.metric("tokens")?.value["coverage"].string == "kimi_code_local_sessions" ? "本机" : "账户") Token")
+                    Text("近 \(points.count) 个活跃日 · 本机直读 Token")
                         .font(.system(size: 10.5)).themeForeground(.secondary)
                     Spacer()
                     Text(Fmt.tokens(points.reduce(0) { $0 + $1.tokens }))
@@ -354,7 +351,7 @@ struct AccountCard: View {
                                 detail: [Fmt.day(end, now: now), note].compactMap { $0 }.joined(separator: " · "),
                                 valueTint: dueTint(end)))
         }
-        if let t = source.metric("tokens")?.value["lifetime_tokens"].double, t > 0 {
+        if let t = (source.metric("account_tokens") ?? source.metric("tokens"))?.value["lifetime_tokens"].double, t > 0 {
             rows.append(InfoRow(symbol: "number", title: "账户累计 Token", value: Fmt.tokens(t)))
         }
         // DeepSeek console usage: display-only, never part of local consumption.
@@ -364,19 +361,17 @@ struct AccountCard: View {
                                 detail: Fmt.tokens(usage["total_tokens"].double ?? 0) + " token",
                                 valueTint: brand.tint))
         }
-        // Local token history: the same merged chain the usage tab sums (CC
-        // Switch imports plus the direct readers, with the overlap between
-        // them already excluded), attributed per app. Reading a provider's own
-        // ledger here would show 0 for every day CC Switch imported.
-        let appKey = source.baseID == "minimax_code" ? "mcode" : source.baseID
+        // Local token history: the same merged chain the usage tab sums, with
+        // each ledger's groups attributed per app.
+        let appKey = Catalog.applicationID(source.id)
         let today = LocalUsage.appTotals(snapshot, period: .today)[appKey]
         let month = LocalUsage.appTotals(snapshot, period: .month)[appKey]
         let all = LocalUsage.appTotals(snapshot, period: .all)[appKey]
         if today != nil || month != nil || all != nil {
-            rows.append(InfoRow(symbol: "number", title: "本机 Token 今日", value: Fmt.tokens(today?.tokens ?? 0),
-                                detail: "\(Int(today?.requests ?? 0)) 轮"))
-            rows.append(InfoRow(symbol: "calendar.badge.clock", title: "近 30 天 / 全部", value: Fmt.tokens(month?.tokens ?? 0),
-                                detail: "全部 " + Fmt.tokens(all?.tokens ?? 0)))
+            rows.append(InfoRow(symbol: "number", title: "本机 Token 今日", value: today.map { Fmt.tokens($0.tokens) } ?? "—",
+                                detail: today.map { "\(Int($0.requests)) 次请求" }))
+            rows.append(InfoRow(symbol: "calendar.badge.clock", title: "近 30 天 / 全部", value: month.map { Fmt.tokens($0.tokens) } ?? "—",
+                                detail: all.map { "全部 " + Fmt.tokens($0.tokens) }))
         }
         // Codex built-in image_gen: display-only API-equivalent estimate, never
         // part of the token/cost totals above.
@@ -559,10 +554,6 @@ private struct DeepSeekPeakSection: View {
                     Text("未拆分来源按谷价计入价格表估算：" + split.unsplitSources.joined(separator: "、"))
                         .font(.system(size: 10)).foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                if split.hasUnsplitCCSwitch {
-                    Text("CC Switch 自带估价不分峰谷，未计入上面的价格表金额")
-                        .font(.system(size: 9.5)).themeForeground(.tertiary)
                 }
             }
         }

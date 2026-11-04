@@ -339,7 +339,7 @@ struct ShareCard: View {
             }
             let unsplit = max(0, data.deepseek.totalTokens - data.deepseek.peakTokens - data.deepseek.offpeakTokens)
             if unsplit > 0 {
-                Text("另有 \(Fmt.tokens(unsplit)) Token 无请求时刻；价格表按谷价估算，CC Switch 费用未并入。")
+                Text("另有 \(Fmt.tokens(unsplit)) Token 无请求时刻；价格表按谷价估算。")
                     .font(.system(size: smallSize - 1)).foregroundStyle(muted).fixedSize(horizontal: false, vertical: true)
             }
         }

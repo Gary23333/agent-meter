@@ -3,35 +3,34 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_meter.minimax import credential_from_ccswitch
-from agent_meter.model import SourceError
-from tests.support import database
+from agent_meter.minimax import credential_from_local_store
 
 
 class CredentialTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.path=Path(self.tmp.name)/'cc.db';self.c=database(self.path)
-        self.c.execute('CREATE TABLE providers(settings_config TEXT,is_current INTEGER)');self.c.commit()
-    def tearDown(self):self.c.close();self.tmp.cleanup()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.runtime = Path(self.tmp.name)
 
-    def add(self,url,key,current=1):
-        self.c.execute('INSERT INTO providers VALUES(?,?)',(json.dumps({'env':{'ANTHROPIC_BASE_URL':url,'ANTHROPIC_AUTH_TOKEN':key}}),current));self.c.commit()
+    def write(self, payload):
+        path = self.runtime / "secrets" / "minimax_code.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(payload if isinstance(payload, str) else json.dumps(payload))
+        return path
 
-    def test_exact_host_and_current_provider_only(self):
-        self.add('https://api.minimax.cn.attacker.invalid','bad-key')
-        self.add('https://api.minimax.cn','inactive-key',0)
-        self.assertEqual(credential_from_ccswitch(self.path),(None,None))
-        self.add('https://api.minimax.cn/anthropic','test-key')
-        self.assertEqual(credential_from_ccswitch(self.path),('test-key','cn'))
+    def test_missing_store(self):
+        self.assertEqual(credential_from_local_store(self.runtime), (None, None))
 
-    def test_multiple_accounts_require_explicit_selection(self):
-        self.add('https://api.minimax.cn','key-one');self.add('https://api.minimax.io','key-two')
-        with self.assertRaisesRegex(SourceError,'multiple_minimax_accounts_require_selection'):
-            credential_from_ccswitch(self.path)
+    def test_migrated_key_and_region(self):
+        self.write({"api_key": "test-key", "region": "global"})
+        self.assertEqual(credential_from_local_store(self.runtime), ("test-key", "global"))
 
-    def test_usage_scripts_never_executed(self):
-        target=Path(self.tmp.name)/'should-not-exist'
-        text=json.dumps({'usage_script':{'script':"writeFile('"+str(target)+"','unsafe')"}})
-        self.c.execute('INSERT INTO providers VALUES(?,1)',(text,));self.c.commit()
-        self.assertEqual(credential_from_ccswitch(self.path),(None,None))
-        self.assertFalse(target.exists())
+    def test_unknown_region_falls_back_to_cn(self):
+        self.write({"api_key": "test-key", "region": "mars"})
+        self.assertEqual(credential_from_local_store(self.runtime), ("test-key", "cn"))
+
+    def test_malformed_or_empty_store(self):
+        self.write("not json")
+        self.assertEqual(credential_from_local_store(self.runtime), (None, None))
+        self.write({"api_key": ""})
+        self.assertEqual(credential_from_local_store(self.runtime), (None, None))

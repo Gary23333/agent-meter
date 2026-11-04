@@ -17,15 +17,13 @@ The opencode source already counts those tokens, so sessions whose id
 exists there are excluded here; on this machine the remaining sessions
 are the design agent's own. The reference db is read only for session
 ids; when it exists but cannot be read the source fails instead of
-risking a double count. CC Switch never reads the @hilo database, so no
-third ledger overlaps.
+risking a double count. No third ledger reads the @hilo database.
 
 Scope: tokens cover the agent chat side only. Media generation (image/
 video) bills media credits, produces no tokens, and has no local
 per-task ledger. Only token/model fields are read; message text stays
 in the database.
 """
-import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -33,8 +31,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
-from .ccswitch import period_bounds
-from .model import SourceError, metric, timestamp
+from .opencode_tokens import _tokens
+from .model import SourceError, metric, period_bounds, timestamp
 
 COLUMNS = {"time_created", "data", "session_id"}
 
@@ -86,31 +84,6 @@ def copied_session_ids(path):
             conn.close()
     except (sqlite3.Error, OSError):
         raise SourceError("design_opencode_reference_unreadable") from None
-
-
-def _tokens(data):
-    """(model, agent, fresh, output, reasoning, cache_read, cache_write) or None."""
-    try:
-        o = json.loads(data)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(o, dict) or o.get("role") != "assistant":
-        return None
-    tokens = o.get("tokens")
-    if not isinstance(tokens, dict):
-        return None
-    def nonneg(v):
-        return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
-    cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
-    values = (nonneg(tokens.get("input")), nonneg(tokens.get("output")), nonneg(tokens.get("reasoning")),
-              nonneg(cache.get("read")), nonneg(cache.get("write")))
-    if any(v is None for v in values):
-        return None
-    model = o.get("modelID")
-    model = model if isinstance(model, str) and 0 < len(model) < 120 else "unknown"
-    agent = o.get("agent")
-    agent = agent if isinstance(agent, str) and 0 < len(agent) < 60 else "unknown"
-    return (model, agent, *values)
 
 
 def _zero():
@@ -176,8 +149,8 @@ def collect_design_tokens(db_path, reference_db, now, zone=ZoneInfo("Asia/Shangh
         rows = []
         malformed = 0
         for time_created, session_id, data in conn.execute(
-                "SELECT time_created, session_id, data FROM message"):
-            parsed = _tokens(data)
+                "SELECT time_created, session_id, data FROM message WHERE time_created <= ?", (now*1000,)):
+            parsed = _tokens(data, include_agent=True)
             if parsed is None:
                 if '"tokens"' in (data or ""):
                     malformed += 1

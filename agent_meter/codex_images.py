@@ -18,7 +18,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
-from .ccswitch import period_bounds
+from .model import period_bounds
 from .model import DISPLAY_ZONE, SourceError, metric
 from .prices import FX_FALLBACK
 

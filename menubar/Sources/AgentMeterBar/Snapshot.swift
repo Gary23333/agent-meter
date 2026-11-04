@@ -81,6 +81,8 @@ struct CoverageRow: Identifiable {
     let provider: String
     let path: String?
     let bundleID: String?
+    let appID: String
+    let discoveryKind: String
     let fields: [(name: String, status: String)]
 
     init(_ json: JSON, index: Int) {
@@ -89,6 +91,8 @@ struct CoverageRow: Identifiable {
         version = app["version"].string
         installed = app["installed"].bool ?? false
         provider = app["provider"].string ?? ""
+        appID = app["application_id"].string ?? Catalog.applicationID(provider)
+        discoveryKind = app["discovery_kind"].string ?? ""
         path = app["path"].string
         bundleID = app["bundle_id"].string
         id = "\(index)-\(name)"
@@ -107,6 +111,7 @@ struct Snapshot {
     let servedFromCache: Bool
     let sources: [Source]
     let coverage: [CoverageRow]
+    let applicationUsage: JSON
     let summary: JSON
 
     init(_ json: JSON) {
@@ -115,6 +120,7 @@ struct Snapshot {
         servedFromCache = json["served_from_cache"].bool ?? false
         sources = json["sources"].array.map(Source.init)
         coverage = json["coverage"].array.enumerated().map { CoverageRow($1, index: $0) }
+        applicationUsage = json["application_usage"]
         summary = json["coverage_summary"]
     }
 

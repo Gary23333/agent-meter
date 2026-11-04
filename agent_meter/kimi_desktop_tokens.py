@@ -14,9 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .ccswitch import period_bounds
 from .kimi_tokens import load_records, summarize
-from .model import SourceError, metric, source
+from .model import SourceError, metric, period_bounds, source
 
 
 def collect_kimi_desktop_tokens(sessions_dir, now, zone=ZoneInfo("Asia/Shanghai")):
@@ -35,6 +34,8 @@ def collect_kimi_desktop_tokens(sessions_dir, now, zone=ZoneInfo("Asia/Shanghai"
         p["timezone"] = str(zone)
     daily = defaultdict(int)
     for t, _, fresh, out, read, write in records:
+        if t > now:
+            continue
         daily[datetime.fromtimestamp(t, zone).date().isoformat()] += fresh + out + read + write
     out = source("kimi_desktop", "local_session_history", now)
     out["metrics"]["tokens"] = metric({

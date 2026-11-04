@@ -26,49 +26,12 @@ Files are independent sessions; no cross-file dedup. Timestamps are
 milliseconds and are converted to seconds before bucketing.
 """
 import json
-import subprocess
-from contextlib import contextmanager
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .ccswitch import app_imported_days
 from .cli_sessions import _file_records, _last_per_key, _metric_value, _model, _nonneg, _prune
 from .model import SourceError, metric, source
-
-try:
-    from compression import zstd as _zstd   # Python >= 3.14
-    _HAS_STDLIB_ZSTD = True
-except ImportError:
-    _HAS_STDLIB_ZSTD = False
-
-# A decompression failure (corrupt/truncated file) must surface as OSError so
-# the per-file cache skips exactly that file instead of failing the source.
-_ZSTD_ERRORS = (OSError, _zstd.ZstdError) if _HAS_STDLIB_ZSTD else (OSError,)
-
-
-def _route(zstd_binary):
-    if _HAS_STDLIB_ZSTD:
-        return "stdlib_compression_zstd"
-    if zstd_binary:
-        return "zstd_cli"
-    raise SourceError("zstd_unavailable")
-
-
-@contextmanager
-def _decompressed(path, route, zstd_binary):
-    """Binary line iterator over one zstd file."""
-    if route == "stdlib_compression_zstd":
-        with _zstd.open(path, "rb") as handle:
-            yield handle
-    else:
-        proc = subprocess.Popen([zstd_binary, "-dc", str(path)], stdout=subprocess.PIPE)
-        try:
-            yield proc.stdout
-        finally:
-            proc.stdout.close()
-            proc.wait()
-            if proc.returncode != 0:
-                raise OSError("zstd decompression failed")
+from .zstd_io import ZSTD_ERRORS as _ZSTD_ERRORS, decompressed, route as _route
 
 
 def _key_part(value):
@@ -98,7 +61,7 @@ def _parse_dsh_file(path, route, zstd_binary):
     header_model = "unknown"
     keyed = []
     try:
-        with _decompressed(path, route, zstd_binary) as handle:
+        with decompressed(path, route, zstd_binary) as handle:
             for line in handle:
                 if b'"usage"' not in line and b'"request/header"' not in line:
                     continue
@@ -179,14 +142,17 @@ def load_dsh_sessions(root, zstd_binary=None):
     return records, v3_files, v4_files, legacy_files, skipped, route
 
 
-def collect_dsh_sessions(sessions_dir, ccswitch_db, now,
+def collect_dsh_sessions(sessions_dir, now,
                          zone=ZoneInfo("Asia/Shanghai"), zstd_binary=None):
-    excluded, overlap_state = app_imported_days(ccswitch_db, zone, "dsh")
     records, v3_files, v4_files, legacy_files, skipped, route = load_dsh_sessions(sessions_dir, zstd_binary)
-    out = source("deepseek_harness", "local_session_history", now)
+    if skipped and not (v3_files or v4_files or legacy_files):
+        raise SourceError("dsh_sessions_unreadable")
+    status = "partial" if skipped else "available"
+    reason = "dsh_sessions_unreadable" if skipped else None
+    out = source("deepseek_harness", "local_session_history", now, status=status, reason=reason)
     out["metrics"]["tokens"] = metric(
-        _metric_value(records, now, zone, excluded, "dsh", "dsh_local_session_logs",
-                      "last_usage_per_turn_step", overlap_state))
+        _metric_value(records, now, zone, "dsh", "dsh_local_session_logs",
+                      "last_usage_per_turn_step"), status=status, reason=reason)
     out["diagnostics"]["v3_session_files"] = v3_files
     out["diagnostics"]["v4_session_files"] = v4_files
     out["diagnostics"]["legacy_session_files"] = legacy_files

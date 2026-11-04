@@ -1,15 +1,14 @@
 """Optional local price table for API-equivalent cost estimates (USD/CNY).
 
-The CC Switch source already reports its own USD estimates; this module adds
-estimates for the direct local token sources that have none. Prices are per
-1M tokens: input (fresh), cache read, cache write, output. Defaults come
-from the pricing surveys (docs/pricing-survey-2026-10-09.md and its
-2026-10-15 update), taking the official list price in whichever currency
-published one; the other currency falls back to an FX conversion at 7.25,
-flagged as converted (USD-only models convert into CNY, domestic CNY-only
-models convert into USD). Every value is user-editable via PUT /v1/prices;
-user entries override defaults by pattern. Estimates are never bills:
-订阅套餐内的调用不按 API 价计费.
+This module prices every direct local token source; imported history uses the
+same table. Prices are per 1M tokens: input (fresh), cache read, cache write,
+output. Defaults come from the pricing surveys
+(docs/pricing-survey-2026-10-09.md and its 2026-10-15 update), taking the
+official list price in whichever currency published one; the other currency
+falls back to an FX conversion at 7.25, flagged as converted (USD-only models
+convert into CNY, domestic CNY-only models convert into USD). Every value is
+user-editable via PUT /v1/prices; user entries override defaults by pattern.
+Estimates are never bills: 订阅套餐内的调用不按 API 价计费.
 
 Matching (2026-10-15) normalizes both sides first — see normalize_model —
 so the same model is priced no matter which prefix or separator spelling a
@@ -243,7 +242,7 @@ class PriceTable:
         multiplier = Decimal(str(self.peak_multipliers.get(pattern, 1.0))).normalize() \
             if peak else Decimal(1)
         values = {"input": group.get("fresh_input") or 0, "cache_read": group.get("cache_read") or 0,
-                  "cache_write": group.get("cache_write") or 0, "output": group.get("output") or 0}
+                  "cache_write": group.get("cache_write") or 0, "output": (group.get("output") or 0) + (group.get("reasoning") or 0)}
         total = Decimal(0)
         for key, tokens in values.items():
             total += Decimal(str(tokens)) * Decimal(str(prices[key])) * multiplier / Decimal(1000000)
@@ -382,6 +381,7 @@ def estimate_source_cost(tokens_metric, table):
         peak_total = Decimal(0)
         offpeak_total = Decimal(0)
         models = {}
+        app_models = {}
         peak_models = {}
         offpeak_models = {}
         unmatched = set()
@@ -393,6 +393,11 @@ def estimate_source_cost(tokens_metric, table):
             split = isinstance(group.get("peak"), dict) and isinstance(group.get("offpeak"), dict)
             breakdown = "fresh_input" in group or (split and any(
                 "fresh_input" in part for part in (group["peak"], group["offpeak"])))
+            unknown = group.get("unclassified") or 0
+            if unknown:
+                unmatched.add(model + " (no breakdown)")
+                if unknown == group["total_tokens"]:
+                    continue
             if pattern is None or not breakdown:
                 unmatched.add(model + ("" if breakdown else " (no breakdown)"))
                 continue
@@ -400,6 +405,9 @@ def estimate_source_cost(tokens_metric, table):
             if split:
                 peak_part = table.cost_for(group["peak"], pattern, peak=True)
                 offpeak_part = table.cost_for(group["offpeak"], pattern)
+                if group.get("unsplit"):
+                    offpeak_part += table.cost_for(group["unsplit"], pattern)
+                    unsplit.add(model)
             else:
                 peak_part = Decimal(0)
                 offpeak_part = table.cost_for(group, pattern)
@@ -409,6 +417,8 @@ def estimate_source_cost(tokens_metric, table):
             offpeak_total += offpeak_part
             total += amount
             models[model] = models.get(model, Decimal(0)) + amount
+            costs = app_models.setdefault(group.get("app", ""), {})
+            costs[model] = costs.get(model, Decimal(0)) + amount
             if peak_part:
                 peak_models[model] = (peak_models.get(model, Decimal(0)) + peak_part).normalize()
             if offpeak_part:
@@ -418,7 +428,9 @@ def estimate_source_cost(tokens_metric, table):
                 bound[model] = target
         unmatched_all |= unmatched
         bound_all.update(bound)
-        out_periods[period] = {"amount": format(total, "f"),
+        out_periods[period] = {"amount": format(total, "f") if models else None,
+                               "app_models": {app: {m: format(n, "f") for m, n in amounts.items()}
+                                              for app, amounts in app_models.items()},
                                "peak_amount": format(peak_total, "f"),
                                "offpeak_amount": format(offpeak_total, "f"),
                                "models": {name: format(amount, "f") for name, amount in models.items()},

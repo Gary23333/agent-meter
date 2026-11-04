@@ -15,8 +15,8 @@ def main():
     parser.add_argument("--reference",type=Path,help="Optional sanitized Codex native reference JSON for reconciliation")
     parser.add_argument("--port",type=int,default=8769)
     parser.add_argument("--start-kimi-server",action="store_true",help="Allow a temporary no-prompt Kimi helper")
-    parser.add_argument("--disable",action="append",default=[],choices=["ccswitch","codex","claude","kimi","qoder","codexbar","minimax_code","deepseek_api","dreamina","minimax_design","workbuddy","trae_cn","zcode","opencode","gemini","antigravity","reset_forecast"])
-    parser.add_argument("--local-only",action="store_true",help="Collect local CC Switch history, skip account network helpers")
+    parser.add_argument("--disable",action="append",default=[],choices=["codex","claude","kimi","qoder","codexbar","minimax_code","deepseek_api","dreamina","minimax_design","workbuddy","trae_cn","zcode","opencode","gemini","antigravity","reset_forecast","kimi_desktop","deepseek_harness","imported_history","volcengine","mimo","stepfun"])
+    parser.add_argument("--local-only",action="store_true",help="Collect local ledgers, skip account network helpers")
     args=parser.parse_args()
     config=default_config()
     if args.config:
@@ -28,8 +28,8 @@ def main():
         except (ValueError,OSError):
             parser.error("Invalid backend config")
     if args.start_kimi_server:config["start_kimi_server"]=True
-    config["disabled_sources"]=list(set(config["disabled_sources"]+args.disable+
-        (["codex","claude","kimi","qoder","codexbar","minimax_code","deepseek_api","dreamina","minimax_design","workbuddy","trae_cn","reset_forecast"] if args.local_only else [])))
+    config["local_only"] = args.local_only or config["local_only"]
+    config["disabled_sources"] = sorted(set(config["disabled_sources"] + args.disable))
     service=SnapshotService(config)
     if args.command=="serve":
         token=load_or_create_token(Path(config["runtime_dir"])/"api.token")

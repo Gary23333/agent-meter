@@ -5,6 +5,15 @@ from sys import getsizeof
 from threading import RLock
 
 
+def wal_stamp(path):
+    """Committed SQLite writes may only change the WAL until checkpoint."""
+    try:
+        stat = Path(str(path) + "-wal").stat()
+    except FileNotFoundError:
+        return None
+    return (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
+
 def _size(value):
     # Count shared objects once within an entry; across entries overcounting is
     # intentional, so shared model strings cannot make the budget optimistic.
@@ -29,7 +38,7 @@ class RecordCache:
     Oversized entries are returned to the caller but never retained. Eviction
     affects parsing speed only, never the completeness of a usage report.
     """
-    def __init__(self, max_bytes=16 * 1024 * 1024, max_entries=512):
+    def __init__(self, max_bytes=16 * 1024 * 1024, max_entries=2048):
         self.max_bytes, self.max_entries = max_bytes, max_entries
         self._entries = OrderedDict()
         self._lock = RLock()
@@ -38,11 +47,11 @@ class RecordCache:
     def _drop(self, key):
         self.bytes -= self._entries.pop(key)[2]
 
-    def read(self, path, parser, namespace):
+    def read(self, path, parser, namespace, *, sqlite_wal=False):
         path = Path(path)
         key = (namespace, str(path))
         stat = path.stat()
-        stamp = (stat.st_mtime_ns, stat.st_size)
+        stamp = (stat.st_ino, stat.st_mtime_ns, stat.st_size, wal_stamp(path) if sqlite_wal else None)
         with self._lock:
             cached = self._entries.get(key)
             if cached is not None and cached[0] == stamp:

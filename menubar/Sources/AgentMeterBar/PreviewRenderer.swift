@@ -192,8 +192,13 @@ enum PreviewRenderer {
             for tab in Tab.allCases { for a in [NSAppearance.Name.aqua, .darkAqua] { jobs.append((theme, tab, a)) } }
         }
         let savedTheme = store.theme
+        let savedTab = UserDefaults.standard.object(forKey: "panelTab")
         func next() {
-            guard !jobs.isEmpty else { store.theme = savedTheme; exit(0) }
+            guard !jobs.isEmpty else {
+                store.theme = savedTheme
+                UserDefaults.standard.set(savedTab, forKey: "panelTab")
+                exit(0)
+            }
             let (theme, tab, appearance) = jobs.removeFirst()
             store.theme = theme
             UserDefaults.standard.set(tab.rawValue, forKey: "panelTab")

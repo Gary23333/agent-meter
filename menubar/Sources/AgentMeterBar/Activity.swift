@@ -107,6 +107,7 @@ struct ActivityTurn: Identifiable {
 
 struct ActivityRow: Identifiable {
     let app: String
+    let applicationID: String
     let granularity: ActivityGranularity
     let status: ActivityStatus
     let statusBasis: String
@@ -131,6 +132,7 @@ struct ActivityRow: Identifiable {
 
     init(_ json: JSON) {
         app = json["app"].string ?? "unknown"
+        applicationID = json["application_id"].string ?? Catalog.applicationID(app)
         granularity = ActivityGranularity(rawValue: json["granularity"].string ?? "") ?? .recentActivity
         status = ActivityStatus(rawValue: json["status"].string ?? "") ?? .unknown
         statusBasis = json["status_basis"].string ?? "recency"

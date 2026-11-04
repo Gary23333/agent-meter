@@ -59,7 +59,7 @@ class CliSummarizeSplitTests(unittest.TestCase):
             (at(9, 10, 0), "m", 100, 10, 3, 200, 4),   # 10:00 → peak
             (at(9, 3, 0), "m", 50, 7, 0, 30, 1),       # 03:00 → off-peak
         ]
-        period = _summarize(records, None, at(10, 0, 0), set(), ZONE, "codex")
+        period = _summarize(records, None, at(10, 0, 0), ZONE, "codex")
         totals = period["totals"]
         for field in SPLIT_FIELDS:
             self.assertEqual(totals["peak"][field] + totals["offpeak"][field], totals[field], field)

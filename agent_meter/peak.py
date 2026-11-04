@@ -49,10 +49,12 @@ def bucket():
 def add(bucket_values, values):
     """Accumulate one record's {field: tokens} dict into a bucket."""
     bucket_values["requests"] += 1
+    if values.get("unclassified"):
+        bucket_values["unclassified"] = bucket_values.get("unclassified", 0) + values["unclassified"]
     for field in TOKEN_FIELDS:
         bucket_values[field] += values.get(field, 0) or 0
 
 
 def total(bucket_values):
     """Sum a bucket's token fields (the same total_tokens rule as groups)."""
-    return sum(bucket_values.get(field, 0) or 0 for field in TOKEN_FIELDS)
+    return sum(bucket_values.get(field, 0) or 0 for field in TOKEN_FIELDS) + bucket_values.get("unclassified", 0)

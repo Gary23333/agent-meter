@@ -21,7 +21,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from agent_meter import activity as activity_module
-from agent_meter import dsh_tokens
+# The real zstd binary; activity decompression uses the shared zstd module.
 from agent_meter.activity import collect_activity
 from agent_meter.collector import SnapshotService, default_config
 from agent_meter.model import SourceError
@@ -129,7 +129,7 @@ class CodexImageTests(unittest.TestCase):
             ("thread-running", ms_ago(120), "generating"),
             ("thread-failed", ms_ago(7200), "failed"),
             ("thread-done", ms_ago(7200), "completed"),
-            ("thread-recent", ms_ago(60), "completed"),   # fresh evidence -> running
+            ("thread-recent", ms_ago(60), "completed"),   # explicit terminal evidence
             ("thread-stale-unknown", ms_ago(7200), None),  # unrecognized -> unknown
         ]
         with patch.object(activity_module, "history_threads", return_value=threads), \
@@ -141,8 +141,8 @@ class CodexImageTests(unittest.TestCase):
         self.assertEqual(by_id["thread-running"]["generating_calls"], 1)
         self.assertEqual(by_id["thread-failed"]["status"], "failed")
         self.assertEqual(by_id["thread-done"]["status"], "completed")
-        self.assertEqual(by_id["thread-recent"]["status"], "running")
-        self.assertEqual(by_id["thread-recent"]["status_basis"], "recency")
+        self.assertEqual(by_id["thread-recent"]["status"], "completed")
+        self.assertEqual(by_id["thread-recent"]["status_basis"], "explicit_event")
         self.assertEqual(by_id["thread-stale-unknown"]["status"], "unknown")
         self.assertEqual(by_id["thread-done"]["calls"], 1)
 
@@ -198,7 +198,7 @@ class KimiTests(unittest.TestCase):
         self.assertEqual(live["requests"], 2)
         self.assertEqual(live["tokens"]["fresh_input"], 1005)
         self.assertEqual(live["project_alias"], "wd_demo")
-        self.assertTrue(live["subagent"])
+        self.assertFalse(live["subagent"])  # the session includes its root agent
         idle = by_id["session_idle"]
         self.assertEqual(idle["status"], "suspected_ended")
         self.assertEqual(idle["last_turn_status"], "completed")
@@ -213,9 +213,9 @@ class KimiTests(unittest.TestCase):
 def write_zstd(path, records):
     path.parent.mkdir(parents=True, exist_ok=True)
     data = ("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n").encode()
-    from agent_meter import dsh_tokens
-    if dsh_tokens._HAS_STDLIB_ZSTD:
-        path.write_bytes(dsh_tokens._zstd.compress(data))
+    from agent_meter import zstd_io
+    if zstd_io.HAS_STDLIB_ZSTD:
+        path.write_bytes(zstd_io._zstd.compress(data))
     else:
         with open(path, "wb") as handle:
             subprocess.run(["zstd", "-zc"], input=data, stdout=handle, check=True)
@@ -331,7 +331,7 @@ class ClaudeTests(unittest.TestCase):
             self.assertEqual(row["tokens"]["fresh_input"], 101)
             self.assertEqual(row["tokens"]["cache_write"], 20)
             self.assertEqual(row["tokens"]["cache_read"], 300)
-            self.assertEqual(row["tokens"]["output"], 52)
+            self.assertEqual(row["tokens"]["output"], 42)
             self.assertEqual(row["tokens"]["reasoning"], 10)
             self.assertEqual(row["notes"], activity_module.NOTE_RECENCY_ONLY)
 
@@ -419,6 +419,8 @@ def service_config(tmp):
         "home": str(tmp), "runtime_dir": str(Path(tmp) / ".runtime"),
         "zcode_usage_db": str(Path(tmp) / "none-zcode.sqlite"),
         "codex_history_db": str(Path(tmp) / "none-history.sqlite"),
+        "codex_state_db": str(Path(tmp) / "state.sqlite"),
+        "claude_desktop_sessions_dir": str(Path(tmp) / "none-agent"),
         "kimi_desktop_sessions_dir": str(Path(tmp) / "none-desktop"),
         "dsh_sessions_dir": str(Path(tmp) / "none-dsh"),
         "claude_projects_dir": str(Path(tmp) / "none-claude"),
@@ -455,6 +457,25 @@ class CollectActivityTests(unittest.TestCase):
             self.assertEqual(payload["sources_meta"]["zcode"], {"status": "not_connected", "reason": "zcode_db_not_found", "activities": 0})
             self.assertEqual(payload["sources_meta"]["kimi"]["status"], "available")
             self.assertEqual(payload["sources_meta"]["kimi"]["activities"], 1)
+
+    def test_codex_index_reads_recency_and_honors_disabled_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = service_config(tmp)
+            with sqlite3.connect(config["codex_state_db"]) as db:
+                db.execute("CREATE TABLE threads(id,cwd,created_at,updated_at,recency_at,title,tokens_used)")
+                db.execute("INSERT INTO threads VALUES('t','/project',?,?,?,'private',900000)",
+                           (NOW-3000, NOW, NOW-2000))
+            feed = collect_activity(config, now=NOW)
+            row = feed["activities"][0]
+            self.assertEqual((row["application_id"], row["status"]), ("codex", "suspected_ended"))
+            self.assertIsNone(row["tokens"])
+            self.assertNotIn("private", json.dumps(feed))
+            config["preferences"] = {"disabled_sources": ["codex"]}
+            with patch.object(activity_module, "codex_activities") as scan:
+                feed = collect_activity(config, now=NOW)
+                scan.assert_not_called()
+                self.assertEqual(feed["activities"], [])
+                self.assertEqual(feed["sources_meta"]["codex_images"]["reason"], "disabled_by_user")
 
     def test_unpriced_models_cost_none(self):
         with tempfile.TemporaryDirectory() as tmp:

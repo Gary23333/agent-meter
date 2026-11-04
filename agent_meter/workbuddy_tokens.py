@@ -28,8 +28,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
-from .ccswitch import period_bounds
-from .model import SourceError, metric, timestamp
+from .model import SourceError, metric, period_bounds, timestamp
 
 MARKER = b'"rawUsage"'
 TOKEN_FIELDS = ("fresh_input", "output", "cache_read", "cache_write")
@@ -186,6 +185,8 @@ def collect_workbuddy_tokens(root, now, zone=ZoneInfo("Asia/Shanghai")):
     periods["all"]["credit_charged"] = format(credit, "f")
     daily = {}
     for t, model, fresh, output, cache_read, cache_write, thinking in records:
+        if t > now:
+            continue
         day = datetime.fromtimestamp(t, zone).date().isoformat()
         daily[day] = daily.get(day, 0) + fresh + output + cache_read + cache_write
     return metric({

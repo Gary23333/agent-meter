@@ -93,12 +93,11 @@ class KimiDesktopTokenTests(unittest.TestCase):
 
     def test_daily_buckets(self):
         value = collect_kimi_desktop_tokens(self.root, NOW)["metrics"]["tokens"]["value"]
-        # Daily buckets cover every parsed turn record (same as the CLI
-        # source), including the ones outside a period's bounds.
-        self.assertEqual(sum(b["tokens"] for b in value["daily_buckets"]), 153 + 115)
+        # Daily buckets and all-time totals use the same snapshot cutoff.
+        self.assertEqual(sum(b["tokens"] for b in value["daily_buckets"]), 153)
         self.assertEqual([b["date"] for b in value["daily_buckets"]],
                          sorted(b["date"] for b in value["daily_buckets"]))
-        self.assertEqual([b["tokens"] for b in value["daily_buckets"]], [10, 258])
+        self.assertEqual([b["tokens"] for b in value["daily_buckets"]], [10, 143])
 
     def test_missing_directory(self):
         with tempfile.TemporaryDirectory() as empty:

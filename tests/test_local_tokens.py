@@ -97,7 +97,7 @@ def message(ts_ms, model="m", role="assistant", **tokens):
 
 
 class OpenCodeTests(unittest.TestCase):
-    def test_excludes_days_ccswitch_already_imported(self):
+    def test_counts_all_assistant_messages(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "opencode.db"
             ms = lambda d: int(datetime(2026, 10, d, 12, tzinfo=ZONE).timestamp() * 1000)
@@ -107,34 +107,23 @@ class OpenCodeTests(unittest.TestCase):
                 ("c", ms(8), message(ms(8), model="other", input=5, output=1, reasoning=2)),
                 ("d", ms(8), message(ms(8), role="user", input=99, output=99)),   # never counted
             ])
-            cc = Path(tmp) / "cc.db"
-            conn = sqlite3.connect(cc)
-            conn.execute("CREATE TABLE proxy_request_logs(id integer primary key, created_at integer, data_source text, app_type text)")
-            conn.execute("PRAGMA user_version=20")
-            conn.execute("INSERT INTO proxy_request_logs(created_at,data_source,app_type) VALUES(?, 'opencode_session', 'opencode')",
-                         [int(datetime(2026, 10, 8, 12, tzinfo=ZONE).timestamp())])
-            conn.commit(); conn.close()
-            value = collect_opencode_tokens(db, cc, NOW, ZONE)["metrics"]["tokens"]["value"]
-            # 10-08 is CC Switch's day; only 10-09 remains here.
+            value = collect_opencode_tokens(db, NOW, ZONE)["metrics"]["tokens"]["value"]
             allp = value["periods"]["all"]["totals"]
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["cache_read"], allp["total_tokens"]),
-                             (1, 100, 50, 160))
-            self.assertEqual(value["periods"]["all"]["excluded_ccswitch_days"], ["2026-10-08"])
-            self.assertEqual(value["ccswitch_overlap"], {"state": "checked", "excluded_days": ["2026-10-08"]})
-            self.assertEqual([b["date"] for b in value["daily_buckets"]], [LOCAL_TODAY])
+                             (3, 135, 50, 201))
+            self.assertEqual([b["date"] for b in value["daily_buckets"]], ["2026-10-08", LOCAL_TODAY])
             groups = {g["model"]: g for g in value["periods"]["all"]["groups"]}
-            self.assertNotIn("other", groups)
+            self.assertIn("other", groups)
 
-    def test_missing_ccswitch_means_no_exclusion(self):
+    def test_missing_db(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "opencode.db"
             ms = lambda d: int(datetime(2026, 10, d, 12, tzinfo=ZONE).timestamp() * 1000)
             opencode_db(db, [("a", ms(8), message(ms(8), input=10, output=1))])
-            value = collect_opencode_tokens(db, Path(tmp) / "none.db", NOW, ZONE)["metrics"]["tokens"]["value"]
-            self.assertEqual(value["ccswitch_overlap"]["state"], "ccswitch_absent")
+            value = collect_opencode_tokens(db, NOW, ZONE)["metrics"]["tokens"]["value"]
             self.assertEqual(value["periods"]["all"]["totals"]["requests"], 1)
             with self.assertRaises(SourceError):
-                collect_opencode_tokens(Path(tmp) / "none.db", Path(tmp) / "none.db", NOW, ZONE)
+                collect_opencode_tokens(Path(tmp) / "none.db", NOW, ZONE)
 
 
 def workbuddy_file(path, lines):
@@ -236,7 +225,7 @@ class WorkBuddyTests(unittest.TestCase):
 
 
 class CollectorIntegrationTests(unittest.TestCase):
-    ALL = ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
+    ALL = ["codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
            "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode"]
 
     def local_sources(self, enabled):
@@ -316,22 +305,23 @@ class CollectorIntegrationTests(unittest.TestCase):
             wb = next(s for s in snap["sources"] if s["id"] == "workbuddy")
             self.assertEqual(wb["metrics"]["tokens"]["reason"], "disabled_by_user")
 
-    def test_dedicated_local_source_wins_coverage_attribution(self):
-        def history_source(apps):
-            cc = source("ccswitch", "local_imported_history", NOW)
-            cc["metrics"]["tokens"] = metric({"periods": {p: {"groups": [{"app": a, "total_tokens": 1} for a in apps]}
-                                                          for p in ("today", "7d", "30d", "all")}})
-            return cc
+    def test_local_source_owns_coverage_fields(self):
         local = source("opencode", "local_session_history", NOW)
         local["metrics"]["tokens"] = metric({"periods": {}, "daily_buckets": []})
         app = {"name": "OpenCode", "provider": "opencode", "installed": True}
-        fields = coverage_matrix([app], [history_source(["opencode"]), local])[0]["fields"]
-        self.assertEqual((fields["tokens"]["source"], fields["tokens"]["scope"]), ("opencode", "local_session_history"))
-        self.assertEqual(fields["cost"]["source"], "ccswitch")
-        # Unavailable local source falls back to CC Switch attribution.
-        down = source("opencode", "local_session_history", NOW)
-        fields = coverage_matrix([app], [history_source(["opencode"]), down])[0]["fields"]
-        self.assertEqual(fields["tokens"]["source"], "ccswitch")
+        fields = coverage_matrix([app], [local])[0]["fields"]
+        self.assertEqual((fields["tokens"]["source"], fields["tokens"]["scope"]),
+                         ("opencode", "local_session_history"))
+        self.assertEqual(fields["cost"]["source"], "opencode")
+
+    def test_imported_history_adds_history_only_apps(self):
+        history = source("imported_history", "local_imported_history", NOW)
+        history["metrics"]["tokens"] = metric({"periods": {p: {"groups": [{"app": "gemini", "total_tokens": 1}]}
+                                                           for p in ("today", "7d", "30d", "all")}})
+        rows = coverage_matrix([], [history])
+        self.assertEqual([(r["application"]["provider"], r["application"]["installed"],
+                           r["application"]["discovery_kind"]) for r in rows],
+                         [("gemini", False, "imported_history")])
 
 
 def qoder_file(path, records):
@@ -430,7 +420,7 @@ class QoderCreditsTests(unittest.TestCase):
 
 
 class QoderCollectorIntegrationTests(unittest.TestCase):
-    ALL = ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
+    ALL = ["codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
            "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode"]
 
     def qoder_root(self, tmp):

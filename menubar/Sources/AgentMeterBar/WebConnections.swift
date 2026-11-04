@@ -110,7 +110,7 @@ struct WebProvider: Identifiable {
         APIKeyProvider(id: "deepseek_api", hint: "DeepSeek 开放平台的 API Key（sk-…），用于查询余额。",
                        fields: [KeyField(field: "api_key", placeholder: "粘贴 API Key"),
                                 KeyField(field: "user_token", placeholder: "网页 userToken（可选，近 30 天用量展示）", optional: true)]),
-        APIKeyProvider(id: "minimax_code", hint: "MiniMax Token Plan 的 API Key（国内版），优先于 CC Switch 里的供应方。"),
+        APIKeyProvider(id: "minimax_code", hint: "MiniMax Token Plan 的 API Key（国内版）。"),
     ]
     static func isAPIKeyProvider(_ id: String) -> Bool { apiKeyProviders.contains { $0.id == id } }
 

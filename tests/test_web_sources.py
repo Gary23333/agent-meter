@@ -104,7 +104,7 @@ class RequestTests(unittest.TestCase):
     def test_qoder_web_replaces_sdk_and_sessions_stay_out_of_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = {"runtime_dir": tmp, "app_roots": [], "web_sessions": {"qoder": {"cookie": "PRIVATE_COOKIE"}},
-                      "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "minimax_code", "dreamina",
+                      "disabled_sources": ["codex", "claude", "kimi", "minimax_code", "dreamina",
                                            "minimax_design", "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]}
             with patch("agent_meter.collector.collect_qoder") as sdk, \
                     patch("agent_meter.web_sources.get_json", return_value=QODER):
@@ -122,7 +122,7 @@ class MultiAccountTests(unittest.TestCase):
                       "web_sessions": {"workbuddy": [{"cookie": "A", "label": "主号"}, {"cookie": "B", "label": "小号"}]},
                       # Keep the test off this machine's real WorkBuddy logs.
                       "workbuddy_projects_dir": tmp + "/no-projects",
-                      "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina",
+                      "disabled_sources": ["codex", "claude", "kimi", "qoder", "minimax_code", "dreamina",
                                            "minimax_design", "deepseek_api", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]}
             other = json.loads(json.dumps(WORKBUDDY))
             other["data"]["Packages"] = [{"CapacityUnit": "credits", "CycleTotalCapacity": "50", "CycleRemainCapacity": "5"}]
@@ -142,7 +142,7 @@ class MultiAccountTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = {"runtime_dir": tmp, "app_roots": [],
                       "web_sessions": {"trae_cn": [{"token": "ok"}, {"token": "expired", "label": "旧号"}]},
-                      "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina",
+                      "disabled_sources": ["codex", "claude", "kimi", "qoder", "minimax_code", "dreamina",
                                            "minimax_design", "deepseek_api", "workbuddy", "zcode", "opencode", "gemini", "antigravity"]}
             def fake(url, body, timeout, headers):
                 if headers["Authorization"].endswith("expired"):
@@ -158,7 +158,7 @@ class DreaminaWebOnlyTests(unittest.TestCase):
     def test_cli_not_run_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = {"runtime_dir": tmp, "app_roots": [], "dreamina_binary": "/fake/dreamina",
-                      "disabled_sources": ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code",
+                      "disabled_sources": ["codex", "claude", "kimi", "qoder", "minimax_code",
                                            "minimax_design", "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]}
             with patch("agent_meter.collector.collect_dreamina") as cli:
                 snap = collect(config, now=NOW)
@@ -169,7 +169,7 @@ class DreaminaWebOnlyTests(unittest.TestCase):
 
 
 class AppSettingsTests(unittest.TestCase):
-    ALL = ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
+    ALL = ["codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
            "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]
 
     def test_app_api_key_reaches_deepseek(self):
@@ -274,7 +274,7 @@ class EndpointTests(unittest.TestCase):
             self.assertEqual(json.loads(r.read()), {"disabled_sources": ["claude"]})
         self.service.get()
         self.assertEqual(self.service.config["preferences"], {"disabled_sources": ["claude"]})
-        for bad in [{"disabled_sources": ["ccswitch"]}, {"disabled_sources": "claude"}, {"other": []}]:
+        for bad in [{"disabled_sources": ["unknown_source"]}, {"disabled_sources": "claude"}, {"other": []}]:
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 put(bad)
             self.assertEqual(ctx.exception.code, 400)

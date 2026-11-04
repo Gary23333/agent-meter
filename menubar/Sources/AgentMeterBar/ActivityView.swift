@@ -2,11 +2,11 @@ import SwiftUI
 
 /// 会话活动：跨 harness 的最近会话/回合状态，5 秒轻量轮询，绝不触发全量采集。
 struct ActivityView: View {
-    @Environment(UsageStore.self) private var store
+    let snapshot: Snapshot
+    @State private var selectedApp: String?
     @State private var filter: ActivityFeed.Filter = .all
     @State private var expanded: Set<String> = []
     @State private var renameTarget: ActivityRow?
-    @State private var renameText = ""
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { context in
@@ -45,7 +45,7 @@ struct ActivityView: View {
                 Spacer()
                 if let feed = tracker.feed {
                     let running = feed.runningCount
-                    Text(running > 0 ? "\(running) 个进行中" : "无进行中任务")
+                    Text(running > 0 ? "\(running) 项进行中" : "未观测到进行中活动")
                         .font(.system(size: 10.5, weight: running > 0 ? .semibold : .regular))
                         .foregroundStyle(running > 0 ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
                 }
@@ -78,33 +78,106 @@ struct ActivityView: View {
 
     @ViewBuilder
     private func rows(_ tracker: ActivityTracker, now: Date) -> some View {
-        if let feed = tracker.feed {
-            let visible = ActivityFeed.sorted(feed.activities).filter { filter.matches($0) }
-            if visible.isEmpty {
-                Text(feed.activities.isEmpty
-                     ? "最近 \(feed.windowHours) 小时没有会话活动"
-                     : "当前筛选下没有会话活动")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 24)
-            } else {
-                VStack(spacing: 6) {
-                    ForEach(visible) { row in
-                        ActivityRowView(row: row, aliases: tracker.aliases, now: now,
-                                        expanded: expanded.contains(row.id),
-                                        onToggle: { toggle(row.id) },
-                                        onRename: renameTarget(row))
+        let coverage = Dictionary(grouping: snapshot.coverage, by: \.appID)
+        let sessions = Dictionary(grouping: ActivityFeed.sorted(tracker.feed?.activities ?? []), by: \.applicationID)
+        let apps = Set(coverage.keys).union(sessions.keys).union(snapshot.applicationUsage.object.keys)
+        let ordered = apps.sorted {
+            let left = sessions[$0]?.first, right = sessions[$1]?.first
+            if (left?.status == .running) != (right?.status == .running) { return left?.status == .running }
+            let l = left?.lastEventAt ?? .distantPast, r = right?.lastEventAt ?? .distantPast
+            return l == r ? $0 < $1 : l > r
+        }
+        let visible = ordered.filter { app in
+            filter == .all || (sessions[app] ?? []).contains(where: filter.matches)
+        }
+        if visible.isEmpty {
+            Text(tracker.feed == nil ? "正在读取应用活动…" : "当前筛选下没有活动")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        ForEach(visible, id: \.self) { app in
+            let bundles = coverage[app] ?? []
+            let activities = sessions[app] ?? []
+            let matching = activities.filter(filter.matches)
+            let usage = snapshot.applicationUsage[app]["today"]
+            let brand = Catalog.brand(app)
+            let name = brand.name == app ? (bundles.first(where: \.installed)?.name ?? app) : brand.name
+            let open = selectedApp == app || (PanelView.expandForPreview && !activities.isEmpty)
+            Card(tint: brand.tint) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Button {
+                        selectedApp = open ? nil : app
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: brand.symbol).foregroundStyle(brand.tint).frame(width: 22)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(name).font(.system(size: 13, weight: .semibold))
+                                Text(summary(app: app, rows: activities, tracker: tracker))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if let n = usage["total_tokens"].double {
+                                Text("今日 " + Fmt.tokens(n)).font(.caption).monospacedDigit()
+                            }
+                            Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption2)
+                        }
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    if open {
+                        if let all = snapshot.applicationUsage[app]["all"]["total_tokens"].double {
+                            let data = snapshot.applicationUsage[app]["all"]
+                            Text("累计 " + Fmt.tokens(all) + " Token")
+                                .font(.caption).fontWeight(.medium)
+                            Text(["direct", "history"].compactMap { key -> String? in
+                                guard let n = data[key]["tokens"].double else { return nil }
+                                return (key == "direct" ? "本机直读 " : "历史导入 ") + Fmt.tokens(n)
+                                    + (data[key]["status"].string == "partial" ? "（部分）" : data[key]["status"].string == "stale" ? "（过期）" : "")
+                            }.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        ForEach(bundles) { row in
+                            if row.installed, let path = row.path, path.hasSuffix(".app") {
+                                Button {
+                                    AppLauncher.open(.init(id: path, name: row.name, path: path, url: nil))
+                                } label: { Label(row.name + (row.version.map { " · v" + $0 } ?? ""), systemImage: "arrow.up.forward.app") }
+                                    .buttonStyle(.link).font(.caption2)
+                            }
+                        }
+                        if let row = bundles.first {
+                            let labels = ["额度", "重置", "重置卡", "积分", "Token", "费用", "续费日", "续费倒计时", "续费金额", "积分更新", "更新倒计时"]
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), alignment: .leading)], alignment: .leading, spacing: 3) {
+                                ForEach(row.fields, id: \.name) { field in
+                                    let index = Catalog.metricOrder.firstIndex(of: field.name)
+                                    HStack(spacing: 3) {
+                                        Circle().fill(Catalog.statusColor(field.status)).frame(width: 5, height: 5)
+                                        Text((index.map { labels[$0] } ?? field.name) + " " + Catalog.statusLabel(field.status))
+                                    }.font(.system(size: 9)).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        ForEach(matching) { row in
+                            ActivityRowView(row: row, aliases: tracker.aliases, now: now,
+                                            expanded: expanded.contains(row.id),
+                                            onToggle: { toggle(row.id) }, onRename: renameTarget(row))
+                        }
                     }
                 }
             }
-        } else {
-            Text("正在读取活动…")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 24)
         }
+    }
+
+    private func summary(app: String, rows: [ActivityRow], tracker: ActivityTracker) -> String {
+        guard let feed = tracker.feed else { return "正在读取会话…" }
+        let meta = feed.sourcesMeta.filter { Catalog.applicationID($0.key) == app }.map(\.value)
+        let running = rows.filter { $0.status == .running }.count
+        var parts = [String]()
+        if !rows.isEmpty {
+            parts.append("\(rows.count) 项活动" + (running > 0 ? " · \(running) 进行中" : ""))
+        } else if meta.contains(where: { $0.status == "available" }) {
+            parts.append("近 \(feed.windowHours) 小时无活动")
+        } else if meta.isEmpty {
+            parts.append("尚无会话采集器")
+        }
+        parts += Set(meta.filter { $0.status != "available" }.map { Catalog.reason($0.reason) }).sorted()
+        return parts.joined(separator: " · ")
     }
 
     private func toggle(_ id: String) {

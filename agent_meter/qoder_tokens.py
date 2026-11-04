@@ -20,8 +20,7 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .ccswitch import period_bounds
-from .model import SourceError, metric, timestamp
+from .model import SourceError, metric, period_bounds, timestamp
 
 MARKER = b'"usage"'
 from .record_cache import records_cache as _cache

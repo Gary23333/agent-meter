@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from agent_meter.applications import application_usage
 from agent_meter.collector import SnapshotService, coverage_matrix, safe_collect
 from agent_meter.model import COVERAGE_METRICS, METRICS, SourceError, failed_source, metric, source, timestamp
 from agent_meter.server import load_or_create_token, make_server
@@ -17,7 +18,7 @@ def sample(now=1000):
     s=source('codex','account',now)
     s['metrics']['quota']=metric([{'used_percent':10,'remaining_percent':90}])
     app={'name':'Codex','provider':'codex','installed':True}
-    return {'schema_version':4,'collected_at':timestamp(now),'sources':[s],
+    return {'schema_version':5,'collected_at':timestamp(now),'sources':[s],
             'coverage':coverage_matrix([app],[s]),'coverage_summary':{'applications':1}}
 
 
@@ -56,7 +57,7 @@ class ServiceTests(unittest.TestCase):
         s.set_web_sessions({'claude':[{'cookie':'x'}]})
         elapsed=time.monotonic()-started
         release.set();reader.join(10)
-        self.assertEqual(done[0]['schema_version'],4)
+        self.assertEqual(done[0]['schema_version'],5)
         self.assertLess(elapsed,2)
 
     def test_invalidation_survives_an_in_flight_collection(self):
@@ -110,7 +111,7 @@ class ServiceTests(unittest.TestCase):
         self.service().get()
         p=Path(self.tmp.name)/'snapshot.json'
         self.assertEqual(p.stat().st_mode&0o777,0o600)
-        self.assertEqual(json.loads(p.read_text())['schema_version'],4)
+        self.assertEqual(json.loads(p.read_text())['schema_version'],5)
 
     def test_source_error_isolated_and_private_message_not_exposed(self):
         def fn():raise RuntimeError('Authorization: secret-value private URL')
@@ -118,13 +119,41 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(out['status'],'error')
         self.assertNotIn('secret-value',json.dumps(out))
 
-    def test_no_duplicate_sum_across_ccswitch_and_account_tokens(self):
-        s=source('codex','account',1000);s['metrics']['tokens']=metric({'lifetime_tokens':123})
-        cc=source('ccswitch','local_imported_history',1000)
-        cc['metrics']['tokens']=metric({'periods':{'all':{'groups':[{'app':'codex','total_tokens':100}]}}})
-        matrix=coverage_matrix([{'name':'Codex','provider':'codex','installed':True}],[s,cc])
-        self.assertEqual(matrix[0]['fields']['tokens']['source'],'ccswitch')
-        self.assertNotIn('223',json.dumps(matrix))
+    def test_coverage_uses_the_local_token_source(self):
+        s=source('codex','account',1000);s['metrics']['tokens']=metric({'periods':{'all':{'groups':[{'app':'codex','total_tokens':100}]}}})
+        matrix=coverage_matrix([{'name':'Codex','provider':'codex','installed':True}],[s])
+        self.assertEqual(matrix[0]['fields']['tokens']['source'],'codex')
+        self.assertEqual(matrix[0]['fields']['tokens']['status'],'available')
+
+    def test_application_projection_separates_archives_and_account_sources(self):
+        direct=source("minimax_code","account",1000)
+        direct["metrics"]["tokens"]=metric({"periods":{"all":{"totals":{"total_tokens":20,"requests":1}}}})
+        archive=source("imported_history","local_imported_history",1000)
+        archive["metrics"]["tokens"]=metric({"periods":{"all":{"groups":[
+            {"app":"mcode","total_tokens":5,"requests":1},{"app":"pi","total_tokens":8,"requests":2}]}}})
+        ignored=copy.deepcopy(direct)
+        ignored["id"]="codexbar:minimax_code"
+        sources=[direct,archive,ignored]
+        usage=application_usage(sources)
+        mini=usage["minimax_code"]["all"]
+        self.assertEqual((mini["total_tokens"],mini["direct"]["tokens"],mini["history"]["tokens"]),(25,20,5))
+        matrix={r["application"]["application_id"]:r for r in coverage_matrix([],sources)}
+        self.assertEqual(matrix["pi"]["fields"]["tokens"]["source"],"imported_history")
+        self.assertEqual(matrix["minimax_code"]["application"]["discovery_kind"],"local_ledger")
+        self.assertFalse(matrix["minimax_code"]["application"]["installed"])
+
+    def test_account_change_does_not_restore_old_quota(self):
+        def fetch(config,now):
+            out=sample(now)
+            if now>1000:
+                out["sources"]=[failed_source("codex","account",now,"connection_failed")]
+            return out
+        service=self.service(fetch)
+        service.set_web_sessions({"codex":[{"label":"A"}]})
+        service.get()
+        self.now+=1
+        service.set_web_sessions({"codex":[{"label":"B"}]})
+        self.assertIsNone(service.get()["sources"][0]["metrics"]["quota"]["value"])
 
     def test_unsupported_apps_have_all_field_gaps(self):
         matrix=coverage_matrix([{'name':'Unknown','provider':'unknown','installed':True}],[])
@@ -160,13 +189,13 @@ class HTTPTests(unittest.TestCase):
 
     def test_authenticated_snapshot(self):
         with self.request('/v1/snapshot') as r:
-            self.assertEqual(r.status,200);self.assertEqual(json.load(r)['schema_version'],4)
+            self.assertEqual(r.status,200);self.assertEqual(json.load(r)['schema_version'],5)
 
     def test_health_schema_version_matches_snapshot(self):
         with self.request('/v1/health') as r:health=json.load(r)
         with self.request('/v1/snapshot') as r:snapshot=json.load(r)
         self.assertEqual(health['schema_version'],snapshot['schema_version'])
-        self.assertEqual(health['schema_version'],4)
+        self.assertEqual(health['schema_version'],5)
 
     def test_no_auth_denied(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:self.request('/v1/snapshot',False)

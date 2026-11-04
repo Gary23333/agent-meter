@@ -103,13 +103,13 @@ class AntigravityTests(unittest.TestCase):
     def test_usage_thinking_model_and_dedup(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self.fixture(tmp)
-            out = collect_antigravity_sessions(root, Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_antigravity_sessions(root, NOW, ZONE)
             self.assertEqual(out["scope"], "account")
             value = out["metrics"]["tokens"]["value"]
             allp = value["periods"]["all"]["totals"]
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"],
                               allp["reasoning"], allp["cache_read"]),
-                             (3, 27500, 305, 80, 8000))
+                             (3, 27500, 225, 80, 8000))
             self.assertAlmostEqual(allp["cache_hit_rate"], 8000 / 35500)
             self.assertEqual(value["cache_semantics"], "f5_cache_read_verified_cache_write_absent")
             groups = {g["model"]: g for g in value["periods"]["all"]["groups"]}
@@ -117,22 +117,21 @@ class AntigravityTests(unittest.TestCase):
             self.assertEqual(groups["gemini-3.8-flash"]["cache_read"], 8000)
             self.assertEqual(groups["gemini-3.7-flash"]["requests"], 1)
             self.assertEqual(value["skipped_conversation_dbs"], 1)
-            self.assertEqual(value["ccswitch_overlap"]["state"], "ccswitch_absent")
             self.assertEqual(out["diagnostics"]["roots_declared"], 1)
             self.assertEqual(out["diagnostics"]["roots_present"], 1)
             self.assertEqual(out["diagnostics"]["duplicate_conversation_ids"], 0)
             # Period split: day 8 record is outside "today".
             self.assertEqual(value["periods"]["today"]["totals"]["requests"], 2)
             self.assertEqual([b["tokens"] for b in value["daily_buckets"]],
-                             [505, 12000 + 100 + 3000 + 15000 + 200 + 80 + 5000])
+                             [505, 12000 + 100 + 3000 + 15000 + 200 + 5000])
             # Re-collect uses the per-file cache without changing results.
-            again = collect_antigravity_sessions(root, Path(tmp) / "none.db", NOW, ZONE)
+            again = collect_antigravity_sessions(root, NOW, ZONE)
             self.assertEqual(again["metrics"]["tokens"]["value"]["periods"]["all"]["totals"], allp)
 
     def test_missing_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SourceError) as ctx:
-                collect_antigravity_sessions(Path(tmp) / "none", Path(tmp) / "none.db", NOW, ZONE)
+                collect_antigravity_sessions(Path(tmp) / "none", NOW, ZONE)
             self.assertEqual(ctx.exception.code, "agy_conversations_not_found")
 
     def test_all_roots_missing(self):
@@ -159,7 +158,7 @@ class AntigravityTests(unittest.TestCase):
             self.assertEqual(len(records), 2)  # the newer, larger desktop copy
             self.assertEqual(skipped, 0)
             self.assertEqual(diagnostics, {"roots_declared": 2, "roots_present": 2,
-                                           "duplicate_conversation_ids": 1})
+                                           "unreadable_dbs": 0, "duplicate_conversation_ids": 1})
 
     def test_dedupe_prefers_newer_then_larger(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -188,7 +187,7 @@ class AntigravityTests(unittest.TestCase):
             self.assertEqual(diagnostics["duplicate_conversation_ids"], 0)
             self.assertEqual(skipped, 2)  # the missing root + the broken db
 
-    def test_collect_with_desktop_root_and_legacy_overlap_keys(self):
+    def test_collect_with_desktop_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self.fixture(tmp)
             desktop = Path(tmp) / "desktop"
@@ -196,26 +195,11 @@ class AntigravityTests(unittest.TestCase):
             t = lambda d, h=10: int(datetime(2026, 10, d, h, tzinfo=ZONE).timestamp())
             conversation(desktop / "b.db", [(1, step_metadata(t(9), usage(4000, 40)))],
                          ["gemini-3.8-flash"])
-            db = Path(tmp) / "ccswitch.db"
-            conn = sqlite3.connect(db)
-            conn.execute("CREATE TABLE proxy_request_logs(created_at REAL, app_type TEXT)")
-            conn.execute("PRAGMA user_version=24")
-            conn.execute("INSERT INTO proxy_request_logs VALUES(?, 'agy')", (t(9),))
-            conn.execute("INSERT INTO proxy_request_logs VALUES(?, 'antigravity')", (t(8),))
-            conn.commit()
-            conn.close()
 
-            plain = collect_antigravity_sessions(root, db, NOW, ZONE, desktop_root=desktop)
+            plain = collect_antigravity_sessions(root, NOW, ZONE, desktop_root=desktop)
             self.assertEqual(plain["diagnostics"]["roots_present"], 2)
             value = plain["metrics"]["tokens"]["value"]
-            # Direct-primary: CC Switch's partial agy import must not hide
-            # the complete conversation ledger.
             self.assertEqual(value["periods"]["all"]["totals"]["requests"], 4)
-            self.assertEqual(value["ccswitch_overlap"]["state"], "checked")
-            self.assertEqual(value["ccswitch_overlap"]["excluded_days"], [])
-            self.assertTrue(value["ccswitch_overlap"]["direct_primary"])
-            self.assertEqual(value["ccswitch_overlap"]["observed_imported_days"],
-                             ["2026-10-08", "2026-10-09"])
 
 
 if __name__ == "__main__":

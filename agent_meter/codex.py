@@ -159,7 +159,8 @@ def collect_codex(binary, now, timeout=45, cwd=None, rpc_factory=None):
             # false avoids fallback exposure or any credit redemption.
             limits = rpc.call("account/rateLimits/read", {"excludeResetCreditDetails": False, "supportsLunaReserve": False})
             out = normalize_limits(limits, now)
-            usage = _cached_usage(cache, now)
+            previous = cache.get("account") or {}
+            usage = _cached_usage(cache, now) if previous.get("account_key") == out["account_key"] else None
             if usage is not None:
                 out["metrics"]["tokens"] = usage["metric"]
                 out["diagnostics"]["tokens_cached_at"] = timestamp(usage["at"])
@@ -192,4 +193,7 @@ def collect_codex(binary, now, timeout=45, cwd=None, rpc_factory=None):
         usage = _cached_usage(cache, now)
         if usage is not None:
             out["metrics"]["tokens"] = usage["metric"]
+        for measurement in out["metrics"].values():
+            if measurement.get("value") is not None:
+                measurement["status"] = "stale"
         return out

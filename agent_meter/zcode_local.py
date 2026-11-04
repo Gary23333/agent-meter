@@ -17,8 +17,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
-from .ccswitch import period_bounds
-from .model import SourceError, metric, source, timestamp
+from .model import SourceError, metric, period_bounds, source, timestamp
 
 COLUMNS = {"started_at", "provider_id", "model_id", "status", "attempt_index",
            "input_tokens", "output_tokens", "reasoning_tokens",
@@ -106,7 +105,7 @@ def collect_zcode_local(path, now, zone=ZoneInfo("Asia/Shanghai")):
         validate_schema(conn)
         rows = [tuple(r) for r in conn.execute(
             "SELECT started_at, provider_id || '/' || model_id, status, input_tokens, output_tokens,"
-            " reasoning_tokens, cache_creation_input_tokens, cache_read_input_tokens FROM model_usage")]
+            " reasoning_tokens, cache_creation_input_tokens, cache_read_input_tokens FROM model_usage WHERE started_at <= ?", (now*1000,))]
         retry_rows = conn.execute("SELECT COUNT(*) FROM model_usage WHERE attempt_index > 0").fetchone()[0]
     negative = sum(1 for r in rows if any(isinstance(v, int) and v < 0 for v in r[3:]))
     if negative:

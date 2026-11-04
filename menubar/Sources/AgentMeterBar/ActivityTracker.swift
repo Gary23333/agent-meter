@@ -30,12 +30,17 @@ final class ActivityTracker {
 
     func start() {
         guard loop == nil else { return }
+        schedule()
+    }
+
+    private func schedule() {
+        loop?.cancel()
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 let interval = ActivityCadence.interval(panelVisible: self.panelVisible,
                                                         hasRunning: self.feed?.hasRunning ?? false)
-                try? await Task.sleep(for: .seconds(interval))
+                do { try await Task.sleep(for: .seconds(interval)) } catch { return }
                 await self.fetch()
             }
         }
@@ -72,6 +77,7 @@ final class ActivityTracker {
     /// Immediate fetch when the user opens the activity tab.
     func panelAppeared() {
         panelVisible = true
+        if loop != nil { schedule() }
         Task {
             if feed == nil || lastFetched.map({ Date().timeIntervalSince($0) > 3 }) == true {
                 await fetch()
@@ -81,6 +87,7 @@ final class ActivityTracker {
 
     func panelDisappeared() {
         panelVisible = false
+        if loop != nil { schedule() }
     }
 
     // MARK: 项目别名

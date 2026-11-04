@@ -210,7 +210,7 @@ class PriceTableTests(unittest.TestCase):
                     patch("agent_meter.collector.collect_opencode_tokens",
                           side_effect=__import__("agent_meter.model", fromlist=["SourceError"]).SourceError("opencode_db_not_found")):
                 snap = collect({"runtime_dir": tmp, "app_roots": [], "disabled_sources": [
-                    "ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "deepseek_api",
+                    "codex", "claude", "kimi", "qoder", "minimax_code", "deepseek_api",
                     "dreamina", "minimax_design", "workbuddy", "trae_cn", "gemini", "antigravity", "opencode"]}, now=NOW)
             zc = next(s for s in snap["sources"] if s["id"] == "zcode")
             self.assertEqual(zc["metrics"]["cost"]["status"], "available")
@@ -438,6 +438,18 @@ class DeepSeekWindowTests(unittest.TestCase):
         # 30d still reaches all five rows (2026-09-21 .. 2026-10-20).
         self.assertEqual(usage["windows"]["30d"]["days"], 5)
         self.assertEqual(usage["windows"]["30d"]["amount"], "15")
+
+
+class ApplicationPriceTests(unittest.TestCase):
+    def test_per_app_model_cost_and_reasoning_at_output_rate(self):
+        from agent_meter.prices import PriceTable, estimate_source_cost
+        table=PriceTable("USD", {"priced": (1,1,1,2)}, set())
+        groups=[{"app":"a","model":"priced","fresh_input":0,"output":1_000_000,"reasoning":500_000},
+                {"app":"b","model":"priced","fresh_input":1_000_000,"output":0}]
+        result=estimate_source_cost({"value":{"periods":{"all":{"groups":groups}}}}, table)["value"]["periods"]["all"]
+        self.assertEqual(Decimal(result["amount"]),4)
+        self.assertEqual(Decimal(result["app_models"]["a"]["priced"]),3)
+        self.assertEqual(Decimal(result["app_models"]["b"]["priced"]),1)
 
 
 if __name__ == "__main__":

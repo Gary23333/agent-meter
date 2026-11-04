@@ -3,15 +3,15 @@ from pathlib import Path
 
 # App identity is separate from the provider's billing identity.
 KNOWN = {
-    "ChatGPT": "codex", "Codex": "codex", "Claude": "claude",
+    "ChatGPT": "chatgpt", "Codex": "codex", "Claude": "claude",
     "Kimi Code": "kimi", "Kimi": "kimi_chat", "KimiCU": "kimi_cu",
     "MiniMax Code": "minimax_code", "MiniMax Design": "minimax_design",
     "Qoder CN": "qoder", "Qoder CN IDE": "qoder",
     "Trae CN": "trae_cn", "TRAE SOLO CN": "trae_solo_cn", "WorkBuddy": "workbuddy",
     "ZCode": "zcode", "DeepSeek Harness": "deepseek_harness", "Xiaomi MiMo": "mimo",
     "AutoGLM": "autoglm", "妙手": "catpaw", "Doubao": "doubao", "豆包浏览器": "doubao_browser",
-    "Cherry Studio": "cherry", "LM Studio": "lmstudio", "CC Switch": "ccswitch",
-    "Agent Launcher": "agent_launcher", "Cursor": "cursor", "Windsurf": "windsurf",
+    "Cherry Studio": "cherry", "LM Studio": "lmstudio",
+    "Cursor": "cursor", "Windsurf": "windsurf",
     "Gemini": "gemini", "OpenCode": "opencode", "Antigravity": "antigravity",
 }
 

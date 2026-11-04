@@ -62,9 +62,10 @@ private struct PeriodSummary: View {
     private var totals: JSON { data["totals"] }
     private var segments: [Segment] {
         [Segment(id: "in", label: "新输入", value: totals["fresh_input"].double ?? 0, color: theme.series(Color(red: 0.30, green: 0.56, blue: 0.98), index: 0)),
-         Segment(id: "out", label: "输出", value: totals["output"].double ?? 0, color: theme.series(Color(red: 0.58, green: 0.40, blue: 0.97), index: 1)),
+         Segment(id: "out", label: "输出（含推理）", value: (totals["output"].double ?? 0) + (totals["reasoning"].double ?? 0), color: theme.series(Color(red: 0.58, green: 0.40, blue: 0.97), index: 1)),
          Segment(id: "cr", label: "缓存读取", value: totals["cache_read"].double ?? 0, color: theme.series(Color(red: 0.22, green: 0.76, blue: 0.70), index: 2)),
-         Segment(id: "cw", label: "缓存写入", value: totals["cache_write"].double ?? 0, color: theme.series(Color(red: 0.98, green: 0.64, blue: 0.24), index: 3))]
+         Segment(id: "cw", label: "缓存写入", value: totals["cache_write"].double ?? 0, color: theme.series(Color(red: 0.98, green: 0.64, blue: 0.24), index: 3)),
+         Segment(id: "unknown", label: "未拆分", value: totals["unclassified"].double ?? 0, color: .gray)]
     }
 
     var body: some View {
@@ -91,7 +92,7 @@ private struct PeriodSummary: View {
                             .contentTransition(.numericText())
                         if data["total_is_lower_bound"].bool == true {
                             Text("起").font(theme.font(11, weight: .semibold)).foregroundStyle(.orange)
-                                .help("部分历史已被汇总为日数据，总量为下界")
+                                .help("部分日志无法读取或窗口边界只有日汇总，显示已确认的用量")
                         }
                     }
                     Text("\(Fmt.grouped(totals["requests"].double ?? 0)) 次请求")
@@ -187,8 +188,7 @@ private struct PeriodSummary: View {
 
     /// Convert each source to CNY before adding. Unknown prices stay unknown.
     private var headlineCost: (amount: Double, unit: String)? {
-        var amounts = data["local_cost"].object.compactMapValues { $0.double }
-        amounts["USD", default: 0] += totals["estimated_cost_usd"].double ?? 0
+        let amounts = data["local_cost"].object.compactMapValues { $0.double }
         let total = Fmt.moneyTotal(amounts)
         return total > 0 ? (total, "CNY") : nil
     }
@@ -196,15 +196,11 @@ private struct PeriodSummary: View {
     /// Where the estimate comes from, per source and per currency. Zero
     /// parts stay off the line ("价格表 $0" reads like a bug, not a total).
     private var costComposition: String {
-        let cc = totals["estimated_cost_usd"].double
         var parts: [String] = []
-        if let cc, cc > 0 { parts.append("CC Switch " + Fmt.usd(cc)) }
         for (unit, value) in data["local_cost"].object.sorted(by: { $0.key < $1.key }) {
             let amount = value.double ?? 0
             if amount > 0 { parts.append("价格表 " + Fmt.amount(amount, unit: unit)) }
         }
-        let n = Int(totals["unpriced_detail_requests"].double ?? 0)
-        if n > 0 { parts.append("\(n) 次无定价") }
         return (parts.isEmpty ? "API 等价估算" : parts.joined(separator: " · ")) + " · " + Fmt.currencyNote
     }
 
@@ -284,7 +280,7 @@ private struct PeriodSummary: View {
                 ForEach(apps) { a in
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 6) {
-                            // CC Switch app keys map to discovery providers ("mcode" → minimax_code).
+                            // App keys map to discovery providers ("mcode" → minimax_code).
                             let provider = a.id == "mcode" ? "minimax_code" : a.id
                             if let icon = AppLauncher.icon(for: provider, in: snapshot) {
                                 Image(nsImage: icon).resizable().frame(width: 16, height: 16)
@@ -331,14 +327,9 @@ private struct PeriodSummary: View {
         return map.values.sorted { $0.tokens > $1.tokens }
     }
 
-    /// What one token group costs: CC Switch prices each of its own groups;
-    /// local sources get a per-model amount from the price-table estimate.
+    /// What one token group costs: the price table's per-model estimate.
     private func groupCost(_ g: JSON) -> [String: Double] {
-        if let usd = g["estimated_cost_usd"].double, usd > 0 { return ["USD": usd] }
-        let entry = data["cost_index"][g["source"].string ?? ""]
-        guard let unit = entry["unit"].string,
-              let amount = entry["models"][g["model"].string ?? ""].double, amount > 0 else { return [:] }
-        return [unit: amount]
+        LocalUsage.groupCost(g, data: data)
     }
 
     private func costLabel(_ costs: [String: Double]) -> String {
@@ -375,15 +366,18 @@ private struct PeriodSummary: View {
 
     /// Which local ledgers were summed in, for the footnote.
     private var sourceNote: String {
-        let extra = data["includes_local"].array.compactMap { $0.string }
-        guard !extra.isEmpty else { return "数据来自 CC Switch 本机记录" }
-        return "数据来自 CC Switch 与 " + extra.map { Catalog.brand($0).name }.joined(separator: "、") + " 本机记录"
+        let names = data["includes_local"].array.compactMap { $0.string }.map { Catalog.brand($0).name }
+        guard !names.isEmpty else { return "数据来自本机记录" }
+        return "数据来自 " + names.joined(separator: "、") + " 本机记录"
     }
 
     private var footnote: some View {
         var parts = [sourceNote]
         if let imported = history?.lastImport { parts.append("最近导入 " + Fmt.ago(imported, now: now)) }
-        if data["period_status"].string == "partial" { parts.append("部分日期仅有日汇总") }
+        if data["period_status"].string == "partial" { parts.append("滚动窗口起始日仅有日汇总，该日历史未计入") }
+        if let n = totals["unclassified"].double, n > 0 { parts.append(Fmt.tokens(n) + " Token 缺少分项，已计入总量，费用待定") }
+        let partial = data["partial_sources"].array.compactMap(\.string)
+        if !partial.isEmpty { parts.append("部分采集 " + partial.joined(separator: "、")) }
         return Text(parts.joined(separator: " · "))
             .font(.system(size: 10)).themeForeground(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -424,12 +418,10 @@ final class LocalUsageMergedCache {
     }
 }
 
-/// One local-usage view summing every local token ledger: CC Switch's imports
+/// One local-usage view summing every local token ledger: the imported history
 /// plus the direct readers (Kimi Code, ZCode, OpenCode, WorkBuddy, and the
-/// Codex / Claude Code / Gemini / MiniMax Code session logs). They record
-/// different clients — or, for the CLIs CC Switch also imports, only the days
-/// it never imported — so the sum has no double counting, and the tab works
-/// on machines without CC Switch at all.
+/// Codex / Claude Code / Gemini / MiniMax Code session logs). Each ledger
+/// records its own clients, so the sum has no double counting.
 enum LocalUsage {
     private static let mergedCache = LocalUsageMergedCache()
 
@@ -437,14 +429,36 @@ enum LocalUsage {
     /// account card's token rows can never disagree with the tab. Keys are the
     /// group app names; callers map provider ids ("minimax_code" → "mcode").
     static func appTotals(_ snapshot: Snapshot, period: Period) -> [String: (tokens: Double, requests: Double)] {
+        if !snapshot.applicationUsage.isNull {
+            return snapshot.applicationUsage.object.compactMapValues { periods in
+                let row = periods[period.rawValue]
+                guard let tokens = row["total_tokens"].double, let requests = row["requests"].double else { return nil }
+                return (tokens, requests)
+            }
+        }
         guard let data = merged(snapshot: snapshot, period: period) else { return [:] }
         var map: [String: (tokens: Double, requests: Double)] = [:]
         for g in data["groups"].array {
-            let app = g["app"].string ?? "其他"
+            let app = Catalog.applicationID(g["app"].string ?? "其他")
             map[app, default: (0, 0)].tokens += g["total_tokens"].double ?? 0
             map[app, default: (0, 0)].requests += g["requests"].double ?? 0
         }
         return map
+    }
+
+    static func groupCost(_ group: JSON, data: JSON) -> [String: Double] {
+        let entry = data["cost_index"][group["source"].string ?? ""]
+        let model = group["model"].string ?? ""
+        let app = group["app"].string ?? ""
+        // Older snapshots only priced per source/model. If several apps
+        // share a model, that legacy amount cannot be assigned to one app.
+        guard let unit = entry["unit"].string else { return [:] }
+        if let amount = entry["app_models"][app][model].double { return [unit: amount] }
+        guard entry["app_models"].isNull,
+              let amount = entry["models"][model].double,
+              data["groups"].array.filter({ $0["source"].string == group["source"].string && $0["model"].string == model }).count == 1
+        else { return [:] }
+        return [unit: amount]
     }
 
     /// DeepSeek-only peak / off-peak split (tokens and price-table amounts)
@@ -456,7 +470,6 @@ enum LocalUsage {
         let peakCosts: [String: Double]
         let offpeakCosts: [String: Double]
         let unsplitSources: [String]
-        let hasUnsplitCCSwitch: Bool
         let window: JSON
     }
 
@@ -470,22 +483,17 @@ enum LocalUsage {
         var peakTokens = 0.0
         var offpeakTokens = 0.0
         var unsplitSources: [String] = []
-        var hasUnsplitCCSwitch = false
         for g in data["groups"].array {
             guard Catalog.modelKey(g["model"].string ?? "").contains("deepseek") else { continue }
             totalTokens += g["total_tokens"].double ?? 0
             if !g["peak"].isNull, !g["offpeak"].isNull {
                 peakTokens += g["peak"]["total_tokens"].double ?? 0
                 offpeakTokens += g["offpeak"]["total_tokens"].double ?? 0
-            } else {
+            }
+            if g["peak"].isNull || (g["unsplit"]["total_tokens"].double ?? 0) > 0 {
                 // Ledgers without request timestamps are priced at the off-peak rate.
-                let source = g["source"].string ?? ""
-                if source == "ccswitch" {
-                    hasUnsplitCCSwitch = true
-                } else {
-                    let name = Catalog.brand(source).name
-                    if !unsplitSources.contains(name) { unsplitSources.append(name) }
-                }
+                let name = Catalog.brand(g["source"].string ?? "").name
+                if !unsplitSources.contains(name) { unsplitSources.append(name) }
             }
         }
         func dsCosts(_ key: String) -> [String: Double] {
@@ -502,7 +510,6 @@ enum LocalUsage {
                             peakCosts: dsCosts("local_peak_cost_models"),
                             offpeakCosts: dsCosts("local_offpeak_cost_models"),
                             unsplitSources: unsplitSources,
-                            hasUnsplitCCSwitch: hasUnsplitCCSwitch,
                             window: data["peak_window"])
     }
 
@@ -513,48 +520,37 @@ enum LocalUsage {
     }
 
     private static func computeMerged(snapshot: Snapshot, period: Period) -> JSON? {
-        var base: JSON?
-        var totals: [String: JSON] = ["requests": .number(0), "fresh_input": .number(0), "output": .number(0),
+        var totals: [String: JSON] = ["requests": .number(0), "reasoning": .number(0), "unclassified": .number(0), "fresh_input": .number(0), "output": .number(0),
                                       "cache_read": .number(0), "cache_write": .number(0), "total_tokens": .number(0)]
         var groups: [JSON] = []
         var included: [String] = []
-        var extraRequests = 0.0
+        var periodStatus: JSON = .null
+        var partialSources: [String] = []
         for source in snapshot.sources {
             guard let value = source.metric("tokens")?.value["periods"][period.rawValue], !value.isNull else { continue }
             if source.id.hasPrefix("codexbar:") { continue }
-            if source.id == "ccswitch" { base = value }
+            if source.metrics["tokens"]?.status == "partial" { partialSources.append(source.displayName) }
+            if value["period_status"].string == "partial" {
+                periodStatus = value["period_status"]
+            }
             let t = value["totals"]
             for key in totals.keys {
                 totals[key] = .number((totals[key]?.double ?? 0) + (t[key].double ?? 0))
             }
-            // Each group keeps the source it came from: CC Switch prices its own
-            // groups, the local sources are priced per model by the price table.
+            // Each group keeps the source it came from, so the price table can
+            // price it per model.
             for g in value["groups"].array {
                 var o = g.object
                 o["source"] = .string(source.id)
                 groups.append(.object(o))
             }
-            if source.id != "ccswitch" {
-                included.append(source.baseID)
-                extraRequests += t["requests"].double ?? 0
-            }
+            included.append(source.baseID)
         }
-        guard base != nil || !included.isEmpty else { return nil }
-        // CC Switch's own USD estimate is part of this view's total, not a
-        // separate number; local price-table amounts are kept per currency.
-        if let b = base {
-            if let cc = b["totals"]["estimated_cost_usd"].double, cc > 0 {
-                totals["estimated_cost_usd"] = .number(cc)
-            }
-            if let n = b["totals"]["unpriced_detail_requests"].double, n > 0 {
-                totals["unpriced_detail_requests"] = .number(n)
-            }
-        }
+        guard !included.isEmpty else { return nil }
         var localCosts: [String: Double] = [:]
         var localPeakModels: [String: [String: Double]] = [:]
         var localOffpeakModels: [String: [String: Double]] = [:]
         var costIndex: [String: JSON] = [:]
-        var unmatched: [String: Set<String>] = [:]
         for source in snapshot.sources {
             guard let cost = source.metric("cost")?.value, cost["basis"].string == "local_price_table" else { continue }
             let window = cost["periods"][period.rawValue]
@@ -573,17 +569,15 @@ enum LocalUsage {
             }
             let models = window["models"].object
             if !models.isEmpty {
-                costIndex[source.id] = .object(["unit": cost["unit"], "models": .object(models)])
+                costIndex[source.id] = .object(["unit": cost["unit"], "models": .object(models), "app_models": window["app_models"]])
             }
-            unmatched[source.id] = Set(window["unmatched_models"].array.compactMap { $0.string }
-                .map { $0.replacingOccurrences(of: " (no breakdown)", with: "") }
-                .filter { !$0.isEmpty && $0 != "unknown" })
+
         }
         // Name the unpriced models by how much they actually consumed.
         var unpriced: [String: Double] = [:]
         for g in groups {
             guard let source = g["source"].string, let model = g["model"].string,
-                  unmatched[source]?.contains(model) == true else { continue }
+                  costIndex[source]?["models"][model].double == nil, (g["total_tokens"].double ?? 0) > 0 else { continue }
             unpriced[Catalog.modelLabel(model), default: 0] += g["total_tokens"].double ?? 0
         }
         // Peak / off-peak split. Tokens come from the merged groups (each
@@ -600,7 +594,7 @@ enum LocalUsage {
         for source in snapshot.sources {
             guard let value = source.metric("tokens")?.value["periods"][period.rawValue], !value.isNull else { continue }
             let sourceGroups = value["groups"].array
-            if !sourceGroups.isEmpty, !sourceGroups.contains(where: { $0["peak"]["total_tokens"].double != nil }),
+            if !sourceGroups.isEmpty, sourceGroups.contains(where: { $0["peak"].isNull || ($0["unsplit"]["total_tokens"].double ?? 0) > 0 }),
                source.metric("cost")?.value["basis"].string == "local_price_table",
                !peakUnsplit.contains(source.id) {
                 peakUnsplit.append(source.id)
@@ -613,11 +607,12 @@ enum LocalUsage {
         let read = totals["cache_read"]?.double ?? 0
         let write = totals["cache_write"]?.double ?? 0
         totals["cache_hit_rate"] = fresh + read + write > 0 ? .number(read / (fresh + read + write)) : .null
-        totals["unpriced_extra_requests"] = .number(extraRequests)
         totals["peak_tokens"] = .number(peakTokens)
         totals["offpeak_tokens"] = .number(offpeakTokens)
         var out: [String: JSON] = ["totals": .object(totals), "groups": .array(groups),
                                    "includes_local": .array(included.map { .string($0) })]
+        out["total_is_lower_bound"] = .bool(!partialSources.isEmpty || periodStatus.string == "partial")
+        out["partial_sources"] = .array(partialSources.map(JSON.string))
         out["local_cost"] = .object(localCosts.mapValues { .number($0) })
         out["local_peak_cost_models"] = .object(localPeakModels.mapValues { models in .object(models.mapValues { .number($0) }) })
         out["local_offpeak_cost_models"] = .object(localOffpeakModels.mapValues { models in .object(models.mapValues { .number($0) }) })
@@ -633,7 +628,7 @@ enum LocalUsage {
             : peakWindow
         out["cost_index"] = .object(costIndex)
         out["unpriced_models"] = .array(unpriced.sorted { $0.value > $1.value }.prefix(8).map { .string($0.key) })
-        if let periodStatus = base?["period_status"], !periodStatus.isNull {
+        if !periodStatus.isNull {
             out["period_status"] = periodStatus
         }
         return .object(out)

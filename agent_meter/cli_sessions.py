@@ -1,34 +1,28 @@
 """Direct local session-history readers for Codex CLI, Claude Code, Gemini CLI
-and MiniMax Code, for machines (or date ranges) CC Switch does not cover.
+and MiniMax Code, each owning its own usage ledger.
 
-Dedup and field semantics were aligned against this machine's CC Switch 4.0.5
-imports (verified 2026-10-09, exact match on shared days). CC Switch 4.0.22
-added compressed `.jsonl.zst` rollouts and token_usage_record events; this
-reader still reads only uncompressed token_count events, so CC Switch stays
-primary for the days it imports those.
+Dedup and field semantics were verified against this machine's historical
+imports (2026-10-09, exact match on shared days). Codex rollouts may be
+zstd-compressed (`.jsonl.zst`); both forms are read with the same cumulative
+token_count diff rule.
 
 - Codex: one jsonl rollout per session under ~/.codex/sessions and
   ~/.codex/archived_sessions; event_msg/token_count events carry cumulative
   info.total_token_usage, so each event's contribution is the diff of the
   series (a repeated event adds zero; a decreasing total is a reset that
   restarts the series). input includes cached_input_tokens (fresh = input −
-  cached); output excludes reasoning (matches codex's own total_tokens and
-  the imported rows); model attribution is per-file session_meta.model —
-  mixed sessions (e.g. auto-review turns) count toward the session's primary
-  model, which only affects the model split, not the totals.
+  cached); reported total_tokens disambiguates whether reasoning is included
+  in output. Each turn_context updates the model for subsequent usage.
 - Claude Code: ~/.claude/projects/**/*.jsonl; streaming appends several
   records per requestId and the latest holds the final usage. Keep the last
   record per requestId globally across files; sidechain (subagent) records
   are real usage and are included. usage.input_tokens is already fresh.
 - Gemini CLI: ~/.gemini/tmp/*/chats/session-*.jsonl; repeated ids keep the
-  last record; fresh = input − cached; output = output + thoughts (the way
-  CC Switch stores it).
+  last record; fresh = input − cached; output = output + thoughts.
 - MiniMax Code: ~/.minimax/v2/sqlite/runtime-state.sqlite table
   local_runtime_token_usage; one row per request, input already fresh.
 
-Days CC Switch already recorded for the app are excluded here (CC Switch
-stays primary), so the two never add up. Only token fields are read, never
-message text.
+Only token fields are read, never message text.
 """
 import json
 import sqlite3
@@ -38,10 +32,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
-from .ccswitch import app_imported_days, period_bounds
-from .model import SourceError, metric, source, timestamp
+from .model import SourceError, metric, period_bounds, source, timestamp
+from .zstd_io import ZSTD_ERRORS as _ZSTD_ERRORS, decompressed, is_compressed, route as _zstd_route
 
-from .record_cache import records_cache as _cache
+from .record_cache import records_cache as _cache, wal_stamp
 
 TOKEN_KEYS = ("requests", "fresh_input", "output", "reasoning", "cache_read", "cache_write")
 
@@ -58,6 +52,9 @@ def _prune(seen, namespace):
 
 
 def _epoch(ts):
+    if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+        seconds = ts / 1000 if ts > 253402271999 else ts
+        return seconds if 0 <= seconds <= 253402271999 else None
     try:
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
     except (AttributeError, ValueError):
@@ -74,7 +71,8 @@ def _nonneg(value):
 
 # ---------------------------------------------------------------- aggregation
 # Record shape everywhere: (epoch, model, fresh_input, output, reasoning,
-# cache_read, cache_write). Keyed variants carry the dedup key up front.
+# cache_read, cache_write[, unclassified]). The optional last column is
+# used only when the recorded total exceeds the available breakdown.
 
 def _close(bucket_values):
     """Attach total_tokens to a peak/off-peak accumulator."""
@@ -82,17 +80,12 @@ def _close(bucket_values):
     return bucket_values
 
 
-def _summarize(records, start, end, excluded, zone, app):
+def _summarize(records, start, end, zone, app):
     totals = dict.fromkeys(TOKEN_KEYS, 0)
     split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
     models = {}
     model_splits = {}
-    excluded_here = set()
-    for t, model, fresh, output, reasoning, cache_read, cache_write in records:
-        day = datetime.fromtimestamp(t, zone).date().isoformat()
-        if day in excluded:
-            excluded_here.add(day)
-            continue
+    for t, model, fresh, output, reasoning, cache_read, cache_write, *unknown in records:
         if (start is not None and t < start) or t > end:
             continue
         totals["requests"] += 1
@@ -100,42 +93,41 @@ def _summarize(records, start, end, excluded, zone, app):
         target["requests"] += 1
         values = {"fresh_input": fresh, "output": output, "reasoning": reasoning,
                   "cache_read": cache_read, "cache_write": cache_write}
+        if unknown:
+            values["unclassified"] = unknown[0]
         for name, value in values.items():
-            totals[name] += value
-            target[name] += value
+            totals[name] = totals.get(name, 0) + value
+            target[name] = target.get(name, 0) + value
         side = "offpeak" if peak.is_offpeak(t) else "peak"
         peak.add(split[side], values)
         peak.add(model_splits.setdefault(model, {"peak": peak.bucket(), "offpeak": peak.bucket()})[side], values)
-    totals["total_tokens"] = sum(totals[k] for k in TOKEN_KEYS[1:])
+    totals["total_tokens"] = peak.total(totals)
     totals["peak"] = _close(split["peak"])
     totals["offpeak"] = _close(split["offpeak"])
     denominator = totals["fresh_input"] + totals["cache_read"] + totals["cache_write"]
     totals["cache_hit_rate"] = totals["cache_read"] / denominator if denominator else None
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": totals,
-            "groups": [{"app": app, "model": m, **v, "total_tokens": sum(v[k] for k in TOKEN_KEYS[1:]),
+            "groups": [{"app": app, "model": m, **v, "total_tokens": peak.total(v),
                         "peak": _close(model_splits[m]["peak"]),
                         "offpeak": _close(model_splits[m]["offpeak"])}
-                       for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])],
-            "excluded_ccswitch_days": sorted(excluded_here)}
+                       for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])]}
 
 
-def _metric_value(records, now, zone, excluded, app, coverage, dedup_rule, overlap_state):
-    periods = {p: _summarize(records, *period_bounds(now, p, zone), excluded, zone, app)
+def _metric_value(records, now, zone, app, coverage, dedup_rule):
+    periods = {p: _summarize(records, *period_bounds(now, p, zone), zone, app)
                for p in ("today", "7d", "30d", "all")}
     for p in periods.values():
         p["timezone"] = str(zone)
     daily = {}
-    for t, model, fresh, output, reasoning, cache_read, cache_write in records:
-        day = datetime.fromtimestamp(t, zone).date().isoformat()
-        if day in excluded:
-            continue
-        daily[day] = daily.get(day, 0) + fresh + output + reasoning + cache_read + cache_write
+    for row in records:
+        if row[0] <= now:
+            day = datetime.fromtimestamp(row[0], zone).date().isoformat()
+            daily[day] = daily.get(day, 0) + sum(row[2:])
     return {"peak_split": "request_timestamp",
             "periods": periods,
             "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
-            "coverage": coverage, "dedup_rule": dedup_rule,
-            "ccswitch_overlap": {"state": overlap_state, "excluded_days": sorted(excluded)}}
+            "coverage": coverage, "dedup_rule": dedup_rule}
 
 
 def _last_per_key(keyed):
@@ -153,7 +145,7 @@ def _parse_claude_file(path):
     """[(key, epoch, model, fresh, output, read, write)] — one entry per record."""
     out = []
     with open(path, "rb") as handle:
-        for line in handle:
+        for index, line in enumerate(handle):
             if b'"usage"' not in line:
                 continue
             try:
@@ -168,7 +160,9 @@ def _parse_claude_file(path):
             if t is None:
                 continue
             key = o.get("requestId")
-            key = key if isinstance(key, str) and key else "uuid:" + str(o.get("uuid") or id(line))
+            key = key or message.get("id") or o.get("uuid")
+            if not isinstance(key, str) or not key:
+                key = (str(path), index)
             out.append((key, t, _model(message.get("model")) if isinstance(message, dict) else "unknown",
                         _nonneg(usage.get("input_tokens")), _nonneg(usage.get("output_tokens")),
                         _nonneg(usage.get("cache_read_input_tokens")),
@@ -176,14 +170,24 @@ def _parse_claude_file(path):
     return out
 
 
-def load_claude(root):
+def _claude_paths(root, desktop_root):
+    """CLI transcripts plus Claude Desktop's local-agent session transcripts."""
+    paths = list(sorted(root.glob("**/*.jsonl"))) if root.is_dir() else []
+    if desktop_root is not None and Path(desktop_root).is_dir():
+        paths += [p for p in sorted(Path(desktop_root).rglob("*.jsonl"))
+                  if "/.claude/projects/" in str(p)]
+    return paths
+
+
+def load_claude(root, desktop_root=None):
     root = Path(root)
-    if not root.is_dir():
+    paths = _claude_paths(root, desktop_root)
+    if not paths and not root.is_dir():
         raise SourceError("claude_projects_not_found")
     seen = set()
     def entries():
         order = 0
-        for path in sorted(root.glob("**/*.jsonl")):
+        for path in paths:
             seen.add(str(path))
             for key, t, model, fresh, output, cache_read, cache_write in _file_records(path, _parse_claude_file):
                 yield (key, (t, order), (t, model, fresh, output, 0, cache_read, cache_write))
@@ -205,11 +209,11 @@ def _parse_gemini_file(path):
             except ValueError:
                 continue
             tokens = o.get("tokens") if isinstance(o, dict) else None
-            t = _epoch(o.get("timestamp"))
+            t = _epoch(o.get("timestamp")) if isinstance(o, dict) else None
             if not isinstance(tokens, dict) or not isinstance(tokens.get("input"), int) or t is None:
                 continue
             key = o.get("id")
-            key = key if isinstance(key, str) and key else "line:%d" % index
+            key = key if isinstance(key, str) and key else (str(path), index)
             total_input, cached = _nonneg(tokens.get("input")), _nonneg(tokens.get("cached"))
             out.append((key, t, _model(o.get("model")), max(0, total_input - cached),
                         _nonneg(tokens.get("output")) + _nonneg(tokens.get("thoughts")), cached))
@@ -233,60 +237,138 @@ def load_gemini(root):
     return records
 
 
-def _parse_codex_file(path):
+def _codex_counts(total):
+    raw_input = _nonneg(total.get("input_tokens"))
+    raw_output = _nonneg(total.get("output_tokens"))
+    reasoning = _nonneg(total.get("reasoning_output_tokens"))
+    cached = min(raw_input, _nonneg(total.get("cached_input_tokens")))
+    write = _nonneg(total.get("cache_write_input_tokens"))
+    # Older ledgers lack an authoritative total. Preserve their
+    # established exclusive-output convention in that case.
+    if total.get("total_tokens") == raw_input + raw_output:
+        reasoning = min(raw_output, reasoning)
+        raw_output -= reasoning
+    fields = (raw_input - cached, raw_output, reasoning, cached, write)
+    # Some first observations carry only last_token_usage.total_tokens,
+    # with every component absent/zero. Keep that usage unpriced.
+    unclassified = max(0, _nonneg(total.get("total_tokens")) - sum(fields))
+    return (*fields, unclassified)
+
+
+def _parse_codex_file(path, route_name=None, zstd_binary=None):
     """Per-request deltas from one session's cumulative total series."""
     records = []
     model = "unknown"
     prev = None
-    with open(path, "rb") as handle:
-        first = handle.readline()
-        try:
-            meta = json.loads(first)
-            payload = meta.get("payload") if isinstance(meta, dict) else None
-            if isinstance(payload, dict):
-                model = _model(payload.get("model"))
-        except ValueError:
-            pass
-        for line in handle:
-            if b"token_count" not in line:
-                continue
-            try:
-                o = json.loads(line)
-            except ValueError:
-                continue
-            payload = o.get("payload") if isinstance(o, dict) else None
-            info = payload.get("info") if isinstance(payload, dict) and payload.get("type") == "token_count" else None
-            total = info.get("total_token_usage") if isinstance(info, dict) else None
-            t = _epoch(o.get("timestamp"))
-            if not isinstance(total, dict) or t is None:
-                continue
-            state = (_nonneg(total.get("input_tokens")), _nonneg(total.get("output_tokens")),
-                     _nonneg(total.get("reasoning_output_tokens")), _nonneg(total.get("cached_input_tokens")),
-                     _nonneg(total.get("cache_write_input_tokens")))
-            if state == prev:
-                continue  # streamed duplicate of the previous event
-            delta = state if prev is None else tuple(v - p if v >= p else v for v, p in zip(state, prev))
-            prev = state
-            total_input, output, reasoning, cached, write = delta
-            records.append((t, model, max(0, total_input - cached), output, reasoning, cached, write))
+    try:
+        with _codex_log(path, route_name, zstd_binary) as handle:
+            for line in handle:
+                if not any(marker in line for marker in (b'"token_count"', b'"turn_context"', b'"session_meta"')):
+                    continue
+                try:
+                    o = json.loads(line)
+                except ValueError:
+                    continue
+                payload = o.get("payload") if isinstance(o, dict) else None
+                if not isinstance(payload, dict):
+                    continue
+                if o.get("type") in {"session_meta", "turn_context"}:
+                    if "model" in payload:
+                        model = _model(payload["model"])
+                    continue
+                info = payload.get("info") if payload.get("type") == "token_count" else None
+                total = info.get("total_token_usage") if isinstance(info, dict) else None
+                t = _epoch(o.get("timestamp"))
+                if not isinstance(total, dict) or t is None:
+                    continue
+                state = _codex_counts(total)
+                if state == prev:
+                    continue
+                # A reset restarts the entire cumulative series. A component
+                # correction within a growing series must not replay its history.
+                delta = state if prev is None or sum(state) < sum(prev) else tuple(
+                    max(0, v - p) for v, p in zip(state, prev))
+                # The first observed cumulative snapshot can include a parent
+                # thread or a pre-rollout baseline. Only the explicit last
+                # request is attributable to this file at that timestamp.
+                last = info.get("last_token_usage")
+                if prev is None and isinstance(last, dict) and ("total_tokens" in last or {"input_tokens", "output_tokens"} <= last.keys()):
+                    delta = _codex_counts(last)
+                prev = state
+                if any(delta):
+                    records.append((t, model, *(delta if delta[-1] else delta[:-1])))
+    except _ZSTD_ERRORS:
+        raise OSError("unreadable zstd session file") from None
     return records
 
 
-def load_codex(*roots):
+@contextmanager
+def _codex_log(path, route_name, zstd_binary):
+    """Plain or zstd-compressed rollout as a binary line iterator."""
+    if is_compressed(path):
+        with decompressed(path, route_name, zstd_binary) as handle:
+            yield handle
+    else:
+        with open(path, "rb") as handle:
+            yield handle
+
+
+def _codex_logs(root):
+    return (path for path in root.rglob("*.jsonl*")
+            if path.name.endswith((".jsonl", ".jsonl.zst", ".jsonl.zstd")))
+
+
+def _rollout_priority(path):
+    try:
+        return (not is_compressed(path), path.stat().st_mtime_ns, str(path))
+    except OSError:
+        return (False, 0, str(path))
+
+
+def load_codex(*roots, zstd_binary=None, diagnostics=None):
     records = []
-    seen = set()
-    any_dir = False
-    for root in roots:
-        root = Path(root)
-        if not root.is_dir():
-            continue
-        any_dir = True
-        for path in sorted(root.glob("**/*.jsonl")):
-            seen.add(str(path))
-            records.extend(_file_records(path, _parse_codex_file))
-    if not any_dir:
+    present = [Path(root) for root in roots if root and Path(root).is_dir()]
+    if not present:
         raise SourceError("codex_sessions_not_found")
-    _prune(seen, "_parse_codex_file")
+    # The same rollout may be copied between active and archive roots.
+    # Prefer plain over compressed and, within one format, the newest copy.
+    paths = {}
+    for root in present:
+        for path in _codex_logs(root):
+            base = path.stem if is_compressed(path) else path.name
+            paths.setdefault(base, []).append(path)
+    seen = set()
+    skipped = 0
+    reason = None
+    for copies in paths.values():
+        for path in sorted(copies, key=_rollout_priority, reverse=True):
+            try:
+                route = _zstd_route(zstd_binary) if is_compressed(path) else None
+                # The byte representation fits many more cold rollouts in the
+                # shared bounded cache than lists of Python numbers/tuples.
+                def pack_rollout(p):
+                    return json.dumps(_parse_codex_file(p, route, zstd_binary), separators=(",", ":")).encode()
+                packed = _cache.read(path, pack_rollout, "codex_rollout")
+                rows = (tuple(row) for row in json.loads(packed))
+            except SourceError as exc:
+                reason = exc.code
+                continue
+            except (OSError, EOFError):
+                reason = "codex_rollout_unreadable"
+                continue
+            seen.add(str(path))
+            records.extend(rows)
+            break
+        else:
+            skipped += 1
+    _prune(seen, "codex_rollout")
+    if diagnostics is not None:
+        diagnostics.update(rollouts_read=len(seen), rollouts_skipped=skipped,
+                           duplicate_copies=sum(len(copies)-1 for copies in paths.values()))
+        if skipped:
+            diagnostics["reason"] = reason
+    if skipped and not seen:
+        raise SourceError(reason)
     return records
 
 
@@ -354,46 +436,21 @@ def _mcode_turn_models(conn):
     return models
 
 
-def mcode_request_models(path):
-    """request_id -> model for CC Switch rows whose model column is unknown.
-
-    CC Switch writes MiniMax Code proxy rows as `mcode:<session>:<row id>` with
-    model "unknown"; the runtime db resolves each row the same way `load_mcode`
-    does. Read-only and silent: an absent or unreadable db just means no
-    enrichment, never an error.
-    """
-    try:
-        turn_models, rows = _mcode_snapshot(path)
-    except SourceError:
-        return {}
-    resolved = {}
-    for row_id, session_id, turn_id, model, *_ in rows:
-        if row_id is None:
-            continue
-        name = _model(model)
-        if name == "unknown":
-            name = turn_models.get((session_id, turn_id), "unknown")
-        if name != "unknown":
-            resolved[f"mcode:{session_id}:{row_id}"] = name
-    return resolved
-
-
 _mcode_cache = {}   # path -> ((mtime_ns, size), (turn_models, rows))
 
 
 def _mcode_snapshot(path):
     """Parse the runtime db once per file version.
 
-    Both readers (the direct token metric and CC Switch's request-id fill) need
-    the same 3k message rows; caching by mtime+size avoids decoding the JSON
-    payloads twice in one collection cycle.
+    The token metric needs the same 3k message rows; caching by mtime+size
+    avoids decoding the JSON payloads twice in one collection cycle.
     """
     p = Path(path).expanduser()
     try:
         st = p.stat()
     except OSError:
         raise SourceError("mcode_db_not_found") from None
-    stamp = (st.st_mtime_ns, st.st_size)
+    stamp = (st.st_ino, st.st_mtime_ns, st.st_size, wal_stamp(p))
     cached = _mcode_cache.get(str(p))
     if cached is not None and cached[0] == stamp:
         return cached[1]
@@ -430,28 +487,31 @@ def load_mcode(path):
 
 # ---------------------------------------------------------------- collectors
 
-def claude_tokens_metric(root, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai")):
-    excluded, state = app_imported_days(ccswitch_db, zone, "claude")
-    return metric(_metric_value(load_claude(root), now, zone, excluded, "claude",
-                                "claude_code_local_projects", "last_record_per_request_id", state))
+def claude_tokens_metric(root, now, zone=ZoneInfo("Asia/Shanghai"), desktop_root=None):
+    return metric(_metric_value(load_claude(root, desktop_root), now, zone, "claude",
+                                "claude_code_and_desktop_local_sessions", "last_record_per_request_id"))
 
 
-def codex_tokens_metric(sessions_dir, archives_dir, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai")):
-    excluded, state = app_imported_days(ccswitch_db, zone, "codex")
-    return metric(_metric_value(load_codex(sessions_dir, archives_dir), now, zone, excluded, "codex",
-                                "codex_cli_local_rollouts", "cumulative_total_diff_per_session", state))
+def codex_tokens_metric(sessions_dir, archives_dir, now, zone=ZoneInfo("Asia/Shanghai"),
+                        zstd_binary=None):
+    diagnostics = {}
+    records = load_codex(sessions_dir, archives_dir, zstd_binary=zstd_binary, diagnostics=diagnostics)
+    value = _metric_value(records, now, zone, "codex", "codex_cli_local_rollouts",
+                          "cumulative_total_diff_per_session")
+    value["scan"] = diagnostics
+    return metric(value, status="partial" if diagnostics["rollouts_skipped"] else "available",
+                  reason=diagnostics.get("reason"))
 
 
-def mcode_tokens_metric(db, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai")):
-    excluded, state = app_imported_days(ccswitch_db, zone, "mcode")
-    return metric(_metric_value(load_mcode(db), now, zone, excluded, "mcode",
-                                "minimax_code_local_runtime_db", "one_row_per_request", state))
+
+def mcode_tokens_metric(db, now, zone=ZoneInfo("Asia/Shanghai")):
+    return metric(_metric_value(load_mcode(db), now, zone, "mcode",
+                                "minimax_code_local_runtime_db", "one_row_per_request"))
 
 
-def collect_gemini_sessions(root, ccswitch_db, now, zone=ZoneInfo("Asia/Shanghai")):
-    excluded, state = app_imported_days(ccswitch_db, zone, "gemini")
+def collect_gemini_sessions(root, now, zone=ZoneInfo("Asia/Shanghai")):
     records = load_gemini(root)
     out = source("gemini", "local_session_history", now)
-    out["metrics"]["tokens"] = metric(_metric_value(records, now, zone, excluded, "gemini",
-                                                    "gemini_cli_local_chats", "last_record_per_message_id", state))
+    out["metrics"]["tokens"] = metric(_metric_value(records, now, zone, "gemini",
+                                                    "gemini_cli_local_chats", "last_record_per_message_id"))
     return out

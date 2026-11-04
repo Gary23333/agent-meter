@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .ccswitch import ImportedDaysCache, collect_ccswitch
+from .applications import application_usage, coverage_matrix
 from .agy_tokens import collect_antigravity_sessions
 from .agy_quota import collect_antigravity_quota
 from .claude_code import collect_claude, collect_claude_web
@@ -21,7 +21,7 @@ from .discovery import discover
 from .kimi import collect_kimi
 from .kimi_tokens import collect_kimi_tokens
 from .kimi_desktop_tokens import collect_kimi_desktop_tokens
-from .model import COVERAGE_METRICS, SCHEMA_VERSION, SourceError, failed_source, metric, source, timestamp
+from .model import SCHEMA_VERSION, SourceError, failed_source, metric, source, timestamp
 from .opencode_tokens import collect_opencode_tokens
 from .qoder import collect_qoder
 from .qoder_tokens import collect_qoder_credits, merge_credits_metric
@@ -29,6 +29,7 @@ from .web_sources import as_account_lists, collect_qoder_web, collect_trae, coll
 from .minimax import collect_minimax
 from .deepseek import collect_deepseek
 from .dsh_tokens import collect_dsh_sessions
+from .imported_history import collect_imported_history
 from .mimo import collect_mimo
 from .stepfun import collect_stepfun
 from .volcengine import collect_volcengine
@@ -45,17 +46,20 @@ from .zcode_local import zcode_tokens_metric
 def default_config():
     home=Path.home()
     return {"home":str(home),"app_roots":["/Applications",str(home/"Applications")],
-            "ccswitch_db":str(home/".cc-switch/cc-switch.db"),"ccswitch_timezone":"Asia/Shanghai",
-            "zcode_usage_db":str(home/".zcode/cli/db/db.sqlite"),
             "opencode_db":str(home/".local/share/opencode/opencode.db"),
+            "zcode_usage_db":str(home/".zcode/cli/db/db.sqlite"),
             "workbuddy_projects_dir":str(home/".workbuddy/projects"),
-            # Direct CLI session logs (used for days CC Switch has not imported).
+            # Direct CLI session logs; every reader owns its own ledger.
             "codex_sessions_dir":str(home/".codex/sessions"),"codex_archives_dir":str(home/".codex/archived_sessions"),
             # Codex 内置 image_gen：PNG 按张统计 + 历史库里的调用数（版本号会变，模块内 glob 兜底）。
             "codex_images_dir":str(home/".codex/generated_images"),
             "codex_history_db":str(home/".codex/thread_history_1.sqlite"),
+            "codex_state_db":str(home/".codex/state_5.sqlite"),
             "codex_image_quality":"high",
             "claude_projects_dir":str(home/".claude/projects"),"gemini_dir":str(home/".gemini"),
+            # Claude Desktop's local-agent sessions use the same JSONL schema
+            # as Claude Code, under a per-session .claude/projects tree.
+            "claude_desktop_sessions_dir":str(home/"Library/Application Support/Claude/local-agent-mode-sessions"),
             "mcode_db":str(home/".minimax/v2/sqlite/runtime-state.sqlite"),
             "agy_conversations_dir":str(home/".gemini/antigravity-cli/conversations"),
             # The desktop app writes the same conversation schema to its own
@@ -80,7 +84,9 @@ def default_config():
             # Third-party reset trackers throttle themselves; keep their pages out of the
             # 120 s snapshot cycle.
             "enable_reset_forecast":True,"reset_forecast_refresh_minutes":45,
-            "runtime_dir":str(Path.cwd()/".runtime"),"start_kimi_server":False,
+            "runtime_dir":str(Path.cwd()/".runtime"),"local_only":False,"start_kimi_server":False,
+            # One-time legacy import; a missing file just means no history.
+            "history_store":None,
             "codexbar_binary":shutil.which("codexbar"),"enable_codexbar":False,
             # 即梦 is read from its web page by the app; the CLI route is opt-in.
             "enable_dreamina_cli":False,
@@ -112,64 +118,18 @@ def safe_collect(source_id,scope,now,fn):
                       "dsh_sessions_not_found","zstd_unavailable",
                       "kimi_desktop_sessions_not_found",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
-                      "claude_keychain_unavailable","web_session_missing","disabled_by_user","disabled_in_config"}
+                      "claude_keychain_unavailable","web_session_missing","disabled_by_user","disabled_in_config","local_only_mode",
+                      "history_store_not_found"}
         return failed_source(source_id,scope,now,e.code,"not_connected" if e.code in disconnected else "error")
     except Exception:
         # No raw exception text: it can contain paths, request URLs or secrets.
         return failed_source(source_id,scope,now,"unexpected_source_error")
 
 
-HISTORY_APP={"codex":"codex","claude":"claude","gemini":"gemini","opencode":"opencode","mcode":"minimax_code",
-             "grokbuild":"grokbuild","pi":"pi"}
-
-
-def coverage_matrix(apps,sources):
-    by_id={s["id"]:s for s in sources}
-    cc=by_id.get("ccswitch",{})
-    value=cc.get("metrics",{}).get("tokens",{}).get("value")
-    history=set()
-    if value:
-        for period in value["periods"].values():
-            history.update(HISTORY_APP.get(g["app"],g["app"]) for g in period["groups"])
-    # Preserve historical sources even if that CLI isn't installed now.
-    apps=copy.deepcopy(apps)
-    for provider in sorted(history-{a["provider"] for a in apps}):
-        apps.append({"name":provider+" CLI history","provider":provider,"installed":False,"path":None,
-                     "version":None,"bundle_id":None,"discovery_kind":"ccswitch_history"})
-    matrix=[]
-    for app in apps:
-        provider=app["provider"]
-        fields={name:{"status":"not_supported","source":None,"reason":"adapter_not_implemented"} for name in COVERAGE_METRICS}
-        candidate=by_id.get(provider) or by_id.get("codexbar:"+provider)
-        if candidate:
-            for name in COVERAGE_METRICS:
-                m=candidate["metrics"][name]
-                fields[name]={"status":m["status"],"source":candidate["id"],"reason":m["reason"],"scope":candidate["scope"]}
-        if provider in history:
-            # A dedicated local-history source for this provider is the
-            # primary token ledger; CC Switch stays the fallback and the
-            # cost source for the days it imported.
-            local=by_id.get(provider)
-            primary=(local if local is not None and local.get("scope")=="local_session_history"
-                     and local["metrics"]["tokens"]["status"] in {"available","partial","stale"} else None)
-            for name in ("tokens","cost"):
-                if name=="tokens" and primary is not None:
-                    m=primary["metrics"][name]
-                    fields[name]={"status":m["status"],"source":primary["id"],"reason":m["reason"],"scope":"local_session_history"}
-                    continue
-                m=cc["metrics"][name]
-                fields[name]={"status":m["status"],"source":"ccswitch","reason":None,"scope":"local_imported_history"}
-        if provider=="ccswitch":
-            for name in ("tokens","cost"):
-                m=cc.get("metrics",{}).get(name,metric(status="not_connected"))
-                fields[name]={"status":m["status"],"source":"ccswitch","reason":m["reason"],"scope":"local_imported_history"}
-        matrix.append({"application":app,"fields":fields})
-    return matrix
-
-
 def coverage_summary(coverage):
     return {"applications":len(coverage),
             "installed_applications":sum(r["application"]["installed"] for r in coverage),
+            "application_groups":len({r["application"].get("application_id",r["application"]["provider"]) for r in coverage}),
             "available_fields":sum(f["status"]=="available" for r in coverage for f in r["fields"].values()),
             "partial_fields":sum(f["status"]=="partial" for r in coverage for f in r["fields"].values()),
             "missing_fields":sum(f["status"] not in {"available","partial"} for r in coverage for f in r["fields"].values())}
@@ -183,7 +143,7 @@ def collect_antigravity(config,now):
     conversation databases can still show the signed-in account's windows.
     """
     try:
-        out=collect_antigravity_sessions(config["agy_conversations_dir"],config["ccswitch_db"],now,
+        out=collect_antigravity_sessions(config["agy_conversations_dir"],now,
                                          desktop_root=config.get("agy_desktop_conversations_dir"))
     except SourceError as e:
         out=source("antigravity","account",now,status="partial",reason=e.code)
@@ -198,7 +158,7 @@ def collect_antigravity(config,now):
         if out["status"]=="available":
             out["status"]="partial"
             out["diagnostics"]["reason"]=e.code
-    if (out["metrics"]["tokens"]["status"] not in {"available","stale"}
+    if (out["metrics"]["tokens"]["status"] not in {"available","partial","stale"}
             and out["metrics"]["quota"]["status"] not in {"available","stale"}):
         out["status"]="not_connected"
     return out
@@ -210,19 +170,20 @@ def collect(config=None,now=None):
     runtime=Path(config["runtime_dir"])
     runtime.mkdir(mode=0o700,parents=True,exist_ok=True)
     timeout=config["timeout_seconds"]
+    history_store=config.get("history_store") or str(runtime/"imported-history.json")
+    config["history_store"]=history_store
     # In-memory only (set through the local API); never part of the snapshot.
     # The first account per provider keeps the plain source id; others are "id#2"...
     accounts=as_account_lists(config.get("web_sessions"))
     web={p:lst[0] for p,lst in accounts.items()}
     # Switches from the app (e.g. Claude off), also in memory only.
     user_off=set((config.get("preferences") or {}).get("disabled_sources") or [])
-    # Optional API-equivalent price table; CC Switch uses it only to price rows
-    # whose own estimate is missing (unknown model), everything else is untouched.
+    # Optional API-equivalent price table for every local token ledger.
     from .prices import estimate_source_cost, load_prices
     table=load_prices(config["runtime_dir"])
     jobs={
-      "ccswitch":("local_imported_history",lambda:collect_ccswitch(config["ccswitch_db"],now,ZoneInfo(config["ccswitch_timezone"]),
-                                                                   config["mcode_db"],table)),
+      # Project-owned history written once by the legacy migration.
+      "imported_history":("local_imported_history",lambda:collect_imported_history(history_store,now)),
       "codex":("account",lambda:collect_codex(config["codex_binary"],now,max(timeout,config.get("codex_timeout_seconds",45)),str(runtime))),
       # claude.ai web login (shared with the desktop app) first, else Claude Code's Keychain login.
       "claude":("account",lambda:collect_claude_web(web["claude"],now,timeout) if "claude" in web
@@ -234,7 +195,7 @@ def collect(config=None,now=None):
                else collect_qoder(config["qoder_app"],config["node_binary"],runtime,now,timeout)),
       "workbuddy":("account",lambda:collect_workbuddy(web.get("workbuddy"),now,timeout)),
       "trae_cn":("account",lambda:collect_trae(web.get("trae_cn"),now,timeout)),
-      "minimax_code":("account",lambda:collect_minimax(config["ccswitch_db"],now,timeout,(web.get("minimax_code") or {}).get("api_key"))),
+      "minimax_code":("account",lambda:collect_minimax(str(runtime),now,timeout,(web.get("minimax_code") or {}).get("api_key"))),
       "dreamina":("creative_account",lambda:collect_dreamina(config["dreamina_binary"],now,timeout,config["billing_overrides"].get("dreamina"))
                   if config.get("enable_dreamina_cli") else _raise(SourceError("web_session_missing"))),
       "minimax_design":("creative_personal_account",lambda:collect_design(config["design_gateway_url"],now,timeout,
@@ -246,12 +207,14 @@ def collect(config=None,now=None):
               else _raise(SourceError("web_session_missing"))),
       "stepfun":("account",lambda:collect_stepfun(web.get("stepfun"),now,timeout)),
       "volcengine":("account",lambda:collect_volcengine(web.get("volcengine"),now,timeout)),
-      # Local token history that CC Switch does not import; ZCode's own local
-      # usage db attaches to its account source below (kimi pattern).
-      "opencode":("local_session_history",lambda:collect_opencode_tokens(config["opencode_db"],config["ccswitch_db"],now)),
-      "gemini":("local_session_history",lambda:collect_gemini_sessions(config["gemini_dir"],config["ccswitch_db"],now)),
-      "antigravity":("account",lambda:collect_antigravity(config,now)),
-      "deepseek_harness":("local_session_history",lambda:collect_dsh_sessions(config["dsh_sessions_dir"],config["ccswitch_db"],now,zstd_binary=config["zstd_binary"])),
+      # Local token history; ZCode's own local usage db attaches to its
+      # account source below (kimi pattern).
+      "opencode":("local_session_history",lambda:collect_opencode_tokens(config["opencode_db"],now)),
+      "gemini":("local_session_history",lambda:collect_gemini_sessions(config["gemini_dir"],now)),
+      "antigravity":("account",lambda:collect_antigravity_sessions(config["agy_conversations_dir"],now,
+                     desktop_root=config.get("agy_desktop_conversations_dir")) if config["local_only"]
+                     else collect_antigravity(config,now)),
+      "deepseek_harness":("local_session_history",lambda:collect_dsh_sessions(config["dsh_sessions_dir"],now,zstd_binary=config["zstd_binary"])),
       "kimi_desktop":("local_session_history",lambda:collect_kimi_desktop_tokens(config["kimi_desktop_sessions_dir"],now)),
       # Global-reset forecasts: third-party wording, never an account clock.
       "reset_forecast":("external_forecast",lambda:collect_reset_forecast(
@@ -284,18 +247,13 @@ def collect(config=None,now=None):
         # A switch binds the provider, so it also covers "#2" accounts.
         base=key.split("#",1)[0]
         return base in config["disabled_sources"] or base in user_off
+    def local_job(key, scope):
+        return scope.startswith("local_") or key == "antigravity"
+
     sources=[]
-    imported_days=ImportedDaysCache()
-    def with_imported_days(fn):
-        def run():
-            with imported_days.activate():
-                return fn()
-        return run
-    # The context exits only after every worker finishes, then clears all
-    # entries so a later collection always observes the current database.
-    with imported_days, ThreadPoolExecutor(max_workers=min(16,max(4,len(jobs)))) as pool:
-        futures={key:pool.submit(safe_collect,key,scope,now,with_imported_days(fn)) for key,(scope,fn) in jobs.items()
-                 if not switched_off(key)}
+    with ThreadPoolExecutor(max_workers=min(16,max(4,len(jobs)))) as pool:
+        futures={key:pool.submit(safe_collect,key,scope,now,fn) for key,(scope,fn) in jobs.items()
+                 if not switched_off(key) and (not config["local_only"] or local_job(key, scope))}
         # Parse the local session logs alongside the network jobs. submit()
         # runs immediately, so the user switches must gate each one.
         token_futures={}
@@ -303,16 +261,19 @@ def collect(config=None,now=None):
             ("kimi",lambda:collect_kimi_tokens(config["home"],now)),
             ("workbuddy",lambda:collect_workbuddy_tokens(config["workbuddy_projects_dir"],now)),
             ("codex",lambda:codex_tokens_metric(config["codex_sessions_dir"],config["codex_archives_dir"],
-                                                config["ccswitch_db"],now)),
-            ("claude",lambda:claude_tokens_metric(config["claude_projects_dir"],config["ccswitch_db"],now)),
-            ("minimax_code",lambda:mcode_tokens_metric(config["mcode_db"],config["ccswitch_db"],now)),
+                                                now,zstd_binary=config["zstd_binary"])),
+            ("claude",lambda:claude_tokens_metric(config["claude_projects_dir"],now,
+                                                  desktop_root=config["claude_desktop_sessions_dir"])),
+            ("minimax_code",lambda:mcode_tokens_metric(config["mcode_db"],now)),
             ("zcode",lambda:zcode_tokens_metric(config["zcode_usage_db"],now)),
             # Design's agent ledger attaches to its account source (mcode
             # pattern) and is gated by the same source switch.
             ("minimax_design",lambda:collect_design_tokens(config["design_opencode_db"],config["opencode_db"],now)),
         ):
-            if not switched_off(provider):
-                token_futures[provider]=pool.submit(with_imported_days(fn))
+            # Claude's switch only stops the quota/keychain route; its local
+            # token ledger (CLI + desktop) stays independent of that toggle.
+            if provider == "claude" or not switched_off(provider):
+                token_futures[provider]=pool.submit(fn)
         # Codex 内置生图的按张统计（文件 + 历史库调用数），与账户网络无关。
         image_futures={}
         if not switched_off("codex"):
@@ -327,7 +288,8 @@ def collect(config=None,now=None):
             credits_futures["qoder"]=pool.submit(lambda:collect_qoder_credits(config["qoder_projects_dir"],now))
         for key in jobs:
             if key not in futures:
-                reason="disabled_by_user" if key.split("#",1)[0] in user_off else "disabled_in_config"
+                reason=("local_only_mode" if not switched_off(key) else
+                        "disabled_by_user" if key.split("#",1)[0] in user_off else "disabled_in_config")
                 sources.append(failed_source(key,jobs[key][0],now,reason,"not_connected"))
                 continue
             result=futures[key].result()
@@ -338,8 +300,13 @@ def collect(config=None,now=None):
         future=token_futures.get(src["id"])
         if future is None:
             continue
+        if src["id"] == "codex":
+            # Account RPC usage and rollout usage have different scopes.
+            src["metrics"]["account_tokens"] = src["metrics"]["tokens"]
         try:src["metrics"]["tokens"]=future.result()
-        except SourceError as e:src["metrics"]["tokens"]=metric(status="not_connected",reason=e.code)
+        except SourceError as e:
+            status="not_connected" if e.code.endswith("_not_found") or e.code=="zstd_unavailable" else "error"
+            src["metrics"]["tokens"]=metric(status=status,reason=e.code)
         except Exception:src["metrics"]["tokens"]=metric(status="error",reason="local_token_parse_failed")
     # Codex 内置生图（文件张数 + 历史库调用数）；本地读失败只影响该指标。
     for src in sources:
@@ -367,13 +334,13 @@ def collect(config=None,now=None):
         else:
             src["metrics"]["credits"]=merge_credits_metric(src["metrics"]["credits"],ledger)
     # Web-page observations (即梦 membership / credit split) from the app.
-    if not switched_off("dreamina"):
+    if not config["local_only"] and not switched_off("dreamina"):
         sources=merge_dreamina(sources,config.get("observations"),now)
     # Optional API-equivalent cost estimates from the local price table.
-    # CC Switch and CodexBar keep their own estimates; a provider-billed cost
-    # (DeepSeek web usage) is never overwritten.
+    # CodexBar keeps its own estimate; a provider-billed cost (DeepSeek web
+    # usage) is never overwritten.
     for src in sources:
-        if src["id"] in {"ccswitch","deepseek_api"} or src["id"].startswith("codexbar:"):continue
+        if src["id"] in {"deepseek_api"} or src["id"].startswith("codexbar:"):continue
         tokens=src["metrics"]["tokens"]
         if tokens["status"] not in {"available","partial"} or src["metrics"]["cost"]["value"] is not None:continue
         estimated=estimate_source_cost(tokens,table)
@@ -382,11 +349,12 @@ def collect(config=None,now=None):
     if config.get("enable_dreamina_cli") and config.get("dreamina_binary"):
         apps.append({"name":"即梦 CLI","provider":"dreamina","installed":True,"path":config["dreamina_binary"],
                      "version":None,"bundle_id":None,"discovery_kind":"configured_cli"})
-    coverage=coverage_matrix(apps,sources)
+    usage=application_usage(sources)
+    coverage=coverage_matrix(apps,sources,usage)
     return {"schema_version":SCHEMA_VERSION,"collected_at":timestamp(now),"display_timezone":"Asia/Shanghai",
-            "sources":sources,"coverage":coverage,
+            "sources":sources,"coverage":coverage,"application_usage":usage,
             "coverage_summary":coverage_summary(coverage),
-            "aggregation_policy":"No cross-account balance sums. CC Switch is primary local token history; account usage remains separate."}
+            "aggregation_policy":"No cross-account balance sums. Each local ledger is counted independently; account usage remains separate."}
 
 
 def atomic_json(path,payload):
@@ -412,6 +380,7 @@ class SnapshotService:
         self.collect_lock=threading.Lock()
         self.snapshot=None
         self.last_refresh=0
+        self.snapshot_accounts={}
         self.generation=0
         # Activity endpoint: an independent lightweight scan with its own
         # short cache; it must never wait behind a full snapshot collection.
@@ -442,7 +411,7 @@ class SnapshotService:
                 if self._activity is not None and generation==self._activity_generation \
                         and current-self._activity_at<ttl:
                     return copy.deepcopy(self._activity)
-                config=self.config
+                config=self.config.copy()
             try:
                 table=load_prices(config["runtime_dir"],"USD")
             except Exception:
@@ -479,8 +448,9 @@ class SnapshotService:
     def set_prices(self,currency,models,aliases=None,peak_multipliers=None):
         """Persist prices, preview bindings and peak multipliers; then re-estimate."""
         from .prices import save_prices
-        save_prices(self.config["runtime_dir"],currency,models,aliases,peak_multipliers)
+        saved=save_prices(self.config["runtime_dir"],currency,models,aliases,peak_multipliers)
         self.reload_prices()
+        return saved
 
     def reload_prices(self):
         """Invalidate snapshots after a catalogue sync without rewriting edits."""
@@ -506,14 +476,18 @@ class SnapshotService:
                 if not force:
                     cached=self._cached(now)
                     if cached is not None:return cached
-                config,generation=self.config,self.generation
+                config,generation=self.config.copy(),self.generation
             fresh=self.collect_fn(config,now=now)
+            accounts=config.get("web_sessions") or {}
             old={s["id"]:s for s in (self.snapshot or {}).get("sources",[])}
             replaced=False
             for index,src in enumerate(fresh["sources"]):
-                previous=old.get(src["id"])
+                provider=src["id"].split("#",1)[0]
+                if src["scope"].startswith("local_"):
+                    continue  # historical windows cannot be reused at a new cutoff
+                previous=old.get(src["id"]) if accounts.get(provider)==self.snapshot_accounts.get(provider) else None
                 if src["diagnostics"].get("reason") not in {"dreamina_not_authenticated","not_authenticated",
-                        "design_account_changed_during_query","design_personal_scope_required","web_session_missing","disabled_by_user",
+                        "design_account_changed_during_query","design_personal_scope_required","web_session_missing","disabled_by_user","disabled_in_config","local_only_mode",
                         "mimo_not_authenticated","volcengine_not_authenticated","volcengine_ark_key_not_supported",
                         "stepfun_not_authenticated","stepfun_credential_not_connected"} and src["status"] in {"error","not_connected"} and previous and previous["status"] in {"available","partial","stale"}:
                     cached=copy.deepcopy(previous)
@@ -524,22 +498,35 @@ class SnapshotService:
                         if m["value"] is not None:m["status"]="stale"
                     # Local token history does not depend on the account network:
                     # keep the fresh measurement instead of the stale one.
-                    if src["metrics"]["tokens"]["status"] in {"available","partial"}:
+                    previous_tokens=cached["metrics"]["tokens"].get("value") or {}
+                    if "periods" in previous_tokens or src["metrics"]["tokens"]["status"] in {"available","partial"}:
                         cached["metrics"]["tokens"]=src["metrics"]["tokens"]
+                        old_cost=(cached["metrics"]["cost"].get("value") or {})
+                        if (isinstance(old_cost,dict) and old_cost.get("basis")=="local_price_table") or src["metrics"]["cost"]["value"] is not None:
+                            cached["metrics"]["cost"]=src["metrics"]["cost"]
                     # Codex 内置生图同样来自本地文件，不随账户超时变 stale。
                     image=src["metrics"].get("image_generation") or {}
-                    if image.get("status") in {"available","partial"}:
+                    if src["id"]=="codex" and image:
                         cached["metrics"]["image_generation"]=image
+                    if src["id"]=="qoder":
+                        credits=src["metrics"]["credits"].get("value") or {}
+                        if isinstance(credits,dict) and "usage" in credits:
+                            recovered=merge_credits_metric(cached["metrics"]["credits"],credits["usage"])
+                            if recovered["value"]["rows"]:
+                                recovered["status"]="stale"
+                            cached["metrics"]["credits"]=recovered
                     fresh["sources"][index]=cached
                     replaced=True
             if replaced:
                 # Rebuild coverage after stale recovery so the UI can't show a
                 # fresh-looking field attached to an old source.
+                fresh["application_usage"]=application_usage(fresh["sources"])
                 fresh["coverage"]=coverage_matrix([r["application"] for r in fresh["coverage"] if r["application"]["installed"]],fresh["sources"])
                 fresh["coverage_summary"]=coverage_summary(fresh["coverage"])
             refresh_forecast_countdowns(refresh_countdowns(fresh,now),now)
             fresh["served_from_cache"]=False
             with self.lock:
+                self.snapshot_accounts=accounts
                 self.snapshot=fresh
                 self.last_refresh=now if generation==self.generation else 0
             atomic_json(Path(self.config["runtime_dir"])/"snapshot.json",fresh)

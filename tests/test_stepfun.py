@@ -245,7 +245,7 @@ class WiringTests(unittest.TestCase):
 
     def test_unconnected_source_reports_not_connected(self):
         with mock.patch("agent_meter.collector.discover", return_value=[]):
-            snap = collect({"disabled_sources": ["ccswitch", "codex", "claude", "kimi", "qoder", "workbuddy",
+            snap = collect({"disabled_sources": ["codex", "claude", "kimi", "qoder", "workbuddy",
                                                  "trae_cn", "minimax_code", "dreamina", "minimax_design",
                                                  "deepseek_api", "mimo", "volcengine", "zcode"],
                             "runtime_dir": self.tmp}, now=NOW)

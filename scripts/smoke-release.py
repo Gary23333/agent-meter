@@ -4,31 +4,34 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root))
-from tests.support import database, insert
 
 backend = Path(sys.argv[1]).resolve()
 output = Path(sys.argv[2]).resolve()
 with tempfile.TemporaryDirectory(prefix="release-smoke-", dir=root / ".runtime") as temp:
     work = Path(temp)
-    db = database(work / "history.db")
-    insert(db, "synthetic-request", input_tokens=100, output_tokens=20, created_at=int(time.time()))
-    db.close()
+    store = work / "imported-history.json"
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    store.write_text(json.dumps({"schema": 1, "imported_at": int(time.time()),
+                                 "detail": [], "daily": [["codex", "gpt-5.4", today, 1, 100, 20, 0, 0]],
+                                 "apps": {}}))
     config = work / "config.json"
     config.write_text(json.dumps({"home": str(work), "app_roots": [],
-        "ccswitch_db": str(work / "history.db"), "runtime_dir": str(work / ".runtime")}))
+        "history_store": str(store), "runtime_dir": str(work / ".runtime")}))
     env = {"HOME": str(work), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "en_US.UTF-8"}
     def run(*arguments):
         subprocess.run([str(backend), *arguments], cwd=work, env=env, check=True,
                        stdout=subprocess.DEVNULL, timeout=30)
     run("collect", "--local-only", "--config", str(config), "--output", str(output))
     snapshot = json.loads(output.read_text())
-    assert next(s for s in snapshot["sources"] if s["id"] == "ccswitch")["status"] == "available"
+    assert next(s for s in snapshot["sources"] if s["id"] == "imported_history")["status"] == "available"
     report = work / "verify.json"
     run("verify", "--local-only", "--config", str(config), "--output", str(report))
     assert json.loads(report.read_text())["failed_checks"] == 0

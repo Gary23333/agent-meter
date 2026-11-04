@@ -1,13 +1,12 @@
 <!-- WORKSPACE-STATUS-START -->
 ## 当前入口与目录约定
 
-2026-11-01 更新。发布版本 0.9.8（会话活动页签与轻量活动端点），已推送 GitHub 并发布 Release v0.9.8。
+2026-11-04 更新。0.9.9 已整合应用、会话与本机用量，提供可独立运行的纯本地采集。后端结构、数据来源和验收方式见[本机统计升级记录](docs/local-accounting-0.9.9.md)。
 
 - 目录导览：[STRUCTURE.md](STRUCTURE.md)。
 - AI 接手先读 [AGENTS.md](AGENTS.md)，再按任务阅读相应模块文档。
 - Git：`main` 已推送到 `github.com/Gary23333/agent-meter`，二进制发布在 GitHub Releases（v0.9.8 起）。
-- 旧副本与旧包恢复位置：同级 `vibrcoding-整理恢复-2026-10-30/整理前完整快照/NEW-agent 统计/`。
-- 本次核验为目录、版本、引用与 Git 状态检查；下文既有测试数字属于对应历史批次。
+- 0.9.9 已用已安装版本的历史数据和价格表完成本机核对。各版本的历史记录按原日期保留。
 
 常用入口（依赖安装和环境配置见下文）：
 
@@ -35,10 +34,9 @@ python3 -m unittest discover -v
   <img src="https://img.shields.io/badge/Platform-macOS%2014%2B-black?logo=apple" alt="Platform: macOS 14+" />
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
-  <img src="https://img.shields.io/badge/Schema-v4-success" alt="Schema: v4" />
-  <img src="https://img.shields.io/badge/Tests-306%20Passed-brightgreen" alt="Tests: 306 Passed" />
+  <img src="https://img.shields.io/badge/Schema-v5-success" alt="Schema: v5" />
   <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
-  <img src="https://img.shields.io/badge/Release-v0.9.6-blue" alt="Release: v0.9.5" />
+  <img src="https://img.shields.io/badge/Release-v0.9.9-blue" alt="Release v0.9.9" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -72,8 +70,8 @@ python3 -m unittest discover -v
 │ ├─ 顶部驾驶舱：每个账户一个同心圆仪表（5 小时 / 7 天合一），一键直达应用 │
 │ ├─ 账户额度：各供应商统一卡片——额度窗口、积分钱包、重置卡、续费提醒    │
 │ ├─ 重置预测：Q 版 Tibo + 重置器，三家追踪站交叉的全员重置概率与倒计时  │
-│ ├─ 本机消耗：CC Switch 历史 + Kimi Code 真实会话 Token 双流去重合并     │
-│ └─ 应用覆盖：已检测 24+ Agent 应用的原生状态矩阵                       │
+│ ├─ 本机消耗：各本机账本独立计量 + 一次性历史导入合并展示      │
+│ └─ 应用：按应用查看本机用量、采集状态与近期会话                       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -115,11 +113,11 @@ python3 -m unittest discover -v
 </p>
 
 <details>
-<summary>查看更多截图：本机消耗、应用覆盖与菜单栏行情</summary>
+<summary>查看更多截图：本机消耗、按应用查看会话与菜单栏行情</summary>
 
 <p align="center">
   <img src="docs/images/usage-light.png" alt="本机消耗浅色界面，使用演示数据" width="48%" />
-  <img src="docs/images/apps-light.png" alt="应用覆盖界面，使用演示数据" width="48%" />
+  <img src="docs/images/apps-light.png" alt="应用页按客户端归集用量、支持字段和最近会话，使用演示数据" width="48%" />
 </p>
 
 <p align="center">
@@ -135,11 +133,11 @@ python3 -m unittest discover -v
 - 每个账号**独立成卡、独立进大盘行情条、独立计算提醒阈值**，严禁将不同账号的额度粗暴相加；
 - 后端规范命名通道（首个账号保持原源名，后续账号分配 `provider#2` 并关联备注）。
 
-### 5. 🔀 智能双流合并本机消耗（Dual-Stream Accounting）
-- **历史主库**：通过只读事务与一致性连接读取 **CC Switch (Schema 20)** 历史数据库；
-- **增量会话**：毫秒级解析 **Kimi Code** 本机 `~/.kimi-code/sessions/**/wire.jsonl`，提取唯一 `turn` 作用域真实 Token；
-- **严密去重**：明确区分 CC Switch 路由的 `kimi-for-coding` 与独立的 Kimi Code 桌面端，相加绝不重叠；对缺少定价的记录或下界统计明确标注，绝不捏造虚假账单。
-- **DeepSeek 峰谷计价视图**：挂在「账户额度」页的 DeepSeek 卡内，只汇总各本机账本中的 DeepSeek 系模型，按请求时间戳拆成峰时 / 谷时，展示峰时 ×2 的价差影响；没有请求时刻的账本（CC Switch 日汇总）按谷价计入价格表估算，并在视图里点名说明。
+### 5. 🔀 多账本独立计量本机消耗（Independent Local Ledgers）
+- **历史导入**：项目自有 `<runtime>/imported-history.json`（一次性迁移写入，0600，`schema=1`），逐请求记录保留请求时刻、可拆峰谷；日汇总记录没有请求时刻，按谷价估算；不再读取 CC Switch 数据库。
+- **本机账本**：直读 Codex / Claude Code + Claude 桌面端 local-agent / Gemini / Antigravity / OpenCode / MiniMax Code / Kimi Code / Kimi 桌面端 / ZCode / WorkBuddy / DeepSeek Harness 的会话日志、SQLite 或压缩 rollout；Codex 支持 `.jsonl.zst`，`sessions` 与 `archived_sessions` 都读取；Claude 桌面端的 local-agent 会话与其 `.claude/projects` 转录一并计入。
+- **独立计量**：每个账本只汇总自己的记录，不做跨账本日期剔除；`imported_history` 只在本地账本没有数据的日期导入历史，或在本地数据不足时按模型补差，绝不叠加。
+- **DeepSeek 峰谷计价视图**：挂在「账户额度」页的 DeepSeek 卡内，只汇总各本机账本中的 DeepSeek 系模型，按请求时间戳拆成峰时 / 谷时，展示峰时 ×2 的价差影响；没有请求时刻的记录（`imported_history` 的日汇总行）按谷价计入价格表估算，并在视图里点名说明。
 
 ### 6. 🧠 模型目录自动同步与体验模型计费绑定
 - **自动更新模型名称与刊例价**：从公开 `models.dev` 目录同步主流供应商的模型 ID、名称、发布日期及输入、输出、缓存读写的每百万 Token 单价；启动后自动同步，每 6 小时检查，目录本身按 24 小时节流，也可在「模型与计费」窗口手动同步。
@@ -219,7 +217,7 @@ python3 -m unittest discover -v
 | **Qoder CN** | Qoder 中国区 | 内嵌安全网页登录 / Cookie | 总体额度、共享额度、已用/剩余、下次重置时间 | 最多 5 账号 |
 | **WorkBuddy** | WorkBuddy 腾讯协作 | 内嵌安全网页登录 / Cookie + 本机会话日志直读 | 资源包总量、剩余量、冻结积分、周期截止时间、本机 Token/费用估算 | 最多 5 账号 |
 | **TRAE CN** | 字节 TRAE IDE / SOLO | 内嵌安全网页登录 / Cloud-IDE-JWT | 权益包额度汇总、已用额度、有效积分 | 最多 5 账号 |
-| **MiniMax Code** | MiniMax Coding Plan | 环境变量 / 钥匙串 API Key | 周套餐余量百分比、到期时间 | 独立账户 |
+| **MiniMax Code** | MiniMax Coding Plan | 应用内 API Key / 环境变量 / `<runtime>/secrets/minimax_code.json`（迁移脚本一次性写入，0600） | 周套餐余量百分比、到期时间 | 独立账户 |
 | **MiniMax Design** | MiniMax 创作工作台 | 本机安全网关 `127.0.0.1:8001` | 个人钱包、积分包失效期、月积分刷新日、年费续费倒计时 | 个人 Media Plan |
 | **即梦 (Dreamina)** | 剪映即梦创作平台 | 内嵌隐藏 Web 视图白名单捕获 / CLI | 会员等级、积分总额、多积分包到期、续费状态 | 最多 5 账号 |
 | **DeepSeek API** | DeepSeek 开放平台 | 环境变量 / 钥匙串 API Key + 控制台登录（可选） | 货币余额（CNY/USD 独立保留）；网页用量今日 / 3 天 / 7 天 / 30 天（仅展示，不计入本机消耗） | 独立账户 |
@@ -227,8 +225,8 @@ python3 -m unittest discover -v
 | **火山方舟 Coding Plan** | 火山引擎方舟 | 内嵌控制台登录（回放页面自身的只读 `GetCodingPlanUsage`）/ 钥匙串 AccessKey 签名 | 5 小时 / 每周 / 每月额度与各自重置时间 | 最多 5 账号 |
 | **小米 MiMo API** | MiMo 开放平台控制台 | 内嵌安全网页登录 / Cookie | 账户余额（现金 / 赠送）、Token Plan 本月用量 | 最多 5 账号 |
 | **阶跃星辰 (StepFun)** | 阶跃星辰开放平台 | 内嵌安全网页登录 / Cookie + 开放平台 API Key | 账户余额（充值 / 赠送）、STEP plan 5 小时 / 每周窗口或月度积分池、套餐名与到期日 | 最多 5 账号 |
-| **CC Switch** | 本机多模型路由历史 | 本机 SQLite 数据库只读事务 | 今日/7天/30天/全部 Token、缓存命中率、估算费用 | 本机聚合 |
-| **本机 Agent 会话账本** | Codex CLI、Claude Code、Gemini CLI、Antigravity（CLI+桌面端）、OpenCode、MiniMax Code、Kimi Code、Kimi 桌面端、ZCode、WorkBuddy、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 会话日志只读直读（未装 CC Switch 也可读） | 今日/7天/30天/全部 Token、按模型分组、缓存命中率、估算费用 | 本机历史 |
+| **历史导入** | 此前由本机路由数据库记录、现由项目自有文件保存的历史消耗 | `<runtime>/imported-history.json`（一次性迁移脚本写入，0600） | 今日/7天/30天/全部 Token、缓存命中率、估算费用（逐请求行可拆峰谷，日汇总行按谷价） | 本机历史 |
+| **本机 Agent 会话账本** | Codex CLI、Claude Code + Claude 桌面端 local-agent、Gemini CLI、Antigravity（CLI+桌面端）、OpenCode、MiniMax Code、Kimi Code、Kimi 桌面端、ZCode、WorkBuddy、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 会话日志只读直读（无需第三方路由数据库） | 今日/7天/30天/全部 Token、按模型分组、缓存命中率、估算费用 | 本机历史 |
 
 ---
 
@@ -246,11 +244,11 @@ flowchart TD
     subgraph Core ["本机只读采集核心 (agent_meter)"]
         SRV["HTTP 本机服务 (127.0.0.1:8769)"]
         COLL["多源调度采集器 (Collector)"]
-        SNAP[".runtime/snapshot.json (Schema v4)"]
+        SNAP[".runtime/snapshot.json (Schema v5)"]
     end
 
     subgraph Sources ["数据源通道 (只读)"]
-        S_SQL[("CC Switch 历史\nSQLite (Schema 20)")]
+        S_HIST[("项目自有历史导入\nimported-history.json")]
         S_LOG["Kimi Code 会话日志\nwire.jsonl"]
         S_GW["MiniMax 本机网关\n127.0.0.1:8001"]
         S_NET["各官方 REST 接口\n(Codex, Kimi, Claude, Qoder...)"]
@@ -261,7 +259,7 @@ flowchart TD
     WV --"PUT /v1/observations (白名单指标)"--> SRV
     PN --"GET /v1/snapshot (Bearer Token)"--> SRV
     SRV --> COLL
-    COLL --> S_SQL
+    COLL --> S_HIST
     COLL --> S_LOG
     COLL --> S_GW
     COLL --> S_NET
@@ -274,13 +272,12 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [Releases · v0.9.5](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.5) 页面下载最新的安装镜像：
-   - 📦 `AgentMeter-0.9.5-macos-arm64.dmg`
+1. 从 [v0.9.9 发布页](https://github.com/Gary23333/agent-meter/releases/tag/v0.9.9) 下载 `AgentMeter-0.9.9-macos-arm64.dmg`。
 2. 打开 DMG，将 `Agent 用量.app` 拖入 `Applications`（应用程序）文件夹；
 3. 双击启动应用。菜单栏将立即出现小组件图标与默认行情条。
    - *App 包含独立 Python 后端，无需安装 Python、Xcode 或项目源码。各来源仍需对应客户端/登录态。*
 
-当前发布使用 Developer ID Application 签名，App 与 DMG 均已完成 Apple 公证与装订；正常双击即可打开。详见 [安装说明](docs/INSTALL.md) 和 [v0.9.5 发布说明](docs/release-v0.9.5.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
+本次 0.9.9 的 App 与 DMG 均使用 Developer ID Application 签名，已通过 Apple 公证并装订票据。公开发行包的签名和公证状态以对应版本的发布说明为准。详见[安装说明](docs/INSTALL.md)。安装版数据位于 `~/Library/Application Support/AgentMeter/.runtime/`。
 
 ### 方式二：从源码构建原生应用
 
@@ -296,7 +293,7 @@ python3 -m pip install -r requirements-build.txt
 sh scripts/build-dmg.sh
 ```
 
-构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定内部版本 0.9.5，发布标签为 v0.9.5；默认 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
+构建产物输出至 `release/`：App、DMG 和 `SHA256SUMS`。`VERSION` 指定本次构建的版本；默认使用本机开发证书，缺少证书时使用 ad-hoc 签名，`SIGN_MODE=dist` 使用 Developer ID 并在提供 `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` 时自动公证。开发时可用 `AGENT_METER_HOME` 指定源码后端。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -317,7 +314,7 @@ sh scripts/build-dmg.sh
 # 1. 采集单次快照并输出至本地
 python3 -m agent_meter collect --output .runtime/snapshot.json
 
-# 2. 仅采集本机 CC Switch 历史（跳过账户网络查询）
+# 2. 仅采集本机账本与历史导入（跳过账户网络查询）
 python3 -m agent_meter collect --local-only --output .runtime/local.json
 
 # 3. 启动本地守护服务（默认监听 127.0.0.1:8769）
@@ -334,7 +331,7 @@ python3 -m agent_meter serve --start-kimi-server
 
 | 接口 | 方法 | 说明 |
 | :--- | :---: | :--- |
-| `/v1/health` | `GET` | 检查服务运行状态与 Schema 版本（当前为 4） |
+| `/v1/health` | `GET` | 检查服务运行状态与 Schema 版本（当前为 5） |
 | `/v1/snapshot` | `GET` | 获取包含全部来源与应用覆盖矩阵的完整快照（默认缓存 120 秒） |
 | `/v1/sources` | `GET` | 查询各个数据源的细分指标、提取范围及错误代码 |
 | `/v1/coverage` | `GET` | 查询 24+ 应用在十一类关键指标上的覆盖状况矩阵 |
@@ -373,7 +370,7 @@ with urlopen(req, timeout=30) as resp:
 # 1. 运行全量单元测试（包含 306 项严格测试，零失败；dsh 建议 Python 3.14）
 python3 -m unittest discover -v
 
-# 2. 运行真实环境对账校验（核对 CC Switch 逐条计算与后端 SQL 一致性）
+# 2. 运行真实环境对账校验（各本机账本与历史导入独立重算）
 python3 -m agent_meter verify --output .runtime/verification.json
 ```
 
@@ -381,7 +378,10 @@ python3 -m agent_meter verify --output .runtime/verification.json
 
 ## 📝 更新日志
 
-各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。
+各版本的完整说明见 [发布说明](docs/)（`release-v*.md`）。以下更新日志为历史记录；CC Switch 数据源已于 2026-11-03 移除，相关条目仅反映对应版本当时的行为。
+
+### v0.9.9 · 2026-11-04
+- 按应用整合本机账本、迁移历史、覆盖字段与最近会话。纯本地采集可独立运行，Codex 增加原始日志总量核对，模型估价按应用分摊。详见[本机统计升级记录](docs/local-accounting-0.9.9.md)。
 
 ### v0.9.8 · 2026-11-01
 - **会话活动页签**：跨 harness 的最近会话/回合状态，状态严格分级（进行中 / 疑似结束 / 已完成 / 失败 / 取消 / 未知——未知绝不等于失败），粒度如实标注（回合完成 ≠ 会话完成、子代理完成 ≠ 根任务完成、停止写入 ≠ 成功）。详见[发布说明](docs/release-v0.9.8.md)。
@@ -475,7 +475,7 @@ python3 -m agent_meter verify --output .runtime/verification.json
 ## 📄 开源许可与第三方致谢
 
 - 本项目采用 [MIT 开源协议](LICENSE)，Copyright (c) 2026 Gary23333。
-- CC Switch 衍生适配保留上游 MIT 版权声明；发布包中的 CPython 和 PyInstaller 使用各自协议。详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+- MiniMax 配额解析改编自上游 CC Switch v4.0.5（MIT），保留其版权声明；发布包中的 CPython 和 PyInstaller 使用各自协议。详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 ---
 

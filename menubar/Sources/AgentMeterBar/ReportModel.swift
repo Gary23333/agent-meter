@@ -107,16 +107,7 @@ struct ReportData {
             quality: imageValue["quality_assumption"].string ?? "high",
             partial: imageMetric?.status != "available")
         let totals = data["totals"]
-        let costIndex = data["cost_index"]
-
-        // 单个分组费用：CC Switch 自带 estimated_cost_usd 优先，其余按价格表逐模型估算。
-        func groupCost(_ g: JSON) -> [String: Double] {
-            if let usd = g["estimated_cost_usd"].double, usd > 0 { return ["USD": usd] }
-            let entry = costIndex[g["source"].string ?? ""]
-            guard let unit = entry["unit"].string,
-                  let amount = entry["models"][g["model"].string ?? ""].double, amount > 0 else { return [:] }
-            return [unit: amount]
-        }
+        func groupCost(_ g: JSON) -> [String: Double] { LocalUsage.groupCost(g, data: data) }
 
         func costLabel(_ costs: [String: Double]) -> String {
             guard !costs.isEmpty else { return "—" }
@@ -165,31 +156,23 @@ struct ReportData {
 
         // Convert each component to the single display currency before adding.
         let local = data["local_cost"].object
-        let cc = totals["estimated_cost_usd"].double ?? 0
-        var currencies = local.compactMapValues { $0.double }
-        if cc > 0 { currencies["USD", default: 0] += cc }
-        let totalCost = Fmt.moneyTotal(currencies)
+        let totalCost = Fmt.moneyTotal(local.compactMapValues { $0.double })
         let costAmount: Double? = totalCost > 0 ? totalCost : nil
         let costUnit: String? = costAmount == nil ? nil : "CNY"
         let costText = costAmount.map { Fmt.amount($0, unit: "CNY") } ?? "—"
 
         var costParts: [CostPart] = []
-        if cc > 0 { costParts.append(CostPart(id: "ccswitch", label: "CC Switch", text: Fmt.usd(cc))) }
         for (unit, value) in local.sorted(by: { $0.key < $1.key }) {
             guard let amount = value.double, amount > 0 else { continue }
             costParts.append(CostPart(id: "local-\(unit)", label: "价格表", text: Fmt.amount(amount, unit: unit)))
         }
-        if let n = totals["unpriced_detail_requests"].double, n > 0 {
-            costParts.append(CostPart(id: "unpriced", label: "无定价请求", text: "\(Int(n)) 次"))
-        }
 
         let includesLocal = data["includes_local"].array.compactMap { $0.string }
         var sourceNames = includesLocal.map { Catalog.brand($0).name }
-        if snapshot.sources.contains(where: { $0.id == "ccswitch" && $0.metric("tokens") != nil }) {
-            sourceNames.insert("CC Switch", at: 0)
-        }
         if imageUsage != nil { sourceNames.append("Codex 生图") }
-        let sourceNote = "数据来自 " + sourceNames.joined(separator: "、") + " 本机记录"
+        var sourceNote = sourceNames.isEmpty ? "本机记录"
+            : "数据来自 " + sourceNames.joined(separator: "、") + " 本机记录"
+        if let n = totals["unclassified"].double, n > 0 { sourceNote += " · " + Fmt.tokens(n) + " Token 未拆分、未估价" }
         // Several ledgers expose reasoning separately. Include it in output
         // so the composition adds up to the headline total.
         let reasoning = data["groups"].array.reduce(0.0) { $0 + ($1["reasoning"].double ?? 0) }

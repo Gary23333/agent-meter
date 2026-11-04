@@ -1,17 +1,19 @@
 """Hermetic tests for the direct CLI session-history readers.
 
-Fixtures mirror the real formats (validated against CC Switch imports on
+Fixtures mirror the real formats (validated against historical imports on
 2026-10-09); nothing here touches the real home directories.
 """
 import json
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from agent_meter.ccswitch import app_imported_days
+from agent_meter import zstd_io
 from agent_meter.cli_sessions import (claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions,
                                       load_claude, load_codex, load_gemini, load_mcode, mcode_tokens_metric)
 from agent_meter.collector import collect
@@ -30,6 +32,16 @@ def ts(d, h=10, m=0):
 def write(path, lines):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+
+
+def write_zstd(path, lines):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = ("\n".join(json.dumps(x) for x in lines) + "\n").encode()
+    if zstd_io.HAS_STDLIB_ZSTD:
+        path.write_bytes(zstd_io._zstd.compress(data))
+    else:
+        with open(path, "wb") as handle:
+            subprocess.run([shutil.which("zstd"), "-zc"], input=data, stdout=handle, check=True)
 
 
 def codex_event(timestamp, total, last=None):
@@ -63,7 +75,7 @@ class CodexTests(unittest.TestCase):
     def test_diff_of_cumulative_series(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, archives = self.dir(tmp)
-            value = codex_tokens_metric(root, archives, Path(tmp) / "none.db", NOW, ZONE)["value"]
+            value = codex_tokens_metric(root, archives, NOW, ZONE)["value"]
             allp = value["periods"]["all"]["totals"]
             # deltas: (100,10,2,50) + (160,15,3,70) + reset (30,4,0,10) + archive (40,5,0,20)
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["reasoning"],
@@ -71,30 +83,100 @@ class CodexTests(unittest.TestCase):
             models = {g["model"]: g for g in value["periods"]["all"]["groups"]}
             self.assertEqual(models["gpt-6-astra"]["requests"], 3)
             self.assertEqual(models["unknown"]["requests"], 1)   # archive without session_meta model
-            self.assertEqual(value["ccswitch_overlap"]["state"], "ccswitch_absent")
 
-    def test_excluded_days_and_missing_dirs(self):
+    def test_compressed_rollouts_are_read(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, archives = self.dir(tmp)
-            cc = self.ccswitch_db(tmp, [(int(datetime(2026, 10, 9, tzinfo=ZONE).timestamp()), "codex_session", "codex")])
-            value = codex_tokens_metric(root, archives, cc, NOW, ZONE)["value"]
+            write_zstd(root / "2026" / "10" / "09" / "rollout-compressed.jsonl.zst", [
+                {"timestamp": ts(9), "type": "session_meta", "payload": {"model": "gpt-6-astra"}},
+                codex_event(ts(9, 10), TOTAL(100, 10, 2, 50)),
+                codex_event(ts(9, 11), TOTAL(260, 25, 5, 120)),
+            ])
+            value = codex_tokens_metric(root, archives, NOW, ZONE)["value"]
             allp = value["periods"]["all"]["totals"]
-            self.assertEqual(allp["requests"], 1)               # only the archive day remains
-            self.assertEqual(value["ccswitch_overlap"]["excluded_days"], ["2026-10-09"])
-            with self.assertRaises(SourceError) as ctx:
-                codex_tokens_metric(Path(tmp) / "x", Path(tmp) / "y", cc, NOW, ZONE)
-            self.assertEqual(ctx.exception.code, "codex_sessions_not_found")
+            # Existing plain files plus the compressed deltas (100,10,2,50) + (160,15,3,70).
+            self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["reasoning"],
+                              allp["cache_read"], allp["cache_write"]), (6, 320, 59, 10, 270, 0))
+            models = {g["model"]: g for g in value["periods"]["all"]["groups"]}
+            self.assertEqual(models["gpt-6-astra"]["requests"], 5)
 
-    @staticmethod
-    def ccswitch_db(tmp, rows):
-        db = Path(tmp) / "cc.db"
-        conn = sqlite3.connect(db)
-        conn.execute("CREATE TABLE proxy_request_logs(id INTEGER PRIMARY KEY, created_at INTEGER, data_source TEXT, app_type TEXT)")
-        conn.execute("PRAGMA user_version=20")
-        conn.executemany("INSERT INTO proxy_request_logs(created_at,data_source,app_type) VALUES(?,?,?)", rows)
-        conn.commit()
-        conn.close()
-        return db
+    def test_plain_rollout_wins_over_compressed_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "sessions"
+            lines = [
+                {"timestamp": ts(9), "type": "session_meta", "payload": {"model": "gpt-6-astra"}},
+                codex_event(ts(9, 10), TOTAL(100, 10, 2, 50)),
+            ]
+            write(root / "same.jsonl", lines)
+            write_zstd(root / "same.jsonl.zst", lines)
+            value = codex_tokens_metric(root, Path(tmp) / "archives", NOW, ZONE)["value"]
+            self.assertEqual(value["periods"]["all"]["totals"]["requests"], 1)
+
+    def test_compressed_only_directory_without_zstd_route(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "sessions"
+            write_zstd(root / "only.jsonl.zst", [
+                {"timestamp": ts(9), "type": "session_meta", "payload": {"model": "gpt-6-astra"}},
+                codex_event(ts(9, 10), TOTAL(100, 10, 2, 50)),
+            ])
+            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False):
+                with self.assertRaises(SourceError) as failure:
+                    codex_tokens_metric(root, Path(tmp) / "archive", NOW, zstd_binary=None)
+            self.assertEqual(failure.exception.code, "zstd_unavailable")
+
+    def test_inherited_baseline_reasoning_and_turn_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = dict(TOTAL(1000, 100, 40, 400), total_tokens=1100)
+            last = dict(TOTAL(100, 20, 5, 40), total_tokens=120)
+            archive = root / "archived"
+            path = root / "sessions" / "copy.jsonl"
+            lines = [{"type": "session_meta", "payload": {"model": "default"}},
+                     {"type": "turn_context", "payload": {"model": "model-a"}},
+                     codex_event(ts(9, 10), first, last),
+                     codex_event(ts(9, 10, 1), first, last),
+                     {"type": "turn_context", "payload": {"model": "model-b"}},
+                     codex_event(ts(9, 11), dict(TOTAL(1200, 130, 50, 500), total_tokens=1330))]
+            write(path, lines)
+            write_zstd(archive / "copy.jsonl.zst", lines)
+            metric = codex_tokens_metric(path.parent, archive, NOW, ZONE)
+            window = metric["value"]["periods"]["today"]
+            self.assertEqual(window["totals"]["requests"], 2)
+            self.assertEqual(window["totals"]["total_tokens"], 350)
+            self.assertEqual({g["model"]: (g["output"], g["reasoning"]) for g in window["groups"]},
+                             {"model-a": (15, 5), "model-b": (20, 10)})
+
+    def test_reported_total_without_components_is_counted_but_unpriced(self):
+        from agent_meter.prices import PriceTable, estimate_source_cost
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / "fork.jsonl", [
+                {"type": "turn_context", "payload": {"model": "priced"}},
+                codex_event(ts(9), dict(TOTAL(900, 100), total_tokens=1000),
+                            dict(TOTAL(0), total_tokens=77))])
+            result = codex_tokens_metric(root, root/"archive", NOW)
+            totals = result["value"]["periods"]["all"]["totals"]
+            self.assertEqual((totals["total_tokens"], totals["unclassified"], totals["requests"]), (77,77,1))
+            self.assertEqual(totals["peak"]["total_tokens"],77)
+            self.assertIsNone(estimate_source_cost(result, PriceTable("USD", {"priced": (1,1,1,1)}, set())))
+
+    def test_compressed_gap_is_partial(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, archive = self.dir(tmp)
+            (root / "broken.jsonl.zst").write_bytes(b"invalid")
+            result = codex_tokens_metric(root, archive, NOW, ZONE)
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["value"]["scan"]["rollouts_skipped"], 1)
+            self.assertEqual(result["value"]["periods"]["all"]["totals"]["requests"], 4)
+
+    def test_missing_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, archives = self.dir(tmp)
+            value = codex_tokens_metric(root, archives, NOW, ZONE)["value"]
+            self.assertEqual(value["periods"]["all"]["totals"]["requests"], 4)
+            with self.assertRaises(SourceError) as ctx:
+                codex_tokens_metric(Path(tmp) / "x", Path(tmp) / "y", NOW, ZONE)
+            self.assertEqual(ctx.exception.code, "codex_sessions_not_found")
 
 
 class ClaudeTests(unittest.TestCase):
@@ -120,9 +202,47 @@ class ClaudeTests(unittest.TestCase):
         ])
         return Path(tmp) / "projects"
 
+    def test_desktop_local_agent_sessions_are_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cli = Path(tmp) / "projects"
+            cli.mkdir()
+            desktop = Path(tmp) / "desktop"
+            session = desktop / "org" / "user" / "local_x" / ".claude" / "projects" / "-p"
+            write(session / "s.jsonl", [
+                {"timestamp": ts(8, 10), "requestId": "d1",
+                 "message": {"model": "claude-opus-5", "usage": {"input_tokens": 5, "output_tokens": 50,
+                                                                "cache_read_input_tokens": 1000,
+                                                                "cache_creation_input_tokens": 200}}},
+                {"timestamp": ts(8, 11), "requestId": "d1",          # streaming update wins
+                 "message": {"model": "claude-opus-5", "usage": {"input_tokens": 5, "output_tokens": 80,
+                                                                "cache_read_input_tokens": 1000,
+                                                                "cache_creation_input_tokens": 200}}},
+                {"timestamp": ts(8, 12), "requestId": "d2",
+                 "message": {"model": "claude-fable-5", "usage": {"input_tokens": 7, "output_tokens": 9,
+                                                                 "cache_read_input_tokens": 0,
+                                                                 "cache_creation_input_tokens": 0}}},
+            ])
+            # Audit logs outside .claude/projects are never token ledgers.
+            write(desktop / "org" / "user" / "local_x" / "audit.jsonl", [
+                {"timestamp": ts(8, 13), "requestId": "audit",
+                 "message": {"model": "claude-opus-5", "usage": {"input_tokens": 99, "output_tokens": 99}}},
+            ])
+            value = claude_tokens_metric(cli, NOW, ZONE, desktop_root=desktop)["value"]
+            allp = value["periods"]["all"]["totals"]
+            self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["cache_read"],
+                              allp["cache_write"]), (2, 12, 89, 1000, 200))
+            self.assertEqual({g["model"] for g in value["periods"]["all"]["groups"]},
+                             {"claude-opus-5", "claude-fable-5"})
+
+    def test_missing_desktop_root_is_harmless(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            value = claude_tokens_metric(self.records(tmp), NOW, ZONE,
+                                         desktop_root=Path(tmp) / "none")["value"]
+            self.assertEqual(value["periods"]["all"]["totals"]["requests"], 3)
+
     def test_last_record_per_request_id_globally(self):
         with tempfile.TemporaryDirectory() as tmp:
-            value = claude_tokens_metric(self.records(tmp), Path(tmp) / "none.db", NOW, ZONE)["value"]
+            value = claude_tokens_metric(self.records(tmp), NOW, ZONE)["value"]
             allp = value["periods"]["all"]["totals"]
             # r1 latest (out 300, from file b) + r2 + the requestId-less record
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["cache_read"],
@@ -130,16 +250,7 @@ class ClaudeTests(unittest.TestCase):
             models = {g["model"] for g in value["periods"]["all"]["groups"]}
             self.assertEqual(models, {"claude-opus-5-5", "claude-haiku", "unknown"})
             with self.assertRaises(SourceError):
-                claude_tokens_metric(Path(tmp) / "none", Path(tmp) / "none.db", NOW, ZONE)
-
-    def test_exclusion_uses_folded_claude_desktop_days(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = self.records(tmp)
-            cc = CodexTests.ccswitch_db(tmp, [
-                (int(datetime(2026, 10, 9, tzinfo=ZONE).timestamp()), "proxy", "claude-desktop")])
-            value = claude_tokens_metric(root, cc, NOW, ZONE)["value"]
-            self.assertEqual(value["periods"]["all"]["totals"]["requests"], 0)
-            self.assertEqual(value["ccswitch_overlap"]["excluded_days"], ["2026-10-09"])
+                claude_tokens_metric(Path(tmp) / "none", NOW, ZONE)
 
 
 class GeminiTests(unittest.TestCase):
@@ -154,14 +265,14 @@ class GeminiTests(unittest.TestCase):
                 {"id": "g2", "timestamp": "2026-10-08T02:00:00.000Z",
                  "tokens": {"input": 50, "output": 5, "cached": 0, "thoughts": 0, "total": 55}},
             ])
-            out = collect_gemini_sessions(root, Path(tmp) / "none.db", NOW, ZONE)
+            out = collect_gemini_sessions(root, NOW, ZONE)
             self.assertEqual(out["scope"], "local_session_history")
             allp = out["metrics"]["tokens"]["value"]["periods"]["all"]["totals"]
             # g1 latest: fresh 1200, output 27, read 800; g2: fresh 50, output 5
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["cache_read"]),
                              (2, 1250, 32, 800))
             with self.assertRaises(SourceError):
-                collect_gemini_sessions(Path(tmp) / "none", Path(tmp) / "none.db", NOW, ZONE)
+                collect_gemini_sessions(Path(tmp) / "none", NOW, ZONE)
 
 
 class McodeTests(unittest.TestCase):
@@ -180,6 +291,18 @@ class McodeTests(unittest.TestCase):
         conn.commit()
         conn.close()
         return db
+
+    def test_wal_append_invalidates_cached_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self.db(tmp)
+            with sqlite3.connect(db) as writer:
+                writer.execute("PRAGMA journal_mode=WAL")
+                writer.execute("PRAGMA wal_autocheckpoint=0")
+                self.assertEqual(len(load_mcode(db)), 1)
+                writer.execute("INSERT INTO local_runtime_token_usage(session_id,model,ts,input_tokens,output_tokens,"
+                               "reasoning_tokens,cache_read_tokens,cache_write_tokens) VALUES('s','m',1000,1,2,0,0,0)")
+                writer.commit()
+                self.assertEqual(len(load_mcode(db)), 2)
 
     def test_turn_telemetry_supplies_missing_model(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -200,23 +323,24 @@ class McodeTests(unittest.TestCase):
     def test_rows_as_is_and_schema_guard(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = self.db(tmp, rows=3)
-            value = mcode_tokens_metric(db, Path(tmp) / "none.db", NOW, ZONE)["value"]
+            value = mcode_tokens_metric(db, NOW, ZONE)["value"]
             allp = value["periods"]["all"]["totals"]
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["cache_read"]),
                              (3, 3 * 26043 + 3, 384, 3 * 4257))
             empty = Path(tmp) / "empty.sqlite"
             sqlite3.connect(empty).close()
             with self.assertRaises(SourceError) as ctx:
-                mcode_tokens_metric(empty, Path(tmp) / "none.db", NOW, ZONE)
+                mcode_tokens_metric(empty, NOW, ZONE)
             self.assertEqual(ctx.exception.code, "unsupported_mcode_schema")
             with self.assertRaises(SourceError) as ctx:
-                mcode_tokens_metric(Path(tmp) / "none.db", Path(tmp) / "none.db", NOW, ZONE)
+                mcode_tokens_metric(Path(tmp) / "none.db", NOW, ZONE)
             self.assertEqual(ctx.exception.code, "mcode_db_not_found")
 
 
 class CollectorIntegrationTests(unittest.TestCase):
-    ALL = ["ccswitch", "codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
-           "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity"]
+    ALL = ["codex", "claude", "kimi", "qoder", "minimax_code", "dreamina", "minimax_design",
+           "deepseek_api", "workbuddy", "trae_cn", "zcode", "opencode", "gemini", "antigravity", "kimi_desktop", "reset_forecast",
+           "deepseek_harness", "volcengine", "mimo", "stepfun", "imported_history"]
 
     def test_attach_and_standalone_sources(self):
         import tempfile as tf
@@ -248,6 +372,21 @@ class CollectorIntegrationTests(unittest.TestCase):
                              ("not_connected", "gemini_chats_not_found"))
             self.assertEqual(by_id["gemini"]["scope"], "local_session_history")
 
+    def test_local_only_preserves_codex_and_skips_account_route(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, archive = CodexTests().dir(tmp)
+            config = {"runtime_dir": tmp, "local_only": True, "app_roots": [],
+                      "codex_sessions_dir": str(root), "codex_archives_dir": str(archive),
+                      "codex_history_db": str(Path(tmp)/"absent"), "codex_images_dir": str(Path(tmp)/"images"),
+                      "disabled_sources": [key for key in self.ALL if key != "codex"]}
+            with patch("agent_meter.collector.collect_codex") as remote, \
+                 patch("agent_meter.collector.claude_tokens_metric", side_effect=SourceError("claude_projects_not_found")):
+                snap = collect(config, now=NOW)
+            remote.assert_not_called()
+            self.assertEqual(snap["application_usage"]["codex"]["all"]["direct"]["requests"], 4)
+            codex = next(src for src in snap["sources"] if src["id"]=="codex")
+            self.assertIsNone(codex["metrics"]["quota"]["value"])
+
     def test_user_switch_gates_local_parses(self):
         import tempfile as tf
         from unittest.mock import patch
@@ -257,29 +396,15 @@ class CollectorIntegrationTests(unittest.TestCase):
                       "preferences": {"disabled_sources": ["codex", "claude"]},
                       "disabled_sources": [x for x in self.ALL if x not in ("codex", "claude")]}
             with patch("agent_meter.collector.codex_tokens_metric") as codex, \
-                    patch("agent_meter.collector.claude_tokens_metric") as claude:
+                    patch("agent_meter.collector.claude_tokens_metric",
+                          side_effect=lambda *a, **kw: metric({"periods": {"all": {"totals": {"requests": 1}},
+                                                                           "daily_buckets": []}})) as claude:
                 snap = collect(config, now=NOW)
-            codex.assert_not_called(); claude.assert_not_called()
+            codex.assert_not_called()
+            claude.assert_called_once()   # local Claude history is independent of the quota switch
             by_id = {s["id"]: s for s in snap["sources"]}
             self.assertEqual(by_id["codex"]["metrics"]["tokens"]["reason"], "disabled_by_user")
-            self.assertEqual(by_id["claude"]["metrics"]["tokens"]["reason"], "disabled_by_user")
-
-
-class ImportedDaysTests(unittest.TestCase):
-    def test_state_matrix(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            days, state = app_imported_days(Path(tmp) / "none.db", ZONE, "codex")
-            self.assertEqual((days, state), (set(), "ccswitch_absent"))
-            broken = Path(tmp) / "broken.db"
-            broken.write_text("not a database")
-            days, state = app_imported_days(broken, ZONE, "codex")
-            self.assertEqual(state, "ccswitch_read_failed")
-            cc = CodexTests.ccswitch_db(tmp, [
-                (int(datetime(2026, 10, 8, tzinfo=ZONE).timestamp()), "codex_session", "codex"),
-                (int(datetime(2026, 10, 8, 23, 30, tzinfo=ZONE).timestamp()), "session_log", "claude"),
-            ])
-            self.assertEqual(app_imported_days(cc, ZONE, "codex")[0], {"2026-10-08"})
-            self.assertEqual(app_imported_days(cc, ZONE, "claude")[0], {"2026-10-08"})
+            self.assertEqual(by_id["claude"]["metrics"]["tokens"]["status"], "available")
 
 
 if __name__ == "__main__":

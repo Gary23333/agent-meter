@@ -2,11 +2,11 @@
 
 import hashlib
 import math
-from datetime import datetime, timezone
+from datetime import datetime, time as datetime_time, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 METRICS = ("quota", "reset_time", "reset_cards", "credits", "tokens", "cost", "renewal_time", "renewal_countdown", "renewal_amount", "credit_refresh_time", "credit_refresh_countdown", "reset_forecast", "known_reset_countdown", "image_generation")
 # Reset forecasting is a standalone feature, not something each application is
 # expected to provide, so it stays out of the per-application coverage axes.
@@ -86,6 +86,20 @@ def metric(value=None, status=None, reason=None):
     if status not in STATUSES:
         raise ValueError("unknown metric status")
     return {"status": status, "value": value, "reason": reason}
+
+
+def period_bounds(now, period, zone=DISPLAY_ZONE):
+    """(start, end) epochs for one of the four snapshot periods."""
+    end = now
+    local = datetime.fromtimestamp(end, zone)
+    if period == "all":
+        return None, end
+    if period == "today":
+        return int(datetime.combine(local.date(), datetime_time(), zone).timestamp()), end
+    days = {"7d": 7, "30d": 30}.get(period)
+    if days is None:
+        raise SourceError("invalid_period")
+    return end - days * 86400, end
 
 
 def source(source_id, scope, now, status="available", reason=None):
