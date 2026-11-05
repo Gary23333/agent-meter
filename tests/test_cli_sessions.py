@@ -75,7 +75,7 @@ class CodexTests(unittest.TestCase):
     def test_diff_of_cumulative_series(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, archives = self.dir(tmp)
-            value = codex_tokens_metric(root, archives, NOW, ZONE)["value"]
+            value = codex_tokens_metric(root, archives, NOW, ZONE, zstd_binary=shutil.which("zstd"))["value"]
             allp = value["periods"]["all"]["totals"]
             # deltas: (100,10,2,50) + (160,15,3,70) + reset (30,4,0,10) + archive (40,5,0,20)
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["reasoning"],
@@ -92,7 +92,7 @@ class CodexTests(unittest.TestCase):
                 codex_event(ts(9, 10), TOTAL(100, 10, 2, 50)),
                 codex_event(ts(9, 11), TOTAL(260, 25, 5, 120)),
             ])
-            value = codex_tokens_metric(root, archives, NOW, ZONE)["value"]
+            value = codex_tokens_metric(root, archives, NOW, ZONE, zstd_binary=shutil.which("zstd"))["value"]
             allp = value["periods"]["all"]["totals"]
             # Existing plain files plus the compressed deltas (100,10,2,50) + (160,15,3,70).
             self.assertEqual((allp["requests"], allp["fresh_input"], allp["output"], allp["reasoning"],
@@ -109,7 +109,7 @@ class CodexTests(unittest.TestCase):
             ]
             write(root / "same.jsonl", lines)
             write_zstd(root / "same.jsonl.zst", lines)
-            value = codex_tokens_metric(root, Path(tmp) / "archives", NOW, ZONE)["value"]
+            value = codex_tokens_metric(root, Path(tmp) / "archives", NOW, ZONE, zstd_binary=shutil.which("zstd"))["value"]
             self.assertEqual(value["periods"]["all"]["totals"]["requests"], 1)
 
     def test_compressed_only_directory_without_zstd_route(self):
@@ -172,7 +172,7 @@ class CodexTests(unittest.TestCase):
     def test_missing_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, archives = self.dir(tmp)
-            value = codex_tokens_metric(root, archives, NOW, ZONE)["value"]
+            value = codex_tokens_metric(root, archives, NOW, ZONE, zstd_binary=shutil.which("zstd"))["value"]
             self.assertEqual(value["periods"]["all"]["totals"]["requests"], 4)
             with self.assertRaises(SourceError) as ctx:
                 codex_tokens_metric(Path(tmp) / "x", Path(tmp) / "y", NOW, ZONE)

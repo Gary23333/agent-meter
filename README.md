@@ -11,7 +11,7 @@
 常用入口（依赖安装和环境配置见下文）：
 
 ```sh
-python3 -m unittest discover -v
+python3 scripts/test-offline.py
 ```
 <!-- WORKSPACE-STATUS-END -->
 
@@ -367,14 +367,18 @@ with urlopen(req, timeout=30) as resp:
 本项目拥有严格的质量保障体系，包含完整的单元测试、契约测试与真实对账校验器：
 
 ```sh
-# 1. 运行全量单元测试（包含 306 项严格测试，零失败；dsh 建议 Python 3.14）
-python3 -m unittest discover -v
+# 1. 运行隔离的离线回归（Python 3.9–3.13 需安装 zstd CLI；3.14 可用标准库）
+python3 scripts/test-offline.py
 
 # 2. 运行真实环境对账校验（各本机账本与历史导入独立重算）
 python3 -m agent_meter verify --output .runtime/verification.json
 ```
 
 ---
+
+CI 运行 Python 3.9、3.12、3.14 离线回归、源码包/ wheel 版本校验，以及 macOS Swift 测试和 release 构建。测试数量以实际结果为准。真实账户对账不进入 CI。
+
+贡献步骤见 [CONTRIBUTING.md](CONTRIBUTING.md)，本地数据与漏洞报告边界见 [SECURITY.md](SECURITY.md)。Python 包和 macOS 打包脚本统一从 `VERSION` 读取版本。
 
 ## 📝 更新日志
 
