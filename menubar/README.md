@@ -19,10 +19,10 @@
 - **小米 MiMo API**：在内嵌窗口登录 MiMo 开放平台控制台，读取账户余额（现金 / 赠送）与 Token Plan 本月用量；只转发控制台自身的 Cookie。MiMo 的推理 API Key 无权查询余额。
 - **阶跃星辰 (StepFun)**：「连接网页账户」里登录 `platform.stepfun.com` 并停在「订阅 / 用量」页，App 只保留页面自己的 `Oasis-Token`（控制台会话里其余 Cookie 会让查询接口拒绝请求），读取账户余额（充值 / 赠送）与 STEP plan 用量——老 Coding Plan 的 5 小时 / 每周窗口，或 Token Plan 的月度积分池——外加套餐名与到期日。也可粘贴开放平台 API Key，走官方 `GET /v1/accounts`，但只能读余额。最多 5 个账号。
 - **Claude Code**：设置菜单「读取 Claude 额度」可单独关闭（经 `PUT /v1/preferences`，关闭后不读钥匙串也不请求）。本地 Claude Code 与 Claude 桌面端 local-agent 的 token 历史不受该开关影响，仍按本机账本计入。开启时优先用 claude.ai 网页登录，否则读 Claude Code 的钥匙串登录，查询 5 小时 / 7 天窗口；不刷新令牌。
-- **界面风格**：面板标题栏的调色板按钮或设置菜单「界面风格」，在四套风格间切换（立即生效、记住选择）：「极简」黑白排版、无卡片无阴影；「原生」macOS 系统实色卡片；「极光」毛玻璃与彩色光斑（默认）；「霓虹」赛博霓虹，固定深色，背景光效由 Core Animation 驱动。网页账户窗口跟随同一风格。
+- **界面风格**：面板标题栏的调色板按钮或设置菜单「界面风格」，在七套风格间切换（立即生效、记住选择）：「极简」「原生」「瓷白」「极光」「钛影」「霓虹」「棱镜」。瓷白固定浅色，钛影、霓虹和棱镜固定深色；其余跟随所选外观。主题定义见 [Theme.swift](Sources/AgentMeterBar/Theme.swift)。网页账户窗口跟随同一风格。
 - **统一卡片结构**：各供应商账户卡按同一顺序显示：额度窗口（短窗口在前，均为进度条，「1 周」统一写作「7 天」）→ 余额与积分包（缩进）→ 积分更新 → 重置卡（明细紧跟其后）→ 续费 / 会员到期 → Token。倒计时 3 天内统一标橙，不按品牌色着色。
 - **自定义排序**：设置菜单「调整卡片顺序…」，拖动或用箭头排序；账户卡片、顶部仪表、菜单栏行情、提醒都按此顺序。
-- **签名与钥匙串**：`SIGN_IDENTITY="<证书名>" ./scripts/build-app.sh` 用固定证书签名，重新构建后钥匙串「始终允许」仍有效；默认 ad-hoc 签名每次构建都会重新弹窗。
+- **签名与钥匙串**：在仓库根目录运行 `SIGN_IDENTITY="<证书名>" sh menubar/scripts/build-app.sh` 可指定固定证书。默认 `SIGN_MODE=dev` 优先使用 Apple Development 证书，找不到时才回退到 ad-hoc；`SIGN_MODE=adhoc` 显式使用临时签名。固定身份有助于保留钥匙串授权，ad-hoc 重建后可能需要重新授权。
 - **界面**：极光渐变底 + 毛玻璃卡片（品牌色描边与光晕）、霓虹环形仪表与渐变进度条（入场动画）、顶部「驾驶舱」仪表条（每个账户一个同心圆仪表，外圈 5 小时、内圈 7 天，下方列出各窗口剩余）、滑动胶囊标签、Codex 近 30 个活跃日 Token 走势线、本机消耗环形图（Swift Charts）。卡片和行情条使用应用真实图标；行情条带 ▲/▼ 变化（绿=剩余增加，红=被消耗）。面板打开时 CPU 约 4%，空闲约 2%。
 - **一键打开**：每张账户卡、「未接入」行、驾驶舱仪表、按应用行、应用覆盖列表都可直接打开对应应用（按后端发现的路径）；Qoder 有 CN / CN IDE 两个应用时弹出选择；没有桌面应用的即梦、DeepSeek 打开官网。
 - **账户额度**：Codex 环形余量、重置倒计时、逐张重置卡到期；Kimi 多窗口进度条；MiniMax Design 钱包、积分包失效、积分更新与续费倒计时；即梦积分；DeepSeek 余额旁新增网页用量「今日 / 近 3 天 / 近 7 天」金额、Token 与请求数，附近 7 日金额柱图（仅展示、不计入本机消耗）；未接入来源及原因。
@@ -38,11 +38,16 @@
 
 ## 构建
 
+以下命令均从仓库根目录执行，需要 macOS 14+、Xcode / Swift 5.10+ 和 Python 3.9+。打包依赖与完整流程见[根 README](../README.md#方式二从源码构建原生应用)。
+
 ```sh
-sh scripts/build-app.sh
+python3 -m pip install -r requirements-build.txt
+sh menubar/scripts/build-app.sh
 ```
 
-产物为 `../release/Agent 用量.app`（包含独立 Python 后端，ad-hoc 签名、`LSUIElement`，不显示 Dock 图标）。从项目根目录运行 `sh scripts/build-dmg.sh` 生成 DMG。`AGENT_METER_HOME` 只用于运行时开发覆盖，不写入发布包。
+产物为 `release/Agent 用量.app`（包含独立 Python 后端，设置 `LSUIElement`，不显示 Dock 图标）。运行 `sh scripts/build-dmg.sh` 生成 DMG。默认开发签名与正式分发签名不同；`SIGN_MODE=dist` 需要自己的 Developer ID 身份，公证还需相应凭据。`AGENT_METER_HOME` 只用于运行时开发覆盖，不写入发布包。
+
+仅验证 Swift 前端可运行 `swift test --package-path menubar` 和 `swift build -c release --package-path menubar`。这些检查不代表真实账户、钥匙串或安装包公证已通过验证。
 
 ## 与后端的关系
 
@@ -53,11 +58,11 @@ sh scripts/build-app.sh
 
 ## 离线预览
 
-除三个标签页外，还会输出 `ticker-*.png`（行情条）和 `alerts.txt`（以当前快照在 现在、+10 天、+11.5 天、+13.2 天 试算的提醒）。
+预览遍历当前全部标签页和七套主题，输出浅色 / 深色 PNG；固定外观主题仍使用其指定配色。还会生成 `ticker-*.png`（行情条）、`share-<主题>-<预设>.png`（分享卡）和 `alerts.txt`（以当前快照在现在、+10 天、+11.5 天、+13.2 天试算的提醒）。
 
 ```sh
-swift build
-.build/debug/AgentMeterBar --preview /path/to/snapshot.json out/
+swift build --package-path menubar
+menubar/.build/debug/AgentMeterBar --preview /path/to/snapshot.json out/
 ```
 
-不连接后端，把三个标签页按浅色 / 深色渲染为 PNG。
+预览不连接后端。公开截图请使用[合成演示快照](../docs/images/README.md)，不要输入真实账户快照；已有截图的版本来源与当前生成结果应分别记录。
