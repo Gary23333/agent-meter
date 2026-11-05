@@ -15,11 +15,14 @@ sys.path.insert(0, str(ROOT))
 def main():
     connect = socket.socket.connect
     connect_ex = socket.socket.connect_ex
+    getaddrinfo = socket.getaddrinfo
 
     def allow_loopback(address):
         if not isinstance(address, tuple):  # Unix sockets are local.
             return
         host = address[0]
+        if isinstance(host, bytes):
+            host = host.decode("ascii")
         if host == "localhost":
             return
         try:
@@ -28,6 +31,11 @@ def main():
         except ValueError:
             pass
         raise OSError("External network access is disabled in offline tests")
+
+    def guarded_getaddrinfo(host, port, *args, **kwargs):
+        if host is not None:
+            allow_loopback((host, port))
+        return getaddrinfo(host, port, *args, **kwargs)
 
     def guarded_connect(sock, address):
         allow_loopback(address)
@@ -56,6 +64,7 @@ def main():
 
             with patch.object(collector, "default_config", isolated_defaults), \
                     patch.object(collector, "collect_claude", side_effect=SourceError("claude_not_logged_in")), \
+                    patch.object(socket, "getaddrinfo", guarded_getaddrinfo), \
                     patch.object(socket.socket, "connect", guarded_connect), \
                     patch.object(socket.socket, "connect_ex", guarded_connect_ex):
                 suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"), top_level_dir=str(ROOT))
