@@ -269,7 +269,7 @@ private struct Hexagon: Shape {
     func path(in r: CGRect) -> Path {
         var p = Path()
         for i in 0..<6 {
-            let a = Double(i) * .pi / 3 - .pi / 2
+            let a: CGFloat = CGFloat(i) * .pi / 3 - .pi / 2
             let pt = CGPoint(x: r.midX + r.width / 2 * cos(a), y: r.midY + r.height / 2 * sin(a))
             if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
         }
