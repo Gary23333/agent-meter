@@ -271,11 +271,14 @@ class EndpointTests(unittest.TestCase):
                                          headers={"Content-Type": "application/json", "Authorization": "Bearer " + self.token})
             return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=3)
         with put({"disabled_sources": ["claude"]}) as r:
-            self.assertEqual(json.loads(r.read()), {"disabled_sources": ["claude"], "auto_claim": [], "claim_time": "00:05"})
+            self.assertEqual(json.loads(r.read()), {"disabled_sources": ["claude"], "low_resource_mode": False,
+                                                 "skip_ledgers_low_resource": [], "auto_claim": [], "claim_time": "00:05"})
         self.service.get()
-        self.assertEqual(self.service.config["preferences"], {"disabled_sources": ["claude"], "auto_claim": [], "claim_time": "00:05"})
+        self.assertEqual(self.service.config["preferences"], {"disabled_sources": ["claude"], "low_resource_mode": False,
+                                                         "skip_ledgers_low_resource": [], "auto_claim": [], "claim_time": "00:05"})
         with put({"disabled_sources": [], "auto_claim": ["workbuddy", "trae_cn", "trae_cn"], "claim_time": "09:30"}) as r:
-            self.assertEqual(json.loads(r.read()), {"disabled_sources": [], "auto_claim": ["trae_cn", "workbuddy"], "claim_time": "09:30"})
+            self.assertEqual(json.loads(r.read()), {"disabled_sources": [], "low_resource_mode": False, "skip_ledgers_low_resource": [],
+                                                 "auto_claim": ["trae_cn", "workbuddy"], "claim_time": "09:30"})
         for bad in [{"disabled_sources": ["unknown_source"]}, {"disabled_sources": "claude"}, {"other": []},
                     {"disabled_sources": [], "auto_claim": ["claude"]}, {"disabled_sources": [], "auto_claim": "trae_cn"},
                     {"auto_claim": ["trae_cn"]}, {"disabled_sources": [], "claim_time": "25:00"},

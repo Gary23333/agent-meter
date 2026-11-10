@@ -11,7 +11,7 @@ struct PetRect: Equatable {
 enum PetAction: Equatable {
     case openPanel(tab: String?)
 
-    static let tabs: Set<String> = ["accounts", "apps", "forecast", "usage", "pet"]
+    static let tabs: Set<String> = ["accounts", "apps", "forecast", "usage", "pet", "collection"]
 
     static func parse(_ raw: Any?) -> PetAction? {
         guard let d = raw as? [String: Any], d["kind"] as? String == "open_panel" else { return nil }
