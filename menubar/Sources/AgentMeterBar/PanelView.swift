@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case accounts, apps, forecast, usage
+    case accounts, apps, forecast, usage, pet
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -9,6 +9,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .forecast: return "重置预测"
         case .usage:    return "本机消耗"
         case .apps:     return "应用"
+        case .pet:      return "桌宠"
         }
     }
 }
@@ -124,6 +125,32 @@ struct PanelView: View {
             .disabled(!store.notificationsEnabled)
             Button("发送测试通知") { Notifier.shared.sendTest() }
             Divider()
+            Menu("桌宠") {
+                let pet = PetPrefs.shared
+                Toggle("显示桌宠", isOn: Binding(get: { pet.enabled }, set: { pet.enabled = $0 }))
+                Picker("形象", selection: Binding(get: { pet.packID }, set: { pet.packID = $0 })) {
+                    ForEach(PetResources.allPacks()) { Text($0.name).tag($0.id) }
+                }
+                Picker("大小", selection: Binding(get: { pet.size }, set: { pet.size = $0 })) {
+                    ForEach(PetSize.allCases) { Text($0.label).tag($0) }
+                }
+                Picker("额度显示", selection: Binding(get: { pet.hud }, set: { pet.hud = $0 })) {
+                    ForEach(PetHUD.allCases) { Text($0.label).tag($0) }
+                }
+                Toggle("眼睛跟随光标", isOn: Binding(get: { pet.followCursor }, set: { pet.followCursor = $0 }))
+                Toggle("安静模式（少说话、不乱动）", isOn: Binding(get: { pet.calm }, set: { pet.calm = $0 }))
+                Toggle("用桌宠气泡代替系统通知", isOn: Binding(get: { pet.takeoverAlerts }, set: { pet.takeoverAlerts = $0 }))
+                Picker("久坐提醒", selection: Binding(get: { pet.breakMinutes }, set: { pet.breakMinutes = $0 })) {
+                    Text("关闭").tag(0)
+                    Text("连续 1 小时").tag(60)
+                    Text("连续 2 小时").tag(120)
+                    Text("连续 3 小时").tag(180)
+                }
+                Divider()
+                Button("打开桌宠页") { tabRaw = Tab.pet.rawValue }
+                Button("打开形象文件夹…") { PetController.shared.openUserFolder() }
+            }
+            Divider()
             Toggle("开机启动", isOn: Binding(get: { store.launchAtLogin }, set: { store.setLaunchAtLogin($0) }))
             Divider()
             if let dir = store.projectDirectory {
@@ -157,13 +184,25 @@ struct PanelView: View {
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now, budget: store.budget)
             case .apps: ActivityView(snapshot: snapshot)
+            case .pet: PetTabView()
             }
         }
         .padding(14)
     }
 
+    /// The pet works without a snapshot (it simply looks "not sure"), so its tab never waits for one.
+    @ViewBuilder private var petContent: some View {
+        if Self.expandForPreview {
+            PetTabView().padding(14)
+        } else {
+            ScrollView { PetTabView().padding(14) }.scrollIndicators(.never).frame(height: 480)
+        }
+    }
+
     @ViewBuilder private var content: some View {
-        if let snapshot = store.snapshot {
+        if selectedTab == .pet {
+            petContent
+        } else if let snapshot = store.snapshot {
             if Self.expandForPreview {
                 tabContent(snapshot)
             } else {
@@ -201,7 +240,8 @@ struct PanelView: View {
                 Image(systemName: "square.stack.3d.up").font(.system(size: 10))
                 Text("\(Int(summary["application_groups"].double ?? summary["applications"].double ?? 0)) 个应用 · \(Int(summary["available_fields"].double ?? 0)) 项已采集 · \(Int(summary["partial_fields"].double ?? 0)) 项部分")
             } else {
-                Text("本机只读 · 127.0.0.1:8769")
+                // String(), not interpolation: a number inside Text("...") gets a locale thousands separator ("8,769").
+                Text("本机只读 · 127.0.0.1:" + String(BackendClient.port))
             }
             Spacer()
             Text("北京时间")
@@ -275,7 +315,7 @@ private struct Hexagon: Shape {
     func path(in r: CGRect) -> Path {
         var p = Path()
         for i in 0..<6 {
-            let a = Double(i) * .pi / 3 - .pi / 2
+            let a: CGFloat = CGFloat(i) * .pi / 3 - .pi / 2
             let pt = CGPoint(x: r.midX + r.width / 2 * cos(a), y: r.midY + r.height / 2 * sin(a))
             if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
         }

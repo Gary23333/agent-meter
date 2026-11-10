@@ -204,6 +204,7 @@ final class UsageStore {
             let result = try await client.syncPrices()
             if result["status"].string == "updated" {
                 await fetch(force: true)
+                try? await client.petEvent(["kind": "prices_synced"])
             }
         } catch {
             NSLog("AgentMeterBar model catalogue sync: %@", String(describing: error))

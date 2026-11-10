@@ -46,16 +46,19 @@ with tempfile.TemporaryDirectory(prefix="release-smoke-", dir=root / ".runtime")
         token = token_path.read_text().strip()
         assert token_path.stat().st_mode & 0o777 == 0o600
         base = startup["listening"]
-        for path in ["health", "snapshot"]:
+        for path in ["health", "snapshot", "pet"]:
             request = Request(base + "/v1/" + path, headers={"Authorization": "Bearer " + token})
             with urlopen(request, timeout=15) as response:
                 assert response.status == 200
+                if path == "pet":
+                    frame = json.load(response)
+                    assert frame["schema_version"] == 1 and frame["state"] in {"idle", "sleeping", "working", "confused", "tired"}
         try:
             urlopen(base + "/v1/health", timeout=5)
             raise AssertionError("Unauthenticated API request was accepted")
         except HTTPError as error:
             assert error.code == 401
-        print("PASS: relocated bundled backend, synthetic collect/verify, authenticated HTTP API, token permissions")
+        print("PASS: relocated bundled backend, synthetic collect/verify, authenticated HTTP API (incl. pet frame), token permissions")
     finally:
         process.terminate()
         process.communicate(timeout=10)

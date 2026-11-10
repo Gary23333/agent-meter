@@ -11,7 +11,7 @@
 常用入口（依赖安装和环境配置见下文）：
 
 ```sh
-python3 -m unittest discover -v
+python3 scripts/test-offline.py
 ```
 <!-- WORKSPACE-STATUS-END -->
 
@@ -186,6 +186,13 @@ python3 -m unittest discover -v
   <img src="docs/images/share-prism-portrait.png" alt="棱镜风格竖版用量分享卡，使用演示数据" width="32%" />
 </p>
 <p align="center"><sub>瓷白 · 钛影 · 棱镜（演示数据，非真实消耗）</sub></p>
+
+### 10. 🐾 桌面宠物（开发中，未发布）
+- **桌面 + 面板里的「桌宠」标签页**：除了悬浮在桌面上，面板里有独立的一页：同一个实时形象（可以戳、双击刷新）、形象库（缩略图由运行时现画）、14 个状态和 5 个短反应「点一下就试玩」（不影响真实桌宠和数据）、「它读到了什么」（额度、会话、今日 Token、待提醒、hooks 事件）、专注计时、一键复制 hooks 接入命令、设置。
+- **常驻桌面的伙伴**：透明置顶、不抢焦点、透明区域点击穿透；把额度、会话、重置、提醒、本机消耗、创作积分和 Tibo 预测翻译成 24 个动画和 12 种表情，额度、会话与预测的口径与 App 内其它页面一致（未知额度是「拿不准」，不是「耗尽」）。
+- **六个内置形象**：量量（额度圆环）、团团（果冻）、码码（机器人）、缓存猫、Tibo、比特（像素）；七套界面风格各有配色。
+- **功能性联动**：额度胶囊、会话看板、Claude Code / Codex 钩子（完成、等你确认）、专注计时、久坐提醒、提醒接管、右键快捷操作。
+- **两套形象制作 skill**：前端 + three.js 程序化 3D、生图模型精灵图。详见 [桌宠说明](pets/README.md) 与 [规划文档](docs/pet-system-plan-2026-11-09.md)。
 
 ---
 
@@ -367,14 +374,18 @@ with urlopen(req, timeout=30) as resp:
 本项目拥有严格的质量保障体系，包含完整的单元测试、契约测试与真实对账校验器：
 
 ```sh
-# 1. 运行全量单元测试（包含 306 项严格测试，零失败；dsh 建议 Python 3.14）
-python3 -m unittest discover -v
+# 1. 运行隔离的离线回归（Python 3.9–3.13 需安装 zstd CLI；3.14 可用标准库）
+python3 scripts/test-offline.py
 
 # 2. 运行真实环境对账校验（各本机账本与历史导入独立重算）
 python3 -m agent_meter verify --output .runtime/verification.json
 ```
 
 ---
+
+CI 运行 Python 3.9、3.12、3.14 离线回归、源码包/ wheel 版本校验，以及 macOS Swift 测试和 release 构建。测试数量以实际结果为准。真实账户对账不进入 CI。
+
+贡献步骤见 [CONTRIBUTING.md](CONTRIBUTING.md)，本地数据与漏洞报告边界见 [SECURITY.md](SECURITY.md)。Python 包和 macOS 打包脚本统一从 `VERSION` 读取版本。
 
 ## 📝 更新日志
 

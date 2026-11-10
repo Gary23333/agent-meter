@@ -1,0 +1,1409 @@
+{
+ "format": "agentmeter-avatar/1",
+ "palette": {
+  "skin": "#ffe3d1",
+  "hair": "#756bfa",
+  "shirt": "#33d1cc",
+  "pants": "#5c579e",
+  "shoe": "#2b2660",
+  "ink": "#292457",
+  "white": "#ffffff",
+  "blush": "#ff7a9e",
+  "tongue": "#e0527a"
+ },
+ "materials": {
+  "ink": {
+   "kind": "basic",
+   "color": "ink",
+   "decal": true
+  },
+  "white": {
+   "kind": "basic",
+   "color": "white",
+   "decal": true
+  },
+  "blush": {
+   "kind": "basic",
+   "color": "blush",
+   "opacity": 0.55,
+   "decal": true
+  },
+  "tongue": {
+   "kind": "basic",
+   "color": "tongue",
+   "decal": true
+  },
+  "heart": {
+   "kind": "basic",
+   "color": "#ff5c8a",
+   "decal": true
+  },
+  "shadow": {
+   "kind": "basic",
+   "color": "#000000",
+   "opacity": 0.28,
+   "texture": "softdot"
+  },
+  "skin": {
+   "kind": "toon",
+   "color": "skin",
+   "steps": 3
+  },
+  "hair": {
+   "kind": "toon",
+   "color": "hair",
+   "steps": 3
+  },
+  "shirt": {
+   "kind": "toon",
+   "color": "shirt",
+   "steps": 3
+  },
+  "pants": {
+   "kind": "toon",
+   "color": "pants",
+   "steps": 3
+  },
+  "shoe": {
+   "kind": "toon",
+   "color": "shoe",
+   "steps": 3
+  }
+ },
+ "outline": {
+  "enabled": true,
+  "thickness": 0.014,
+  "color": "#292457"
+ },
+ "nodes": [
+  {
+   "id": "root",
+   "type": "group"
+  },
+  {
+   "id": "shadow",
+   "type": "disc",
+   "parent": "root",
+   "radius": 0.55,
+   "position": [
+    0,
+    0.004,
+    0
+   ],
+   "rotation": [
+    -90,
+    0,
+    0
+   ],
+   "scale": [
+    1,
+    0.8,
+    1
+   ],
+   "material": "shadow",
+   "outline": false
+  },
+  {
+   "id": "body",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    0,
+    0.5,
+    0
+   ]
+  },
+  {
+   "id": "torso",
+   "type": "sphere",
+   "parent": "body",
+   "radius": 0.26,
+   "scale": [
+    1,
+    1.15,
+    0.85
+   ],
+   "segments": [
+    28,
+    20
+   ],
+   "material": "shirt"
+  },
+  {
+   "id": "badge",
+   "type": "disc",
+   "parent": "body",
+   "radius": 0.045,
+   "position": [
+    0,
+    0.06,
+    0.215
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "head",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    0,
+    1.03,
+    0
+   ]
+  },
+  {
+   "id": "skull",
+   "type": "sphere",
+   "parent": "head",
+   "radius": 0.46,
+   "scale": [
+    1,
+    0.96,
+    0.96
+   ],
+   "segments": [
+    40,
+    28
+   ],
+   "material": "skin"
+  },
+  {
+   "id": "hairCap",
+   "type": "sphere",
+   "parent": "head",
+   "radius": 0.5,
+   "scale": [
+    1.04,
+    1.0,
+    1.0
+   ],
+   "position": [
+    0,
+    0.075,
+    -0.075
+   ],
+   "segments": [
+    40,
+    28
+   ],
+   "material": "hair"
+  },
+  {
+   "id": "fringe0",
+   "type": "cone",
+   "parent": "head",
+   "radius": 0.1,
+   "height": 0.2,
+   "segments": [
+    12
+   ],
+   "position": [
+    -0.2,
+    0.29,
+    0.34
+   ],
+   "rotation": [
+    160,
+    0,
+    18
+   ],
+   "material": "hair"
+  },
+  {
+   "id": "fringe1",
+   "type": "cone",
+   "parent": "head",
+   "radius": 0.1,
+   "height": 0.2,
+   "segments": [
+    12
+   ],
+   "position": [
+    0.0,
+    0.33,
+    0.37
+   ],
+   "rotation": [
+    160,
+    0,
+    0
+   ],
+   "material": "hair"
+  },
+  {
+   "id": "fringe2",
+   "type": "cone",
+   "parent": "head",
+   "radius": 0.1,
+   "height": 0.2,
+   "segments": [
+    12
+   ],
+   "position": [
+    0.2,
+    0.29,
+    0.34
+   ],
+   "rotation": [
+    160,
+    0,
+    -18
+   ],
+   "material": "hair"
+  },
+  {
+   "id": "earL",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    -0.45,
+    -0.02,
+    0
+   ]
+  },
+  {
+   "id": "earLMesh",
+   "type": "sphere",
+   "parent": "earL",
+   "radius": 0.08,
+   "scale": [
+    0.6,
+    1,
+    0.8
+   ],
+   "material": "skin"
+  },
+  {
+   "id": "earR",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.45,
+    -0.02,
+    0
+   ]
+  },
+  {
+   "id": "earRMesh",
+   "type": "sphere",
+   "parent": "earR",
+   "radius": 0.08,
+   "scale": [
+    0.6,
+    1,
+    0.8
+   ],
+   "material": "skin"
+  },
+  {
+   "id": "eyeL",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    -20.8283,
+    0
+   ]
+  },
+  {
+   "id": "eyeLPupil",
+   "type": "disc",
+   "parent": "eyeL",
+   "radius": 0.07,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeLGlint",
+   "type": "disc",
+   "parent": "eyeL",
+   "radius": 0.023800000000000005,
+   "position": [
+    0.021,
+    0.042,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeBigL",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    -20.8283,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeBigLPupil",
+   "type": "disc",
+   "parent": "eyeBigL",
+   "radius": 0.09100000000000001,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeBigLGlint",
+   "type": "disc",
+   "parent": "eyeBigL",
+   "radius": 0.030940000000000006,
+   "position": [
+    0.0273,
+    0.0546,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeHappyL",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    -0.0454,
+    0.4101
+   ],
+   "rotation": [
+    6.3191,
+    -20.8283,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.044800000000000006,
+   "outer": 0.07840000000000001,
+   "start": 0,
+   "arc": 180
+  },
+  {
+   "id": "eyeSleepL",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    -0.005,
+    0.4126
+   ],
+   "rotation": [
+    0.7007,
+    -20.8283,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.038500000000000006,
+   "outer": 0.0679,
+   "start": 180,
+   "arc": 180
+  },
+  {
+   "id": "eyeXL",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    -20.8283,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeXaL",
+   "type": "plane",
+   "parent": "eyeXL",
+   "size": [
+    0.11900000000000001,
+    0.0252
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeXbL",
+   "type": "plane",
+   "parent": "eyeXL",
+   "size": [
+    0.11900000000000001,
+    0.0252
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeHeartL",
+   "type": "extrude",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    -20.8283,
+    0
+   ],
+   "material": "heart",
+   "visible": false,
+   "outline": false,
+   "shape": "heart",
+   "size": 0.0805,
+   "depth": 0.01,
+   "bevel": 0.004
+  },
+  {
+   "id": "browWorryL",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    0.111,
+    0.3974
+   ],
+   "rotation": [
+    -15.6076,
+    -20.8283,
+    18
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.10500000000000001,
+    0.022
+   ]
+  },
+  {
+   "id": "browDetL",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    -0.1714,
+    0.1009,
+    0.4001
+   ],
+   "rotation": [
+    -14.1575,
+    -20.8283,
+    -16
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.10500000000000001,
+    0.022
+   ]
+  },
+  {
+   "id": "cheekL",
+   "type": "disc",
+   "parent": "head",
+   "position": [
+    -0.3025,
+    -0.1312,
+    0.31
+   ],
+   "rotation": [
+    22.9387,
+    -39.4511,
+    0
+   ],
+   "material": "blush",
+   "outline": false,
+   "radius": 0.058
+  },
+  {
+   "id": "eyeR",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    20.8283,
+    0
+   ]
+  },
+  {
+   "id": "eyeRPupil",
+   "type": "disc",
+   "parent": "eyeR",
+   "radius": 0.07,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeRGlint",
+   "type": "disc",
+   "parent": "eyeR",
+   "radius": 0.023800000000000005,
+   "position": [
+    0.021,
+    0.042,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeBigR",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    20.8283,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeBigRPupil",
+   "type": "disc",
+   "parent": "eyeBigR",
+   "radius": 0.09100000000000001,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeBigRGlint",
+   "type": "disc",
+   "parent": "eyeBigR",
+   "radius": 0.030940000000000006,
+   "position": [
+    0.0273,
+    0.0546,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeHappyR",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.1714,
+    -0.0454,
+    0.4101
+   ],
+   "rotation": [
+    6.3191,
+    20.8283,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.044800000000000006,
+   "outer": 0.07840000000000001,
+   "start": 0,
+   "arc": 180
+  },
+  {
+   "id": "eyeSleepR",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.1714,
+    -0.005,
+    0.4126
+   ],
+   "rotation": [
+    0.7007,
+    20.8283,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.038500000000000006,
+   "outer": 0.0679,
+   "start": 180,
+   "arc": 180
+  },
+  {
+   "id": "eyeXR",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    20.8283,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeXaR",
+   "type": "plane",
+   "parent": "eyeXR",
+   "size": [
+    0.11900000000000001,
+    0.0252
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeXbR",
+   "type": "plane",
+   "parent": "eyeXR",
+   "size": [
+    0.11900000000000001,
+    0.0252
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeHeartR",
+   "type": "extrude",
+   "parent": "head",
+   "position": [
+    0.1714,
+    -0.0303,
+    0.4115
+   ],
+   "rotation": [
+    4.2079,
+    20.8283,
+    0
+   ],
+   "material": "heart",
+   "visible": false,
+   "outline": false,
+   "shape": "heart",
+   "size": 0.0805,
+   "depth": 0.01,
+   "bevel": 0.004
+  },
+  {
+   "id": "browWorryR",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    0.1714,
+    0.111,
+    0.3974
+   ],
+   "rotation": [
+    -15.6076,
+    20.8283,
+    -18
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.10500000000000001,
+    0.022
+   ]
+  },
+  {
+   "id": "browDetR",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    0.1714,
+    0.1009,
+    0.4001
+   ],
+   "rotation": [
+    -14.1575,
+    20.8283,
+    16
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.10500000000000001,
+    0.022
+   ]
+  },
+  {
+   "id": "cheekR",
+   "type": "disc",
+   "parent": "head",
+   "position": [
+    0.3025,
+    -0.1312,
+    0.31
+   ],
+   "rotation": [
+    22.9387,
+    39.4511,
+    0
+   ],
+   "material": "blush",
+   "outline": false,
+   "radius": 0.058
+  },
+  {
+   "id": "mouthSmile",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.1766,
+    0.4074
+   ],
+   "rotation": [
+    23.4362,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "outline": false,
+   "inner": 0.034,
+   "outer": 0.055,
+   "start": 180,
+   "arc": 180,
+   "scale": [
+    1.3,
+    1,
+    1
+   ]
+  },
+  {
+   "id": "mouthOpen",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.217,
+    0.3874
+   ],
+   "rotation": [
+    29.251,
+    0.0,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "mouthOpenBg",
+   "type": "disc",
+   "parent": "mouthOpen",
+   "radius": 0.058,
+   "scale": [
+    1.15,
+    1.3,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "mouthTongue",
+   "type": "disc",
+   "parent": "mouthOpen",
+   "radius": 0.032,
+   "position": [
+    0,
+    -0.034,
+    0.003
+   ],
+   "scale": [
+    1.3,
+    0.8,
+    1
+   ],
+   "material": "tongue",
+   "outline": false
+  },
+  {
+   "id": "mouthFlat",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.217,
+    0.3874
+   ],
+   "rotation": [
+    29.251,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.095,
+    0.02
+   ]
+  },
+  {
+   "id": "mouthFrown",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.2523,
+    0.3654
+   ],
+   "rotation": [
+    34.6235,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.03,
+   "outer": 0.05,
+   "start": 0,
+   "arc": 180,
+   "scale": [
+    1.2,
+    1,
+    1
+   ]
+  },
+  {
+   "id": "mouthO",
+   "type": "disc",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.222,
+    0.3845
+   ],
+   "rotation": [
+    30.0,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "radius": 0.036
+  },
+  {
+   "id": "antenna",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0,
+    0.55,
+    -0.02
+   ]
+  },
+  {
+   "id": "ahoge",
+   "type": "extrude",
+   "parent": "antenna",
+   "shape": "drop",
+   "size": 0.11,
+   "depth": 0.03,
+   "bevel": 0.008,
+   "position": [
+    0,
+    0.07,
+    0
+   ],
+   "material": "hair",
+   "outline": false
+  },
+  {
+   "id": "armL",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    -0.31,
+    0.64,
+    0.0
+   ],
+   "rotation": [
+    0,
+    0,
+    -8
+   ]
+  },
+  {
+   "id": "armLMesh",
+   "type": "capsule",
+   "parent": "armL",
+   "radius": 0.065,
+   "length": 0.12,
+   "position": [
+    0,
+    -0.12,
+    0
+   ],
+   "material": "shirt"
+  },
+  {
+   "id": "armR",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    0.31,
+    0.64,
+    0.0
+   ],
+   "rotation": [
+    0,
+    0,
+    8
+   ]
+  },
+  {
+   "id": "armRMesh",
+   "type": "capsule",
+   "parent": "armR",
+   "radius": 0.065,
+   "length": 0.12,
+   "position": [
+    0,
+    -0.12,
+    0
+   ],
+   "material": "shirt"
+  },
+  {
+   "id": "armLHand",
+   "type": "sphere",
+   "parent": "armL",
+   "radius": 0.07,
+   "position": [
+    0,
+    -0.27,
+    0
+   ],
+   "material": "skin"
+  },
+  {
+   "id": "armRHand",
+   "type": "sphere",
+   "parent": "armR",
+   "radius": 0.07,
+   "position": [
+    0,
+    -0.27,
+    0
+   ],
+   "material": "skin"
+  },
+  {
+   "id": "legL",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    -0.12,
+    0.25,
+    0
+   ]
+  },
+  {
+   "id": "legLMesh",
+   "type": "capsule",
+   "parent": "legL",
+   "radius": 0.075,
+   "length": 0.08,
+   "position": [
+    0,
+    -0.07,
+    0
+   ],
+   "material": "pants"
+  },
+  {
+   "id": "legLShoe",
+   "type": "sphere",
+   "parent": "legL",
+   "radius": 0.1,
+   "scale": [
+    1,
+    0.65,
+    1.4
+   ],
+   "position": [
+    0,
+    -0.2,
+    0.05
+   ],
+   "material": "shoe"
+  },
+  {
+   "id": "legR",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    0.12,
+    0.25,
+    0
+   ]
+  },
+  {
+   "id": "legRMesh",
+   "type": "capsule",
+   "parent": "legR",
+   "radius": 0.075,
+   "length": 0.08,
+   "position": [
+    0,
+    -0.07,
+    0
+   ],
+   "material": "pants"
+  },
+  {
+   "id": "legRShoe",
+   "type": "sphere",
+   "parent": "legR",
+   "radius": 0.1,
+   "scale": [
+    1,
+    0.65,
+    1.4
+   ],
+   "position": [
+    0,
+    -0.2,
+    0.05
+   ],
+   "material": "shoe"
+  }
+ ],
+ "slots": {
+  "root": "root",
+  "body": "body",
+  "head": "head",
+  "armL": "armL",
+  "armR": "armR",
+  "legL": "legL",
+  "legR": "legR",
+  "earL": "earL",
+  "earR": "earR",
+  "antenna": "antenna",
+  "shadow": "shadow",
+  "mouth": "mouthOpen"
+ },
+ "face": {
+  "blink": [
+   "eyeL",
+   "eyeR"
+  ],
+  "look": [
+   {
+    "node": "eyeL",
+    "range": [
+     0.03,
+     0.022
+    ]
+   },
+   {
+    "node": "eyeR",
+    "range": [
+     0.03,
+     0.022
+    ]
+   }
+  ],
+  "managed": [
+   "browDetL",
+   "browDetR",
+   "browWorryL",
+   "browWorryR",
+   "eyeBigL",
+   "eyeBigR",
+   "eyeHappyL",
+   "eyeHappyR",
+   "eyeHeartL",
+   "eyeHeartR",
+   "eyeL",
+   "eyeR",
+   "eyeSleepL",
+   "eyeSleepR",
+   "eyeXL",
+   "eyeXR",
+   "mouthFlat",
+   "mouthFrown",
+   "mouthO",
+   "mouthOpen",
+   "mouthSmile"
+  ],
+  "expressions": {
+   "neutral": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "mouthSmile"
+    ]
+   },
+   "happy": {
+    "show": [
+     "eyeHappyL",
+     "eyeHappyR",
+     "mouthOpen"
+    ]
+   },
+   "excited": {
+    "show": [
+     "eyeBigL",
+     "eyeBigR",
+     "mouthOpen"
+    ]
+   },
+   "determined": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browDetL",
+     "browDetR",
+     "mouthFlat"
+    ]
+   },
+   "worried": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browWorryL",
+     "browWorryR",
+     "mouthFrown"
+    ]
+   },
+   "sad": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browWorryL",
+     "browWorryR",
+     "mouthFrown"
+    ]
+   },
+   "sleepy": {
+    "show": [
+     "eyeSleepL",
+     "eyeSleepR",
+     "mouthFlat"
+    ]
+   },
+   "surprised": {
+    "show": [
+     "eyeBigL",
+     "eyeBigR",
+     "mouthO"
+    ]
+   },
+   "confused": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browWorryL",
+     "mouthFlat"
+    ]
+   },
+   "dizzy": {
+    "show": [
+     "eyeXL",
+     "eyeXR",
+     "mouthFrown"
+    ]
+   },
+   "yawn": {
+    "show": [
+     "eyeSleepL",
+     "eyeSleepR",
+     "mouthOpen"
+    ]
+   },
+   "love": {
+    "show": [
+     "eyeHeartL",
+     "eyeHeartR",
+     "mouthSmile"
+    ]
+   }
+  }
+ },
+ "props": {
+  "laptop": {
+   "parent": "root",
+   "position": [
+    0,
+    0.1,
+    0.55
+   ],
+   "rotation": [
+    0,
+    -14,
+    0
+   ],
+   "scale": 0.75
+  },
+  "resetter": {
+   "parent": "root",
+   "position": [
+    0.62,
+    0,
+    0.22
+   ],
+   "rotation": [
+    0,
+    -25,
+    0
+   ],
+   "scale": 1.1
+  },
+  "sign": {
+   "parent": "root",
+   "position": [
+    0.74,
+    0.28,
+    0.1
+   ],
+   "scale": 0.95
+  },
+  "plug": {
+   "parent": "root",
+   "position": [
+    0,
+    0,
+    0.1
+   ]
+  },
+  "brush": {
+   "parent": "armR",
+   "position": [
+    0,
+    -0.27,
+    0.06
+   ],
+   "rotation": [
+    -70,
+    0,
+    0
+   ],
+   "scale": 0.8
+  },
+  "headphones": {
+   "parent": "head",
+   "position": [
+    0,
+    0.04,
+    0
+   ],
+   "scale": 1.4
+  },
+  "crystal": {
+   "parent": "root",
+   "position": [
+    -0.7,
+    0,
+    0.25
+   ]
+  }
+ },
+ "anchors": {
+  "head": {
+   "node": "head",
+   "offset": [
+    0.12,
+    0.55,
+    0.1
+   ]
+  },
+  "body": {
+   "node": "body",
+   "offset": [
+    0,
+    0,
+    0.3
+   ]
+  },
+  "prop": {
+   "node": "armR",
+   "offset": [
+    0,
+    -0.27,
+    0.2
+   ]
+  },
+  "root": {
+   "node": "root",
+   "offset": [
+    0,
+    0.05,
+    0
+   ]
+  }
+ }
+}

@@ -212,7 +212,10 @@ final class ConnectionManager {
     /// slots that need authorization (or a locked keychain) are logged and
     /// left for an explicit user connect action, so startup shows no prompt.
     nonisolated func storedSessions() async -> [String: [String: String]] {
-        await Task.detached {
+        // Development builds are signed differently from the installed app, so reading its Keychain items would
+        // raise a password prompt; AGENT_METER_NO_KEYCHAIN=1 skips them (those sources then simply stay empty).
+        if ProcessInfo.processInfo.environment["AGENT_METER_NO_KEYCHAIN"] == "1" { return [:] }
+        return await Task.detached {
             var out: [String: [String: String]] = [:]
             for slot in Self.startupSlots(SessionKeychain.slots()) {
                 switch SessionKeychain.loadResult(slot) {

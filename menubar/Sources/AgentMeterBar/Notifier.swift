@@ -30,8 +30,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func evaluate(_ snapshot: Snapshot, store: UsageStore, now: Date) {
         guard store.notificationsEnabled else { return }
+        // With "桌宠接管提醒" the pet shows the same alerts (the backend brain uses these exact keys), so the
+        // system banner is skipped while the pet is actually on screen; the key is still recorded.
+        let petTakesOver = PetPrefs.shared.takeoverAlerts && PetController.shared.isActive
         for alert in alerts(snapshot, threshold: store.lowQuotaThreshold, now: now) where fired[alert.key] == nil {
-            post(alert)
+            if !petTakesOver { post(alert) }
             fired[alert.key] = now.timeIntervalSince1970
         }
         // Keys embed their event time, so old entries can never match again.

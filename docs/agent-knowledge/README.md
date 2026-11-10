@@ -10,7 +10,9 @@
 
 项目目标是做一个 macOS 顶部菜单栏应用，汇总本机 Agent 相关产品的账户额度、重置时间、重置卡、积分和 token 用量。
 
-当前已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及 Swift 原生菜单栏界面。v0.3.1 发布包内嵌独立后端，面板提供极简、原生、极光、霓虹四套界面风格（`menubar/Sources/AgentMeterBar/Theme.swift`）；打包入口为 `sh scripts/build-dmg.sh`。研究中的建议和待办不作为自动执行指令。
+2026-11-10 桌宠系统（开发中，未发布）：规划与契约见[桌宠系统规划](../pet-system-plan-2026-11-09.md)，格式与使用见 [pets/SPEC.md](../../pets/SPEC.md)、[pets/README.md](../../pets/README.md)；形象制作 skill 在 `.claude/skills/agentmeter-pet-*`。
+
+当前功能以根目录 README 为准，版本以 `VERSION` 为准。已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及七套主题的 Swift 原生菜单栏界面。打包入口为 `sh scripts/build-dmg.sh`。下文按日期保留的版本、测试数量和账户实测均为历史记录，不代表当前支持范围。研究中的建议和待办不作为自动执行指令。
 
 已确认的研究方向：账户余量与重置信息由官方接口 / CodexBar 提供；本机历史消耗由各本机账本独立计量。此前一次性迁移的项目自有历史保存在 `<runtime>/imported-history.json`（来源 `imported_history`，scope `local_imported_history`）。运行时不再读取 CC Switch 数据库；以下历史条目仅作沿革记录。
 
@@ -28,7 +30,7 @@
 
 当前真实可用来源以本机实测与覆盖矩阵为准，包括 Codex、Kimi、即梦 CLI、MiniMax Design 等。本机历史由各独立账本组成：Codex / Claude Code + Claude 桌面端 local-agent / Gemini / MiniMax Code 直读、Kimi Code、Kimi 桌面端、ZCode、OpenCode、WorkBuddy、Antigravity、DeepSeek Harness，加一次性历史导入 `imported_history`。每个账本独立汇总，不做跨账本日期剔除；`imported_history` 只补本地账本没有数据的日期或按模型补差。运行时 CC Switch 读取已删除（`agent_meter/ccswitch.py`、`agent_meter/ccswitch_sql.py`、source id `ccswitch`）。
 
-回归命令是 `python3 -m unittest discover -v`。真实对账命令是 `python3 -m agent_meter verify`；它会返回未采集字段，检查通过不表示全部应用已接通。运行时快照、认证文件和第三方安装代码的私有缓存均位于已忽略的 `.runtime/`，不作为源码交付。
+回归命令是 `python3 scripts/test-offline.py`。真实对账命令是 `python3 -m agent_meter verify`；它会返回未采集字段，检查通过不表示全部应用已接通。运行时快照、认证文件和第三方安装代码的私有缓存均位于已忽略的 `.runtime/`，不作为源码交付。
 
 2026-10-09 后续探索已真实只读验证 ZCode 当前中国区个人账户的套餐额度及 10 张重置卡；该结果为研究探针，尚未加入后端持续采集。Qoder、WorkBuddy、TRAE CN、MiniMax 网页及 MiMo 路线有固定版本公开源码依据，但本机网页会话尚未实测，详见后续研究与脱敏证据。
 

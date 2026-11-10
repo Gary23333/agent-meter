@@ -1,0 +1,969 @@
+{
+ "now": 1760000000,
+ "threshold": 20,
+ "snapshot": {
+  "schema_version": 5,
+  "collected_at": {
+   "epoch_seconds": 1760000000,
+   "utc": "2025-10-09T08:53:20+00:00",
+   "display": "2025-10-09T16:53:20+08:00"
+  },
+  "sources": [
+   {
+    "id": "codex",
+    "scope": "account",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "available",
+      "value": [
+       {
+        "bucket": "primary",
+        "used_percent": 82,
+        "remaining_percent": 18,
+        "resets_at": {
+         "epoch_seconds": 1760009000,
+         "utc": "2025-10-09T11:23:20+00:00",
+         "display": "2025-10-09T19:23:20+08:00"
+        },
+        "window_minutes": 300
+       },
+       {
+        "bucket": "secondary",
+        "used_percent": 96,
+        "remaining_percent": 4,
+        "resets_at": {
+         "epoch_seconds": 1760259200,
+         "utc": "2025-10-12T08:53:20+00:00",
+         "display": "2025-10-12T16:53:20+08:00"
+        },
+        "window_minutes": 10080
+       }
+      ],
+      "reason": null
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "available",
+      "value": {
+       "available_count": 4,
+       "cards": [
+        {
+         "expires_at": {
+          "epoch_seconds": 1760018000,
+          "utc": "2025-10-09T13:53:20+00:00",
+          "display": "2025-10-09T21:53:20+08:00"
+         }
+        },
+        {
+         "expires_at": {
+          "epoch_seconds": 1760172800,
+          "utc": "2025-10-11T08:53:20+00:00",
+          "display": "2025-10-11T16:53:20+08:00"
+         }
+        },
+        {
+         "expires_at": {
+          "epoch_seconds": 1760172800,
+          "utc": "2025-10-11T08:53:20+00:00",
+          "display": "2025-10-11T16:53:20+08:00"
+         }
+        },
+        {
+         "expires_at": {
+          "epoch_seconds": 1760864000,
+          "utc": "2025-10-19T08:53:20+00:00",
+          "display": "2025-10-19T16:53:20+08:00"
+         }
+        }
+       ]
+      },
+      "reason": null
+     },
+     "credits": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    }
+   },
+   {
+    "id": "claude",
+    "scope": "account",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "available",
+      "value": [
+       {
+        "bucket": "limit5h",
+        "used_percent": 100,
+        "remaining_percent": 0,
+        "resets_at": {
+         "epoch_seconds": 1760001000,
+         "utc": "2025-10-09T09:10:00+00:00",
+         "display": "2025-10-09T17:10:00+08:00"
+        }
+       },
+       {
+        "bucket": "limit7d",
+        "used_percent": 45,
+        "remaining_percent": 55,
+        "resets_at": {
+         "epoch_seconds": 1760432000,
+         "utc": "2025-10-14T08:53:20+00:00",
+         "display": "2025-10-14T16:53:20+08:00"
+        }
+       }
+      ],
+      "reason": null
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    }
+   },
+   {
+    "id": "zcode",
+    "scope": "account",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "available",
+      "value": [
+       {
+        "bucket": "mcp",
+        "used_percent": 97,
+        "remaining_percent": 3,
+        "resets_at": {
+         "epoch_seconds": 1761728000,
+         "utc": "2025-10-29T08:53:20+00:00",
+         "display": "2025-10-29T16:53:20+08:00"
+        }
+       }
+      ],
+      "reason": null
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    }
+   },
+   {
+    "id": "minimax_design",
+    "scope": "creative_personal_account",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "available",
+      "value": [
+       {
+        "balance": 24800,
+        "unit": "minimax_design_media_credits",
+        "buckets": [
+         {
+          "type": "vip",
+          "balance": 22000,
+          "expires_at": {
+           "epoch_seconds": 1761036800,
+           "utc": "2025-10-21T08:53:20+00:00",
+           "display": "2025-10-21T16:53:20+08:00"
+          }
+         },
+         {
+          "type": "gift",
+          "balance": 2800,
+          "expires_at": {
+           "epoch_seconds": 1760108000,
+           "utc": "2025-10-10T14:53:20+00:00",
+           "display": "2025-10-10T22:53:20+08:00"
+          }
+         }
+        ]
+       }
+      ],
+      "reason": null
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "available",
+      "value": {
+       "date": "2025-10-11"
+      },
+      "reason": null
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "available",
+      "value": {
+       "amount": "68",
+       "currency": "CNY"
+      },
+      "reason": null
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    }
+   },
+   {
+    "id": "dreamina",
+    "scope": "creative_account",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "available",
+      "value": [
+       {
+        "balance": 10,
+        "unit": "dreamina_credits",
+        "buckets": []
+       }
+      ],
+      "reason": null
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    },
+    "subscription": {
+     "auto_renew": false,
+     "ends_on": "2025-10-12"
+    }
+   },
+   {
+    "id": "kimi",
+    "scope": "account",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "available",
+      "value": [
+       {
+        "bucket": "limit5h",
+        "used_percent": 50,
+        "remaining_percent": 50,
+        "resets_at": {
+         "epoch_seconds": 1760004000,
+         "utc": "2025-10-09T10:00:00+00:00",
+         "display": "2025-10-09T18:00:00+08:00"
+        }
+       }
+      ],
+      "reason": null
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    }
+   },
+   {
+    "id": "qoder",
+    "scope": "account",
+    "status": "not_connected",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": "web_session_missing"
+    }
+   },
+   {
+    "id": "imported_history",
+    "scope": "local_imported_history",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "tokens": {
+      "status": "available",
+      "value": {
+       "periods": {
+        "today": {
+         "totals": {
+          "total_tokens": 1
+         }
+        }
+       }
+      },
+      "reason": null
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "known_reset_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    }
+   },
+   {
+    "id": "reset_forecast",
+    "scope": "external_forecast",
+    "status": "available",
+    "observed_at": {
+     "epoch_seconds": 1760000000,
+     "utc": "2025-10-09T08:53:20+00:00",
+     "display": "2025-10-09T16:53:20+08:00"
+    },
+    "metrics": {
+     "quota": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_cards": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credits": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "tokens": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "cost": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "renewal_amount": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_time": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "credit_refresh_countdown": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     },
+     "reset_forecast": {
+      "status": "available",
+      "value": {
+       "ensemble": {
+        "horizons": {
+         "48h": {
+          "weighted_median": 33.0
+         }
+        }
+       },
+       "history_events": [
+        {
+         "post_id": "p-9",
+         "kind": "reset",
+         "announced_at": {
+          "epoch_seconds": 1759892000,
+          "utc": "2025-10-08T02:53:20+00:00",
+          "display": "2025-10-08T10:53:20+08:00"
+         },
+         "confidence": "high",
+         "summary": "全员额度已重置",
+         "sources": [
+          "a",
+          "b"
+         ]
+        }
+       ]
+      },
+      "reason": null
+     },
+     "known_reset_countdown": {
+      "status": "available",
+      "value": {
+       "targets": [
+        {
+         "kind": "promised_reset",
+         "precision": "window",
+         "label": "Tibo 承诺的重置",
+         "open_at": {
+          "epoch_seconds": 1759996400,
+          "utc": "2025-10-09T07:53:20+00:00",
+          "display": "2025-10-09T15:53:20+08:00"
+         },
+         "close_at": {
+          "epoch_seconds": 1760007200,
+          "utc": "2025-10-09T10:53:20+00:00",
+          "display": "2025-10-09T18:53:20+08:00"
+         },
+         "state": "inside_window"
+        }
+       ]
+      },
+      "reason": null
+     },
+     "image_generation": {
+      "status": "not_provided",
+      "value": null,
+      "reason": "source_does_not_return_field"
+     }
+    },
+    "diagnostics": {
+     "reason": null
+    }
+   }
+  ]
+ }
+}

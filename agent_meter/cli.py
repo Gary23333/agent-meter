@@ -8,6 +8,9 @@ from .server import load_or_create_token, make_server
 
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1]=="pet":
+        from .pet_cli import main as pet_main
+        sys.exit(pet_main(sys.argv[2:]))
     parser=argparse.ArgumentParser(description="Read-only local agent usage backend")
     parser.add_argument("command",choices=["collect","serve","verify"])
     parser.add_argument("--config",type=Path,help="JSON paths and options; never put credentials in this file")

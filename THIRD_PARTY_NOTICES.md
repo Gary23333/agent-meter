@@ -29,6 +29,32 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## three.js
+
+The desktop pet (`pets/runtime/`) renders 3D characters with [three.js](https://threejs.org/) r187 (npm `three@0.187.0`), shipped as a curated, tree-shaken single-file build `pets/runtime/vendor/three.pet.min.js`; the export list and the reproducible build recipe are in `pets/runtime/vendor/`. The build includes `RoundedBoxGeometry` from the same package's `examples/jsm`. The app bundle carries the license text at `Contents/Resources/Pet/runtime/vendor/LICENSE.three.txt`.
+
+The MIT License
+
+Copyright © 2010-2026 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
 ## External installed SDKs
 
 Qoder SDK assets remain code from the user's installed Qoder application. Any local materialization is private runtime cache, excluded from this repository and package. They are not redistributed.
