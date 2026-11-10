@@ -45,6 +45,11 @@ final class UsageStore {
     static let shared = UsageStore()
 
     var snapshot: Snapshot?
+    /// `--preview` renders a fixed snapshot and must never reach a real backend.
+    /// Rendering every tab and theme takes minutes, well past the refresh
+    /// interval, so without this the panel would quietly swap the demo data
+    /// for the user's own accounts halfway through.
+    var isPreview = false
     /// Latest GET /v1/budget payload; refreshed on the snapshot cadence.
     var budget: BudgetStatus?
     /// Login slots whose short-lived token is being renewed in a hidden window.
@@ -164,6 +169,7 @@ final class UsageStore {
     var isBusy: Bool { phase != .idle }
 
     func bootstrap() async {
+        if isPreview { return }
         guard client == nil else { return }
         guard let project = BackendProcess.projectDirectory() else {
             errorMessage = BackendError.projectNotFound.localizedDescription
@@ -292,6 +298,7 @@ final class UsageStore {
     /// Called when the panel opens; only fetches when the data is getting old.
     func panelOpened() {
         now = Date()
+        if isPreview { return }
         if let last = lastFetched, now.timeIntervalSince(last) < 120 { return }
         if client == nil { Task { await bootstrap() } } else { Task { await fetch(force: false) } }
     }
@@ -433,6 +440,7 @@ final class UsageStore {
         self.snapshot = snapshot
         lastFetched = Date()
         now = Date()
+        isPreview = true
     }
 
     func session(for slot: String) -> [String: String]? { sessions[slot] }
