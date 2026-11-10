@@ -1,5 +1,7 @@
 # Agent 用量菜单栏应用共享知识
 
+2026-11-10 发布 v0.10.2：合入积分签到与集卡（`agent_meter/rewards.py` + `collection.py`，研究边界见[签到与集卡研究](../research/checkin-automation-and-collection-2026-11-09.md)）。**项目不再 100% 只读**：自动领取是可选写操作（默认关、按平台开关），README/SECURITY 已改口径；`PUT /v1/preferences` 统一为五键契约（顺带修复省资源键此前被服务端 400 的存量缺口）。回归 Python 637 / Swift 74 / verify 3,209 全过。
+
 2026-11-10 发布 v0.10.1：桌宠系统（`agent_meter/pet.py` + `GET /v1/pet`，`pets/` 形象包与 `.claude/skills` 两套制作 skill，规划与实施状态见[桌宠系统规划](../pet-system-plan-2026-11-09.md)）与 2026-11-08 接入批次一并合入 main；「项目」tab 并入「应用」页底部可折叠区（偏好键 `projectsSectionExpanded`，旧 `panelTab=projects` 自动迁移）。合并后回归 Python 601 / Swift 74 / Node 26 / 真机 verify 3,209 全过。
 
 2026-11-08 接入批次落地：MiMo Code / DevECo / Kimi 旧 CLI 三个历史账本、ZCode 桌面端登录与重置卡（真机 3 张周卡）、即梦 dreamina-canvas 回退路由、签名与钥匙串加固、Qoder 版本漂移监测；E 组后端（daily_models/项目归因/周报环比/状态面板省资源）已合入，端点与 UI 见 [E 组契约](../e-group-features-2026-11-08.md)。真机 verify 3,185 项零失败（包内后端 3,122 项）。验收与待用户登录项见[批次验收](../harness-batch-acceptance-2026-11-08.md)。
