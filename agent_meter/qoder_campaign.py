@@ -381,10 +381,10 @@ def _headers(session, token, timeout):
     return headers
 
 
-def qoder_campaigns_status(session, timeout=15):
+def qoder_campaigns_status(session, timeout=15, now=None):
     token = desktop_token(session, timeout)
     _, payload = _api(CAMPAIGNS_PATH, token, _headers(session, token, timeout), timeout)
-    return normalize_campaigns(payload)
+    return normalize_campaigns(payload, now)
 
 
 def qoder_campaigns_claim(session, item, timeout=15):

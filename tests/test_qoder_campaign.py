@@ -115,7 +115,9 @@ class RequestTests(unittest.TestCase):
         session = {"desktop_app": "/Applications/Qoder CN.app", "auth_dir": "/tmp/qoder-auth"}
         with mock.patch.object(qoder_campaign, "desktop_token", lambda s, t=15: "TOK"), \
              self.patch(CAMPAIGNS_OPEN):
-            status = qoder_campaign.qoder_campaigns_status(session, 15)
+            # The fixture's window is anchored to NOW; pass it in so the
+            # assertion does not rot when the wall clock leaves that window.
+            status = qoder_campaign.qoder_campaigns_status(session, 15, NOW)
         self.assertEqual(self.captured["path"], CAMPAIGNS_PATH)
         self.assertEqual(self.captured["token"], "TOK")
         self.assertEqual(self.captured["method"], "GET")
