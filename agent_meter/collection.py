@@ -6,18 +6,21 @@ ledger (daily check-ins, task claims).
 
 Two kinds of trophies:
 
-- **Cards** drop on events. Quota cards drop when a 5-hour or 7-day window
-  resets: one card per finished window, the highest tier its peak usage
-  reached. Reset-card cards drop when a reset card leaves the inventory
-  (used before expiry, or expired unused). Check-in cards come from the
-  rewards ledger. Cards repeat; the binder counts copies.
+- **Cards** drop on events. Quota cards drop as soon as a 5-hour or 7-day
+  window's usage crosses a tier (50% / 80% / 90% / used up): each tier drops
+  once per window, and a later higher peak tops the window up with the tiers
+  it reached since. Reset-card cards drop when a reset card leaves the
+  inventory (used before expiry, or expired unused). Check-in cards come from
+  the rewards ledger. Cards repeat; the binder counts copies.
 - **Medals** are milestones recomputed from history every time (single-day
   tokens, lifetime tokens, active streaks, apps in one day, personal records,
   free credits). Old history therefore unlocks medals on first launch.
 
 Window peaks and reset-card inventories have no history of their own, so
-``<runtime>/collection.json`` (0600) keeps open windows, the last inventory
-and the drops they produced. It holds no credentials or conversation text.
+``<runtime>/collection.json`` (0600) keeps open windows, the last inventory,
+the drops they produced and a per-card tally. The tally is what the binder
+counts, so trimming the drop log never shrinks an old card's copy count.
+It holds no credentials or conversation text.
 """
 import json
 import os
@@ -41,14 +44,14 @@ RARITIES = ("common", "rare", "epic", "legendary", "faded")
 
 # id, name, series, rarity, SF Symbol, description
 CARDS = [
-    ("q5_50", "热身完毕", "five_hour", "common", "flame", "5 小时窗口结算时用到 50% 以上"),
-    ("q5_80", "八分饱", "five_hour", "rare", "flame.fill", "5 小时窗口结算时用到 80% 以上"),
-    ("q5_90", "九成功力", "five_hour", "epic", "bolt.fill", "5 小时窗口结算时用到 90% 以上"),
-    ("q5_full", "满载而归", "five_hour", "legendary", "crown.fill", "5 小时窗口在重置前用满"),
-    ("q7_50", "周中漫步", "seven_day", "common", "figure.walk", "7 天窗口结算时用到 50% 以上"),
-    ("q7_80", "周常达人", "seven_day", "rare", "figure.run", "7 天窗口结算时用到 80% 以上"),
-    ("q7_90", "极限一周", "seven_day", "epic", "bolt.shield.fill", "7 天窗口结算时用到 90% 以上"),
-    ("q7_full", "七日满贯", "seven_day", "legendary", "trophy.fill", "7 天窗口在重置前用满"),
+    ("q5_50", "热身完毕", "five_hour", "common", "flame", "5 小时窗口用量达到 50% 即掉落"),
+    ("q5_80", "八分饱", "five_hour", "rare", "flame.fill", "5 小时窗口用量达到 80% 即掉落"),
+    ("q5_90", "九成功力", "five_hour", "epic", "bolt.fill", "5 小时窗口用量达到 90% 即掉落"),
+    ("q5_full", "满载而归", "five_hour", "legendary", "crown.fill", "5 小时窗口用满即掉落"),
+    ("q7_50", "周中漫步", "seven_day", "common", "figure.walk", "7 天窗口用量达到 50% 即掉落"),
+    ("q7_80", "周常达人", "seven_day", "rare", "figure.run", "7 天窗口用量达到 80% 即掉落"),
+    ("q7_90", "极限一周", "seven_day", "epic", "bolt.shield.fill", "7 天窗口用量达到 90% 即掉落"),
+    ("q7_full", "七日满贯", "seven_day", "legendary", "trophy.fill", "7 天窗口用满即掉落"),
     ("rc_saved", "物尽其用", "reset_card", "epic", "ticket.fill", "重置卡在过期前用掉"),
     ("rc_wasted", "白白过期", "reset_card", "faded", "hourglass.bottomhalf.filled", "重置卡没用就过期了"),
     ("ck_daily", "每日签到", "checkin", "common", "calendar.badge.checkmark", "领到当天的签到积分"),
@@ -182,6 +185,11 @@ def quota_card(kind, peak):
     return None
 
 
+def crossed_tiers(kind, peak):
+    """Every tier a peak has reached, lowest threshold first."""
+    return [(threshold, card) for threshold, card in reversed(QUOTA_TIERS[kind]) if peak >= threshold]
+
+
 def next_tier(kind, peak):
     for threshold, card in reversed(QUOTA_TIERS[kind]):
         if peak < threshold:
@@ -192,7 +200,7 @@ def next_tier(kind, peak):
 # --- ledger ---------------------------------------------------------------
 
 def empty_ledger():
-    return {"schema": LEDGER_SCHEMA, "windows": {}, "inventory": {}, "drops": [], "creative": {}}
+    return {"schema": LEDGER_SCHEMA, "windows": {}, "inventory": {}, "drops": [], "cards": {}, "creative": {}}
 
 
 def load_ledger(path):
@@ -202,9 +210,15 @@ def load_ledger(path):
         return empty_ledger()
     if not isinstance(data, dict) or data.get("schema") != LEDGER_SCHEMA:
         return empty_ledger()
-    for key, kind in (("windows", dict), ("inventory", dict), ("drops", list), ("creative", dict)):
+    for key, kind in (("windows", dict), ("inventory", dict), ("drops", list), ("cards", dict), ("creative", dict)):
         if not isinstance(data.get(key), kind):
             data[key] = kind()
+    # Ledgers written before the per-card tally existed only kept the drop log;
+    # backfill it once so the copy counts survive the log being trimmed.
+    if not data["cards"] and data["drops"]:
+        for drop in data["drops"]:
+            if isinstance(drop, dict) and drop.get("card") in CARD_IDS:
+                tally(data["cards"], drop["card"], drop.get("at"), drop.get("source"))
     return data
 
 
@@ -225,8 +239,28 @@ def _live(src):
     return src.get("status") in {"available", "partial"} and not src.get("scope", "").startswith("local_")
 
 
+def tally(cards, card, at, source=None):
+    """Counts one copy of a card and remembers where it came from."""
+    entry = cards.setdefault(card, {"count": 0, "first_at": at, "last_at": at, "sources": []})
+    entry["count"] += 1
+    if isinstance(at, (int, float)):
+        if not isinstance(entry.get("first_at"), (int, float)) or at < entry["first_at"]:
+            entry["first_at"] = at
+        if not isinstance(entry.get("last_at"), (int, float)) or at > entry["last_at"]:
+            entry["last_at"] = at
+    base = str(source or "").split("#", 1)[0]
+    if base and base not in entry["sources"]:
+        entry["sources"].append(base)
+
+
+def record_drop(ledger, card, at, source=None, detail=None):
+    """Logs a drop and keeps the copy count, which the trimmed log would lose."""
+    ledger["drops"].append({"card": card, "at": at, "source": source, "detail": detail})
+    tally(ledger.setdefault("cards", {}), card, at, source)
+
+
 def track_windows(ledger, sources, now):
-    """Updates open-window peaks; settles windows whose reset passed. Returns True on change."""
+    """Updates open-window peaks and drops a card per tier the peak reaches."""
     changed = False
     seen = set()
     for src in sources:
@@ -252,15 +286,21 @@ def track_windows(ledger, sources, now):
                 state = None
                 changed = True
             if state is None:
-                ledger["windows"][key] = {"source": src["id"], "bucket": row.get("bucket"), "kind": kind,
-                                          "resets_at": reset, "peak": used, "first_at": now, "last_at": now}
+                state = {"source": src["id"], "bucket": row.get("bucket"), "kind": kind,
+                         "resets_at": reset, "peak": used, "first_at": now, "last_at": now, "granted": []}
+                ledger["windows"][key] = state
+                observed_at = now
                 changed = True
             else:
+                # A tier is dated to the moment the peak was first seen at that level.
+                observed_at = state["last_at"]
                 if used > state["peak"]:
                     state["peak"] = used
+                    observed_at = now
                     changed = True
                 state["last_at"] = now
                 state["resets_at"] = reset
+            changed |= _grant_tiers(ledger, state, observed_at)
     # A window whose source vanished but whose reset passed long ago is settled too.
     for key, state in list(ledger["windows"].items()):
         if key not in seen and now - state["resets_at"] > 86400:
@@ -269,12 +309,26 @@ def track_windows(ledger, sources, now):
     return changed
 
 
+def _grant_tiers(ledger, state, at):
+    """Drops every tier this window's peak reached and has not dropped yet."""
+    granted = state.get("granted")
+    if not isinstance(granted, list):
+        granted = state["granted"] = []
+    changed = False
+    for threshold, card in crossed_tiers(state["kind"], state["peak"]):
+        if card in granted:
+            continue
+        granted.append(card)
+        detail = "用满" if threshold == FULL else "用到 %d%%" % round(threshold)
+        record_drop(ledger, card, at, state["source"], detail)
+        changed = True
+    return changed
+
+
 def _settle(ledger, key, state):
+    """Closes a finished window, topping up any tier it reached but never dropped."""
     ledger["windows"].pop(key, None)
-    card = quota_card(state["kind"], state["peak"])
-    if card:
-        ledger["drops"].append({"card": card, "at": min(state["resets_at"], state["last_at"] + RESET_JITTER),
-                                "source": state["source"], "detail": "峰值 %d%%" % round(state["peak"])})
+    _grant_tiers(ledger, state, state["last_at"])
 
 
 def track_reset_cards(ledger, sources, now):
@@ -310,8 +364,8 @@ def track_reset_cards(ledger, sources, now):
         gone = (gone + [previous.get("next")] * (previous["count"] - count))[:previous["count"] - count]
         for expiry in gone:
             wasted = expiry is not None and now >= expiry - 60
-            ledger["drops"].append({"card": "rc_wasted" if wasted else "rc_saved", "at": now, "source": src["id"],
-                                    "detail": "到期 " + day_of(expiry) if expiry else None})
+            record_drop(ledger, "rc_wasted" if wasted else "rc_saved", now, src["id"],
+                        "到期 " + day_of(expiry) if expiry else None)
     return changed
 
 
@@ -598,7 +652,7 @@ class CollectionService:
         sources = snapshot.get("sources") or []
         changed = False
         if self.fresh:
-            self.ledger["drops"].append({"card": "sp_welcome", "at": now, "source": None, "detail": None})
+            record_drop(self.ledger, "sp_welcome", now, None, None)
             self.fresh, changed = False, True
         changed |= track_windows(self.ledger, sources, now)
         changed |= track_reset_cards(self.ledger, sources, now)
@@ -612,24 +666,26 @@ class CollectionService:
 
 
 def build(ledger, sources, rewards_ledger, rewards_summary, now):
-    drops = [d for d in ledger["drops"] + checkin_drops(rewards_ledger) if d.get("card") in CARD_IDS]
-    drops.sort(key=lambda d: d["at"])
-    owned = {}
-    for drop in drops:
-        entry = owned.setdefault(drop["card"], {"count": 0, "first_at": drop["at"], "sources": []})
-        entry["count"] += 1
-        entry["last_at"] = drop["at"]
-        base = str(drop.get("source") or "").split("#", 1)[0]
-        if base and base not in entry["sources"]:
-            entry["sources"].append(base)
+    ledger_drops = [d for d in ledger["drops"] if d.get("card") in CARD_IDS]
+    checkin = [d for d in checkin_drops(rewards_ledger) if d.get("card") in CARD_IDS]
+    drops = sorted(ledger_drops + checkin, key=lambda d: d["at"])
+    # Copy counts come from the ledger tally, which the trimmed drop log never
+    # touches; check-in cards are derived and counted on top.
+    owned = {cid: {"count": e.get("count", 0), "first_at": e.get("first_at"), "last_at": e.get("last_at"),
+                   "sources": list(e.get("sources") or [])}
+             for cid, e in (ledger.get("cards") or {}).items() if cid in CARD_IDS and isinstance(e, dict)}
+    for drop in checkin:
+        tally(owned, drop["card"], drop["at"], drop.get("source"))
     cards = {cid: {"count": e["count"], "first_at": timestamp(e["first_at"]), "last_at": timestamp(e["last_at"]),
                    "sources": e["sources"]} for cid, e in owned.items()}
     open_windows = []
     for state in ledger["windows"].values():
         card, threshold = next_tier(state["kind"], state["peak"])
+        granted = state.get("granted")
         open_windows.append({"source": state["source"], "kind": state["kind"], "peak": state["peak"],
                              "resets_at": timestamp(state["resets_at"]), "current_card": quota_card(state["kind"], state["peak"]),
-                             "next_card": card, "next_threshold": threshold})
+                             "next_card": card, "next_threshold": threshold,
+                             "granted": list(granted) if isinstance(granted, list) else []})
     open_windows.sort(key=lambda w: w["resets_at"]["epoch_seconds"])
     medal_list, stats = medals(sources, rewards_summary, now, ledger.get("creative"))
     stats.update({"distinct_cards": len([c for c in cards if c != "rc_wasted"]),

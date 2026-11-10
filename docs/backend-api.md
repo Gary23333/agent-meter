@@ -271,13 +271,13 @@ collector 路由：网页会话优先读额度，桌面登录补卡（`diagnosti
 
 - `catalog`：卡片定义 `{id, name, series, series_name, rarity: common|rare|epic|legendary|faded, symbol, description}`。系列：5 小时窗口、7 天窗口、重置卡、签到与任务、纪念。
 - `cards`：已获得的卡 `{id: {count, first_at, last_at, sources}}`；`recent`：最近 12 次掉落 `{card, at, source, detail}`。
-- `open_windows`：未结算的额度窗口 `{source, kind: five_hour|seven_day, peak, resets_at, current_card, next_card, next_threshold}`。
+- `open_windows`：进行中的额度窗口 `{source, kind: five_hour|seven_day, peak, resets_at, current_card, next_card, next_threshold, granted}`。`granted` 是该窗口已经掉落的卡 id 数组（每档一张）。
 - `medals`：`{id, name, category, category_name, target, unit, symbol, tier: bronze|silver|gold|platinum, value, progress, earned, earned_on, count}`。
 - `stats`：`lifetime_tokens, active_days, current_streak, longest_streak, record_breaks, free_credits, best_day, today_tokens, max_apps_in_day, distinct_cards, catalog_size, total_cards, medals_earned, medals_total, by_rarity`。
 
 掉落规则：
 
-- 额度卡：按 `window_minutes`、`window{duration,unit}` 或桶名识别 5 小时 / 7 天窗口；同一窗口（`resets_at` 漂移不超过 10 分钟）记录峰值，下一次读到新的 `resets_at` 时结算一张，取峰值达到的最高档（50% / 80% / 90% / ≥99.5%），低于 50% 不掉卡。`stale`、`error` 来源不参与；来源消失且重置已过 1 天的窗口直接结算。
+- 额度卡：按 `window_minutes`、`window{duration,unit}` 或桶名识别 5 小时 / 7 天窗口；同一窗口（`resets_at` 漂移不超过 10 分钟）记录峰值。**峰值每越过一档（50% / 80% / 90% / ≥99.5%）就立刻掉一张卡，不用等窗口重置**；同一窗口同一档只掉一张，峰值后续继续上涨就再补下一档。掉卡时间戳记为「该档位被观测到的时刻」，峰值未再上涨时沿用上一次观测时间。`stale`、`error` 来源不参与。窗口结束（读到新的 `resets_at`，或来源消失且重置已过 1 天）时结算，只补发尚未掉过的档位，因此升级前就存在的窗口会按新规则一次补齐所有越过的档。低于 50% 不掉卡。
 - 重置卡：库存减少时，按到期时间判断“过期前用掉”（`rc_saved`）或“过期未用”（`rc_wasted`，灰色，不计入收集进度）；只有数量时按上次的最近到期时间判断。
 - 签到与任务：由 `rewards.json` 推算（每个签到日一张，连续 7 / 30 / 100 天的整数倍各一张；任务奖励与附带徽章各一张），每次重算。
 - 首次生成账本时掉一张「启程」。
@@ -292,7 +292,7 @@ collector 路由：网页会话优先读额度，桌面登录补卡（`diagnosti
 
 `stats` 另含 `lifetime_cost_cny`、`best_cost_day`、`best_cost_month`、`lifetime_images`、`best_image_day`、`creative_credits_spent`。
 
-账本 `.runtime/collection.json`（0600）只保存未结算窗口、重置卡库存、创作钱包基线与已结算的掉落，不含凭据与对话内容；损坏时重新开始。
+账本 `.runtime/collection.json`（0600）只保存进行中的窗口、重置卡库存、创作钱包基线、掉落日志与每张卡的张数台账（`cards`），不含凭据与对话内容；损坏时重新开始。掉落日志只保留最近 3000 条，**张数台账才是收集册计数的依据**，因此裁剪日志不会让老卡的「×N」缩水；旧账本（只有日志没有台账）首次读取时自动从日志回填。
 
 菜单栏：「收集」标签页的奖章与卡片跟随鼠标做 3D 倾斜和高光（奖章有金属厚度、卡片内部分层视差，悬停处冒火花）；点任一奖章、卡片或最新掉落会打开详情页（与解锁动画同一个舞台：3D 能量环、环绕粒子、开场爆闪、指针拖尾），已获得的可直接复制或保存分享图，未获得的显示进度；收集册顶部有跟随鼠标的漂浮光尘；新获得的奖章或卡片（首次出现的 id，记在 UserDefaults `seenTrophies`，首次运行只记录不播放）会在面板上播放解锁动画，并发一条系统通知；解锁动画、详情页和收集册右上角都可以复制或保存分享图（540pt 宽，2x PNG）。分享图底部可附项目二维码（`https://github.com/Gary23333/agent-meter`，CoreImage 本地生成）：收集分享图的开关在详情页的二维码按钮和收集册分享菜单里（UserDefaults `trophyShareQR`，默认开）；用量报告分享卡在报告窗口勾选「项目二维码」（`ShareOptions.qrCode`，默认开，旧设置读取时补默认值）。开启「减弱动态效果」时只显示静态画面。
 

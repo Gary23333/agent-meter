@@ -38,6 +38,8 @@ struct CollectionData {
         let currentCard: String?
         let nextCard: String?
         let nextThreshold: Double?
+        /// Cards this window has already dropped (one per tier it crossed).
+        let granted: [String]
     }
 
     struct Medal: Identifiable {
@@ -80,7 +82,8 @@ struct CollectionData {
         openWindows = json["open_windows"].array.enumerated().map {
             OpenWindow(id: $0, source: $1["source"].string ?? "", kind: $1["kind"].string ?? "", peak: $1["peak"].double ?? 0,
                        resetsAt: $1["resets_at"].date, currentCard: $1["current_card"].string,
-                       nextCard: $1["next_card"].string, nextThreshold: $1["next_threshold"].double)
+                       nextCard: $1["next_card"].string, nextThreshold: $1["next_threshold"].double,
+                       granted: $1["granted"].array.compactMap(\.string))
         }
         medals = json["medals"].array.map {
             Medal(id: $0["id"].string ?? "", name: $0["name"].string ?? "", category: $0["category"].string ?? "",
@@ -188,7 +191,7 @@ struct CollectionView: View {
                 ForEach(data.series, id: \.id) { s in
                     BinderSection(data: data, title: s.name, cards: s.cards)
                 }
-                Text("卡片在额度窗口重置、重置卡用掉或过期、签到与任务领取时掉落；奖章按本机全部历史重算。数据只在本机。")
+                Text("额度用量每越过一档即掉落卡片，重置卡用掉或过期、签到与任务领取时也会掉落；奖章按本机全部历史重算。数据只在本机。")
                     .font(theme.font(10)).themeForeground(.tertiary)
                     .padding(.horizontal, 2)
             }
@@ -510,7 +513,7 @@ private struct OpenWindowsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionTitle(text: "冲刺中", trailing: "窗口重置时结算")
+            SectionTitle(text: "冲刺中", trailing: "越档即掉落")
             Card {
                 VStack(spacing: 10) {
                     ForEach(windows) { w in row(w) }
@@ -534,7 +537,7 @@ private struct OpenWindowsSection: View {
                 Text(Catalog.brand(w.source).name).font(theme.font(11.5, weight: .semibold))
                 Text(w.kind == "five_hour" ? "5 小时" : "7 天").font(theme.font(10)).themeForeground(.tertiary)
                 Spacer()
-                if let at = w.resetsAt { Text(Fmt.countdown(to: at, now: now) + "结算").font(theme.font(10)).themeForeground(.tertiary) }
+                if let at = w.resetsAt { Text(Fmt.countdown(to: at, now: now) + "重置").font(theme.font(10)).themeForeground(.tertiary) }
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -552,7 +555,8 @@ private struct OpenWindowsSection: View {
             .frame(height: 7)
             HStack(spacing: 4) {
                 Text("峰值 \(Int(w.peak.rounded()))%").font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
-                if let current { Text("· 已锁定「\(current.name)」").font(theme.font(10)).foregroundStyle(current.rarity.glow) }
+                if let current { Text("· 已获得「\(current.name)」").font(theme.font(10)).foregroundStyle(current.rarity.glow) }
+                if !w.granted.isEmpty { Text("· 本窗 \(w.granted.count) 张").font(theme.font(10)).themeForeground(.tertiary) }
                 Spacer()
                 if let next, let t = w.nextThreshold {
                     Text("再用 \(max(1, Int((t - w.peak).rounded(.up))))% 解锁「\(next.name)」")

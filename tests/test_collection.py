@@ -39,32 +39,63 @@ class WindowTests(unittest.TestCase):
         self.assertIsNone(window_kind({"bucket": "credits"}))
         self.assertIsNone(window_kind({"window_minutes": 43200}))
 
-    def test_settles_highest_tier_once_per_window(self):
+    def test_grants_each_tier_as_the_peak_crosses_it(self):
         led = empty_ledger()
         reset = NOW + 2 * H
-        for t, used in ((NOW, 40), (NOW + H, 93), (NOW + H + 60, 91)):
+        for t, used in ((NOW, 40), (NOW + H, 55), (NOW + H + 60, 85), (NOW + H + 120, 93), (NOW + H + 180, 100)):
             collection.track_windows(led, [quota_source("claude", [row(used, reset + 5)])], t)
-        self.assertEqual(led["drops"], [])
-        collection.track_windows(led, [quota_source("claude", [row(3, reset + 5 * H)])], reset + 60)
-        self.assertEqual([d["card"] for d in led["drops"]], ["q5_90"])
-        self.assertEqual(led["drops"][0]["detail"], "峰值 93%")
-        self.assertEqual(led["windows"]["claude|five_hour|five_hour"]["peak"], 3)
+        self.assertEqual([d["card"] for d in led["drops"]],
+                         ["q5_50", "q5_80", "q5_90", "q5_full"])
+        self.assertEqual([d["detail"] for d in led["drops"]],
+                         ["用到 50%", "用到 80%", "用到 90%", "用满"])
+        self.assertEqual([d["at"] for d in led["drops"]],
+                         [NOW + H, NOW + H + 60, NOW + H + 120, NOW + H + 180])
+
+    def test_no_regrant_while_the_window_is_open(self):
+        led = empty_ledger()
+        reset = NOW + 2 * H
+        for t, used in ((NOW, 55), (NOW + H, 55), (NOW + 2 * H, 51)):
+            collection.track_windows(led, [quota_source("claude", [row(used, reset + 5)])], t)
+        self.assertEqual([d["card"] for d in led["drops"]], ["q5_50"])
+
+    def test_legacy_window_is_topped_up(self):
+        led = empty_ledger()
+        # A window written before tiers dropped on their own: no "granted" list.
+        led["windows"]["claude|five_hour|five_hour"] = {
+            "source": "claude", "bucket": "five_hour", "kind": "five_hour",
+            "resets_at": NOW + H, "peak": 93, "first_at": NOW, "last_at": NOW + H}
+        collection.track_windows(led, [quota_source("claude", [row(93, NOW + H)])], NOW + H + 60)
+        self.assertEqual([d["card"] for d in led["drops"]], ["q5_50", "q5_80", "q5_90"])
+        self.assertEqual([d["at"] for d in led["drops"]], [NOW + H] * 3)  # dated to the last sighting
+
+    def test_counts_survive_drop_trimming(self):
+        led = empty_ledger()
+        collection.track_windows(led, [quota_source("claude", [row(95, NOW + H)])], NOW)
+        self.assertEqual(led["cards"]["q5_90"]["count"], 1)
+        for _ in range(collection.MAX_DROPS):
+            led["drops"].append({"card": "q5_50", "at": NOW, "source": "claude", "detail": "用到 50%"})
+        led["drops"] = led["drops"][-collection.MAX_DROPS:]
+        out = collection.build(led, [], None, None, NOW)
+        self.assertEqual(out["cards"]["q5_90"]["count"], 1)
 
     def test_full_low_and_stale(self):
         led = empty_ledger()
         collection.track_windows(led, [quota_source("codex", [row(100, NOW + H, 10080, "codex")])], NOW)
+        self.assertEqual([d["card"] for d in led["drops"]],
+                         ["q7_50", "q7_80", "q7_90", "q7_full"])
         collection.track_windows(led, [quota_source("codex", [row(20, NOW + H, 10080, "codex")], status="stale")], NOW + 2 * H)
-        self.assertEqual(led["drops"], [])  # stale data never settles a window
+        self.assertEqual(len(led["drops"]), 4)  # stale data never counts towards a window
         collection.track_windows(led, [quota_source("codex", [row(0, NOW + 8 * DAY, 10080, "codex")])], NOW + 2 * H)
-        self.assertEqual(led["drops"][0]["card"], "q7_full")
+        self.assertEqual(len(led["drops"]), 4)  # a reset window starts empty
         collection.track_windows(led, [quota_source("codex", [row(30, NOW + 15 * DAY, 10080, "codex")])], NOW + 9 * DAY)
-        self.assertEqual(len(led["drops"]), 1)  # under 50%: no card
+        self.assertEqual(len(led["drops"]), 4)  # under 50%: no card
 
     def test_vanished_window_settles_after_a_day(self):
         led = empty_ledger()
         collection.track_windows(led, [quota_source("kimi", [row(85, NOW + H)])], NOW)
+        self.assertEqual([d["card"] for d in led["drops"]], ["q5_50", "q5_80"])
         collection.track_windows(led, [], NOW + 2 * DAY)
-        self.assertEqual([d["card"] for d in led["drops"]], ["q5_80"])
+        self.assertEqual([d["card"] for d in led["drops"]], ["q5_50", "q5_80"])  # already dropped
 
     def test_reset_cards_used_or_wasted(self):
         led = empty_ledger()
@@ -188,12 +219,16 @@ class ServiceTests(unittest.TestCase):
             snap = {"sources": [quota_source("claude", [row(95, NOW + H)])]}
             out = svc.update(snap, None, NOW)
             self.assertEqual(out["cards"]["sp_welcome"]["count"], 1)
+            # The live window already dropped every tier its 95% peak crossed.
+            self.assertEqual(out["open_windows"][0]["granted"], ["q5_50", "q5_80", "q5_90"])
+            self.assertEqual(out["open_windows"][0]["next_card"], "q5_full")
             out = svc.update({"sources": [quota_source("claude", [row(1, NOW + 6 * H)])]}, None, NOW + 2 * H)
             self.assertEqual(out["cards"]["q5_90"]["count"], 1)
             self.assertEqual(out["recent"][0]["card"], "q5_90")
-            self.assertEqual(out["stats"]["distinct_cards"], 2)
+            self.assertEqual(out["stats"]["distinct_cards"], 4)
             self.assertEqual(out["stats"]["by_rarity"]["epic"], 1)
             self.assertEqual(out["open_windows"][0]["next_card"], "q5_50")
+            self.assertEqual(out["open_windows"][0]["granted"], [])  # the reset window starts empty
             path = Path(tmp) / "collection.json"
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             again = CollectionService(tmp).update({"sources": []}, None, NOW + 3 * H)
