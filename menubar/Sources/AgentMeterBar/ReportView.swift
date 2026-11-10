@@ -76,7 +76,9 @@ struct ReportView: View {
             HStack(spacing: 14) {
                 PillTabs(items: ShareMode.allCases, title: { $0.label },
                          selection: Binding(get: { options.mode }, set: {
+                             let qr = options.qrCode
                              options = $0 == .compact ? .compact : .review
+                             options.qrCode = qr
                          }), small: true).frame(width: 240)
                 Text("切换模式会恢复推荐内容，可继续自定义")
                     .font(.system(size: 10)).themeForeground(.tertiary)
@@ -89,6 +91,7 @@ struct ReportView: View {
                 Toggle("模型", isOn: $options.models)
                 Toggle("DeepSeek 峰谷", isOn: $options.peak)
                 Toggle("Codex 生图", isOn: $options.images)
+                Toggle("项目二维码", isOn: $options.qrCode)
             }.toggleStyle(.checkbox).font(.system(size: 11))
             HStack(alignment: .bottom, spacing: 14) {
                 control("分享卡风格") {

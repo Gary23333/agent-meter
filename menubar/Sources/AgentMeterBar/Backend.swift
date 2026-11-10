@@ -108,15 +108,19 @@ struct BackendClient {
         guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
     }
 
-    /// Runtime on/off switches for sources and the low-resource mode (kept in
-    /// backend memory). Every key is sent so the backend copy stays complete.
-    func putPreferences(disabled: [String], lowResource: Bool = false, skipLedgers: [String] = []) async throws {
+    /// Runtime on/off switches for sources, the low-resource mode and the
+    /// auto-claim settings (kept in backend memory). Every key is sent so the
+    /// backend copy stays complete.
+    func putPreferences(disabled: [String], lowResource: Bool = false, skipLedgers: [String] = [],
+                        autoClaim: [String] = [], claimTime: String = "00:05") async throws {
         var r = try request("v1/preferences", method: "PUT", timeout: 10)
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try JSONSerialization.data(withJSONObject: [
             "disabled_sources": disabled,
             "low_resource_mode": lowResource,
-            "skip_ledgers_low_resource": skipLedgers])
+            "skip_ledgers_low_resource": skipLedgers,
+            "auto_claim": autoClaim,
+            "claim_time": claimTime])
         let (_, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
     }
@@ -136,6 +140,15 @@ struct BackendClient {
         guard http.statusCode == 200,
               let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
         return json
+    }
+
+    /// Claims one account's daily rewards now ("trae_cn", "workbuddy#2"...).
+    /// The path component percent-encodes "#".
+    func claimReward(_ slot: String) async throws {
+        let r = try request("v1/rewards/claim/" + slot, method: "POST", timeout: 60)
+        let (_, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
     }
 
     /// Local price table (GET/PUT /v1/prices).

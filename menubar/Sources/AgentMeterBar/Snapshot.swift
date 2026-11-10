@@ -104,6 +104,44 @@ struct CoverageRow: Identifiable {
     var collected: Int { fields.filter { ["available", "partial", "stale"].contains($0.status) }.count }
 }
 
+/// Daily free-credit rewards for one website login (backend rewards.py).
+struct RewardAccount: Identifiable {
+    let id: String
+    let provider: String
+    let status: String
+    let reason: String?
+    let autoClaim: Bool
+    let checkedAt: Date?
+    /// Provider status as normalized by the backend (signed_in, claimable...).
+    let today: JSON
+    let claimsToday: [JSON]
+    let claimedToday: Double
+    let claimedTotal: Double
+    /// Consecutive signed-in days (TRAE); nil where the provider has no button.
+    let streakDays: Int?
+    let claimTime: String?
+    let nextClaimAt: Date?
+
+    init(_ json: JSON) {
+        id = json["id"].string ?? "unknown"
+        provider = json["provider"].string ?? ""
+        status = json["status"].string ?? "error"
+        reason = json["reason"].string
+        autoClaim = json["auto_claim"].bool ?? false
+        checkedAt = json["checked_at"].date
+        today = json["today"]
+        claimsToday = json["claims_today"].array
+        claimedToday = json["claimed_credits_today"].double ?? 0
+        claimedTotal = json["claimed_credits_total"].double ?? 0
+        streakDays = json["streak_days"].double.map { Int($0) }
+        claimTime = json["claim_time"].string
+        nextClaimAt = json["next_claim_at"].date
+    }
+
+    var claimable: [JSON] { today["claimable"].array }
+    var claimableCredits: Double { claimable.reduce(0) { $0 + ($1["credits"].double ?? 0) } }
+}
+
 struct Snapshot {
     let identity = UUID()
     let schemaVersion: Int
@@ -113,8 +151,12 @@ struct Snapshot {
     let coverage: [CoverageRow]
     let applicationUsage: JSON
     let summary: JSON
+    let rewards: [RewardAccount]
+    /// The whole payload, for sections that parse their own part (collection).
+    let raw: JSON
 
     init(_ json: JSON) {
+        raw = json
         schemaVersion = Int(json["schema_version"].double ?? 0)
         collectedAt = json["collected_at"].date
         servedFromCache = json["served_from_cache"].bool ?? false
@@ -122,7 +164,10 @@ struct Snapshot {
         coverage = json["coverage"].array.enumerated().map { CoverageRow($1, index: $0) }
         applicationUsage = json["application_usage"]
         summary = json["coverage_summary"]
+        rewards = json["rewards"]["accounts"].array.map(RewardAccount.init)
     }
+
+    func reward(for sourceID: String) -> RewardAccount? { rewards.first { $0.id == sourceID } }
 
     var history: Source? { sources.first { $0.isLocalHistory } }
 

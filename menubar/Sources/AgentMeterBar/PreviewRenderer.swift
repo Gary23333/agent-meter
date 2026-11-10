@@ -267,6 +267,41 @@ enum PreviewRenderer {
                 }
             }
         }
+        // Collection: share images and the unlock celebration (final frame).
+        if let data = snap.collection {
+            let out = URL(fileURLWithPath: outDir)
+            try? TrophyShare.png(CollectionShareCard(data: data))?.write(to: out.appendingPathComponent("trophy-share-collection.png"))
+            var unlocks: [Unlock] = []
+            if let m = data.medals.filter(\.earned).last { unlocks.append(Unlock(kind: .medal, id: m.id)) }
+            if let c = data.catalog.filter({ data.owned[$0.id] != nil }).max(by: { $0.rarity.stars < $1.rarity.stars }) {
+                unlocks.append(Unlock(kind: .card, id: c.id))
+            }
+            for (i, u) in unlocks.enumerated() {
+                try? TrophyShare.png(TrophyShareCard(unlock: u, data: data))?.write(to: out.appendingPathComponent("trophy-share-\(i).png"))
+                let overlay = TrophyStage(unlock: u, data: data, mode: .unlock(position: i + 1, total: unlocks.count),
+                                          onShare: { _ in }, onDismiss: {})
+                    .frame(width: 420, height: 700)
+                let renderer = ImageRenderer(content: overlay)
+                renderer.scale = 2
+                if let cg = renderer.cgImage {
+                    try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                        .write(to: out.appendingPathComponent("unlock-\(i).png"))
+                }
+            }
+            // Detail pages: an earned medal, a locked medal and a locked card.
+            var details: [Unlock] = []
+            if let m = data.medals.first(where: { !$0.earned }) { details.append(Unlock(kind: .medal, id: m.id)) }
+            if let c = data.catalog.first(where: { data.owned[$0.id] == nil }) { details.append(Unlock(kind: .card, id: c.id)) }
+            for (i, u) in details.enumerated() {
+                let renderer = ImageRenderer(content: TrophyStage(unlock: u, data: data, mode: .detail, onShare: { _ in }, onDismiss: {})
+                    .frame(width: 420, height: 700))
+                renderer.scale = 2
+                if let cg = renderer.cgImage {
+                    try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                        .write(to: out.appendingPathComponent("detail-\(i).png"))
+                }
+            }
+        }
         if CommandLine.arguments.contains("--share-only") { exit(0) }
 
         // Dry-run alert rules now and at later times so expiry rules are exercised.

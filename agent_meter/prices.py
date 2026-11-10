@@ -347,6 +347,28 @@ def _read_existing(path, key, default):
         return default
 
 
+def estimate_daily_cost(tokens_metric, table):
+    """Per-day amounts from a tokens metric's daily_models rows.
+
+    Daily rows carry no peak split, so every day is priced at the off-peak
+    base. Used for day-level milestones only; period totals stay with
+    estimate_source_cost. Returns [{"date", "amount"}] (Decimal strings).
+    """
+    value = tokens_metric.get("value") if isinstance(tokens_metric, dict) else None
+    rows = value.get("daily_models") if isinstance(value, dict) else None
+    if not isinstance(rows, list):
+        return []
+    days = {}
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("date"), str) or "fresh_input" not in row:
+            continue
+        pattern = table.match(str(row.get("model", "")))
+        if pattern is None:
+            continue
+        days[row["date"]] = days.get(row["date"], Decimal(0)) + table.cost_for(row, pattern)
+    return [{"date": d, "amount": format(a.quantize(Decimal("0.0001")), "f")} for d, a in sorted(days.items()) if a > 0]
+
+
 def estimate_source_cost(tokens_metric, table):
     """Fill a cost metric from a tokens metric's per-period groups.
 

@@ -250,7 +250,7 @@ def collect(config=None,now=None):
     low_resource=bool(preferences.get("low_resource_mode"))
     skip_ledgers=set(preferences.get("skip_ledgers_low_resource") or []) if low_resource else set()
     # Optional API-equivalent price table for every local token ledger.
-    from .prices import estimate_source_cost, load_prices
+    from .prices import estimate_daily_cost, estimate_source_cost, load_prices
     table=load_prices(config["runtime_dir"])
     jobs={
       # Project-owned history written once by the legacy migration.
@@ -419,7 +419,10 @@ def collect(config=None,now=None):
         tokens=src["metrics"]["tokens"]
         if tokens["status"] not in {"available","partial"} or src["metrics"]["cost"]["value"] is not None:continue
         estimated=estimate_source_cost(tokens,table)
-        if estimated is not None:src["metrics"]["cost"]=estimated
+        if estimated is not None:
+            # Day-level amounts feed the collection's spending medals.
+            estimated["value"]["daily"]=estimate_daily_cost(tokens,table)
+            src["metrics"]["cost"]=estimated
     apps=discover(config["app_roots"])
     dreamina_cli=config.get("dreamina_binary") or config.get("dreamina_canvas_binary")
     if config.get("enable_dreamina_cli") and dreamina_cli:
@@ -466,6 +469,10 @@ class SnapshotService:
         self._activity_generation=-1
         # Desktop pet: interprets data this service already holds, never collects.
         self.pet=PetMind(clock)
+        # Daily free-credit rewards (status always, claiming opt-in).
+        self.rewards=None
+        # Card binder and medals built from the snapshot (no network).
+        self.collection=None
 
     def activity(self,now=None):
         """Recent session/turn activity, cached for a few seconds.
@@ -521,6 +528,46 @@ class SnapshotService:
 
     def set_pet_preferences(self,values):
         return self.pet.set_preferences(values)
+
+    def _rewards_tick(self,config,now,only=None):
+        """Reward status and opt-in claims; a failure never breaks the snapshot."""
+        from .rewards import RewardsService
+        try:
+            if self.rewards is None:
+                self.rewards=RewardsService(config["runtime_dir"])
+            preferences=config.get("preferences") or {}
+            disabled=set(config.get("disabled_sources") or [])|set(preferences.get("disabled_sources") or [])
+            return self.rewards.tick(config.get("web_sessions"),now,auto_claim=set(preferences.get("auto_claim") or []),
+                                     disabled=disabled,timeout=config["timeout_seconds"],only=only,
+                                     local_only=config["local_only"],
+                                     claim_time=preferences.get("claim_time") or "00:05")
+        except Exception:
+            return {"schema_version":1,"timezone":"Asia/Shanghai","accounts":[],"error":"rewards_failed"}
+
+    def _collection(self,config,snapshot,now):
+        from .collection import CollectionService
+        try:
+            if self.collection is None:
+                self.collection=CollectionService(config["runtime_dir"])
+            return self.collection.update(snapshot,self.rewards.ledger if self.rewards else None,now)
+        except Exception:
+            return {"schema_version":1,"error":"collection_failed"}
+
+    def claim_now(self,slot):
+        """The user's "claim now": reads and claims one account immediately."""
+        with self.collect_lock:
+            with self.lock:
+                config,now=self.config.copy(),self.clock()
+            rewards=self._rewards_tick(config,now,only=slot)
+            with self.lock:
+                snapshot=self.snapshot
+            if snapshot is not None:
+                updated=dict(snapshot,rewards=rewards)
+                updated["collection"]=self._collection(config,updated,now)
+                with self.lock:
+                    if self.snapshot is snapshot:
+                        self.snapshot=updated
+            return rewards
 
     def _invalidate(self):
         self.last_refresh=0
@@ -627,6 +674,8 @@ class SnapshotService:
                 fresh["coverage"]=coverage_matrix([r["application"] for r in fresh["coverage"] if r["application"]["installed"]],fresh["sources"])
                 fresh["coverage_summary"]=coverage_summary(fresh["coverage"])
             refresh_forecast_countdowns(refresh_countdowns(fresh,now),now)
+            fresh["rewards"]=self._rewards_tick(config,now)
+            fresh["collection"]=self._collection(config,fresh,now)
             fresh["served_from_cache"]=False
             with self.lock:
                 self.snapshot_accounts=accounts

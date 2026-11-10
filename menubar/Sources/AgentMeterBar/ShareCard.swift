@@ -73,16 +73,30 @@ struct ShareCard: View {
         }
     }
 
-    private var footerRow: some View {
-        HStack(spacing: 8) {
-            Text("数据来自本机账本 · 只读聚合 · 不含对话内容")
-            Spacer(minLength: 6)
-            if options.costs { Text("API 等价估算 · USD 按 1:7.25 转人民币") }
+    @ViewBuilder private var footerRow: some View {
+        if options.qrCode {
+            HStack(alignment: .bottom, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("数据来自本机账本 · 只读聚合 · 不含对话内容")
+                    if options.costs { Text("API 等价估算 · USD 按 1:7.25 转人民币") }
+                }
+                .font(.system(size: 9))
+                .foregroundStyle(faint)
+                Spacer(minLength: 6)
+                QRBadge(size: 60, ink: ink, muted: muted)
+            }
+            .padding(.top, 4)
+        } else {
+            HStack(spacing: 8) {
+                Text("数据来自本机账本 · 只读聚合 · 不含对话内容")
+                Spacer(minLength: 6)
+                if options.costs { Text("API 等价估算 · USD 按 1:7.25 转人民币") }
+            }
+            .font(.system(size: 9))
+            .foregroundStyle(faint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
         }
-        .font(.system(size: 9))
-        .foregroundStyle(faint)
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
     }
 
     // MARK: 主数字
