@@ -91,7 +91,12 @@ class NormalizeTests(unittest.TestCase):
 
 
 class RequestTests(unittest.TestCase):
-    """The request shape: paths, headers and body of the real endpoints."""
+    """The request shape: paths, headers and body of the real endpoints.
+
+    Every case carries its own auth directory: the desktop lookup must not
+    depend on this machine having Qoder CN installed, or the suite would
+    only pass on the maintainer's computer.
+    """
 
     def setUp(self):
         self.captured = {}
@@ -107,7 +112,7 @@ class RequestTests(unittest.TestCase):
         return mock.patch.object(qoder_campaign, "_api", self.fake_api(payload, status))
 
     def test_status_uses_the_campaign_list_endpoint(self):
-        session = {"desktop_app": "/Applications/Qoder CN.app"}
+        session = {"desktop_app": "/Applications/Qoder CN.app", "auth_dir": "/tmp/qoder-auth"}
         with mock.patch.object(qoder_campaign, "desktop_token", lambda s, t=15: "TOK"), \
              self.patch(CAMPAIGNS_OPEN):
             status = qoder_campaign.qoder_campaigns_status(session, 15)
@@ -159,16 +164,16 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "qoder_campaigns_unauthorized")
 
     def test_claim_posts_to_the_campaign_endpoint(self):
-        session = {"desktop_app": "/Applications/Qoder CN.app"}
+        session = {"desktop_app": "/Applications/Qoder CN.app", "auth_dir": "/tmp/qoder-auth"}
         with mock.patch.object(qoder_campaign, "desktop_token", lambda s, t=15: "TOK"), \
-             self.patch({"code": 200, "data": {"status": "CLAIMED", "benefit": {"amount": 100}}}):
+             self.patch({"status": "CLAIMED", "benefit": {"amount": 100}}):
             result = qoder_campaign.qoder_campaigns_claim(session, "campaign:act-1", 15)
         self.assertEqual(self.captured["path"], CLAIM_PATH % "act-1")
         self.assertEqual(self.captured["method"], "POST")
         self.assertEqual(result["result"], "ok")
 
     def test_claim_rejects_foreign_items(self):
-        session = {"desktop_app": "/Applications/Qoder CN.app"}
+        session = {"desktop_app": "/Applications/Qoder CN.app", "auth_dir": "/tmp/qoder-auth"}
         for item in ["daily_checkin", "campaign:", "campaign:../other", ""]:
             with self.assertRaises(SourceError):
                 qoder_campaign.qoder_campaigns_claim(session, item, 15)
