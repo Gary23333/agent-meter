@@ -28,6 +28,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
+from . import daily as daily_mod
 from .model import SourceError, metric, period_bounds, timestamp
 
 MARKER = b'"rawUsage"'
@@ -184,15 +185,19 @@ def collect_workbuddy_tokens(root, now, zone=ZoneInfo("Asia/Shanghai")):
         p["timezone"] = str(zone)
     periods["all"]["credit_charged"] = format(credit, "f")
     daily = {}
+    dm = {}
     for t, model, fresh, output, cache_read, cache_write, thinking in records:
         if t > now:
             continue
         day = datetime.fromtimestamp(t, zone).date().isoformat()
         daily[day] = daily.get(day, 0) + fresh + output + cache_read + cache_write
+        daily_mod.add(dm, day, model, {"fresh_input": fresh, "output": output,
+                                       "cache_read": cache_read, "cache_write": cache_write})
     return metric({
         "periods": periods,
         "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
+        "daily_models": daily_mod.rows(dm, "workbuddy"),
         "coverage": "workbuddy_local_projects",
         "dedup_rule": "one_rawUsage_record_per_response",
         "credit_unit": "workbuddy_credits",

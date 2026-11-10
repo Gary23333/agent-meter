@@ -46,6 +46,9 @@ enum Catalog {
         case "gemini": return Brand(name: "Gemini CLI", symbol: "diamond.fill", tint: Color(red: 0.26, green: 0.52, blue: 0.96))
         case "antigravity": return Brand(name: "Antigravity", symbol: "paperplane.fill", tint: Color(red: 0.30, green: 0.47, blue: 0.95))
         case "deepseek_harness": return Brand(name: "DeepSeek Harness", symbol: "wrench.and.screwdriver.fill", tint: Color(red: 0.36, green: 0.52, blue: 0.98))
+        case "mimo_code": return Brand(name: "MiMo Code", symbol: "bolt.fill", tint: Color(red: 1.0, green: 0.55, blue: 0.10))
+        case "deveco": return Brand(name: "DevECo", symbol: "d.square.fill", tint: Color(red: 0.20, green: 0.60, blue: 0.86))
+        case "kimi_legacy": return Brand(name: "Kimi 旧 CLI", symbol: "moon.fill", tint: Color(red: 0.35, green: 0.45, blue: 0.75))
         default:
             if id.hasPrefix("codexbar:") {
                 let inner = brand(String(id.dropFirst("codexbar:".count)))
@@ -60,7 +63,8 @@ enum Catalog {
         return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "kimi_desktop": "Kimi 桌面", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
          "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
          "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo", "stepfun": "阶跃",
-         "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity", "deepseek_harness": "DS Harness", "reset_forecast": "预测"][id]
+         "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity", "deepseek_harness": "DS Harness", "reset_forecast": "预测",
+         "mimo_code": "MiMo Code", "deveco": "DevECo", "kimi_legacy": "Kimi 旧版"][id]
             ?? brand(id).name
     }
 
@@ -118,7 +122,7 @@ enum Catalog {
             "rpc_request_failed": "Codex 服务暂时无法返回数据，正在使用上次数据",
             "rpc_method_unavailable": "当前 Codex 版本不支持该查询",
             "database_not_found": "未找到数据库",
-            "not_authenticated": "未登录或登录已失效",
+            "not_authenticated": "未登录或登录已失效，请在「连接网页账户 / API 密钥」中重新登录",
             "kimi_server_not_running": "Kimi 服务未运行",
             "kimi_server_token_missing": "Kimi 服务凭据缺失",
             "qoder_sdk_initialization_failed": "Qoder SDK 初始化失败",
@@ -138,7 +142,7 @@ enum Catalog {
             "volcengine_no_coding_plan": "该账户没有 Coding Plan",
             "volcengine_no_quota_windows": "未返回额度窗口",
             "volcengine_api_error": "火山引擎返回错误",
-            "mimo_not_authenticated": "MiMo 控制台未登录或登录已失效",
+            "mimo_not_authenticated": "MiMo 控制台未登录或登录已失效，请在「连接网页账户」中重新登录",
             "mimo_api_error": "MiMo 返回错误",
             "mimo_token_plan_usage_unrecognized": "未识别 Token Plan 用量格式",
             "unsupported_mimo_balance_contract": "MiMo 返回格式不支持",
@@ -186,6 +190,20 @@ enum Catalog {
             "opencode_db_not_found": "未找到 OpenCode 数据库（本机未安装 OpenCode）",
             "unsupported_opencode_schema": "OpenCode 数据库结构不兼容",
             "opencode_db_read_failed": "OpenCode 数据库读取失败",
+            "mimocode_db_not_found": "未找到 MiMo Code 用量库（本机未安装 MiMo Code）",
+            "unsupported_mimocode_schema": "MiMo Code 用量库结构不兼容",
+            "mimocode_db_read_failed": "MiMo Code 用量库读取失败",
+            "deveco_db_not_found": "未找到 DevECo 用量库（本机未安装 DevECo）",
+            "unsupported_deveco_schema": "DevECo 用量库结构不兼容",
+            "deveco_db_read_failed": "DevECo 用量库读取失败",
+            "kimi_legacy_sessions_not_found": "未找到旧版 Kimi CLI 会话记录（本机未用过旧版 Kimi）",
+            "dreamina_canvas_cli_no_credit_query": "画布 CLI 不提供积分查询，积分由网页采集补充",
+            "zcode_desktop_not_installed": "未找到 ZCode 桌面端登录（本机未安装或未登录 ZCode）",
+            "zcode_desktop_credentials_unreadable": "ZCode 桌面端凭据无法解析（可能未登录或版本变化）",
+            "zcode_desktop_node_missing": "缺少 node，无法解读 ZCode 桌面端凭据",
+            "zcode_desktop_quota_unavailable": "ZCode 桌面端登录无法读取额度，重置卡不受影响",
+            "zcode_reset_api_error": "ZCode 重置卡查询失败",
+            "unsupported_zcode_reset_contract": "ZCode 重置卡返回格式暂未支持",
             "workbuddy_projects_not_found": "未找到 WorkBuddy 本地会话记录",
             "codex_sessions_not_found": "未找到 Codex 会话记录（本机未安装 Codex CLI）",
             "codex_images_not_found": "未找到 Codex 生图归档（本机未用内置生图）",
@@ -302,7 +320,8 @@ enum Catalog {
         ["claude": "Claude", "codex": "Codex", "kimi": "Kimi Code", "kimi_desktop": "Kimi 桌面端", "gemini": "Gemini", "opencode": "OpenCode",
          "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi", "zcode": "ZCode", "workbuddy": "WorkBuddy",
          "antigravity": "Antigravity", "agy": "Antigravity",
-         "dsh": "DeepSeek Harness", "deepseek_harness": "DeepSeek Harness"][app] ?? app
+         "dsh": "DeepSeek Harness", "deepseek_harness": "DeepSeek Harness",
+         "mimo_code": "MiMo Code", "deveco": "DevECo", "kimi_legacy": "Kimi 旧 CLI"][app] ?? app
     }
 
     /// Model id for display: the readers prefix the vendor's id with their own
@@ -333,6 +352,9 @@ enum Catalog {
         case "kimi": return brand("kimi").tint
         case "kimi_desktop": return brand("kimi_desktop").tint
         case "dsh", "deepseek_harness": return brand("deepseek_harness").tint
+        case "mimo_code": return brand("mimo_code").tint
+        case "deveco": return brand("deveco").tint
+        case "kimi_legacy": return brand("kimi_legacy").tint
         default: return .purple
         }
     }

@@ -98,13 +98,34 @@ struct BackendClient {
         guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
     }
 
-    /// Runtime on/off switches for sources (kept in backend memory).
-    func putPreferences(disabled: [String]) async throws {
+    /// Runtime on/off switches for sources and the low-resource mode (kept in
+    /// backend memory). Every key is sent so the backend copy stays complete.
+    func putPreferences(disabled: [String], lowResource: Bool = false, skipLedgers: [String] = []) async throws {
         var r = try request("v1/preferences", method: "PUT", timeout: 10)
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try JSONSerialization.data(withJSONObject: ["disabled_sources": disabled])
+        r.httpBody = try JSONSerialization.data(withJSONObject: [
+            "disabled_sources": disabled,
+            "low_resource_mode": lowResource,
+            "skip_ledgers_low_resource": skipLedgers])
         let (_, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
+    }
+
+    /// Project attribution / calendar comparison / collection status are all
+    /// projections of the backend's cached snapshot, never a new collection.
+    func getProjects() async throws -> JSON { try await projection("v1/projects", timeout: 90) }
+    func getPeriods(kind: String) async throws -> JSON { try await projection("v1/periods/" + kind, timeout: 30) }
+    func getStatus() async throws -> JSON { try await projection("v1/status", timeout: 15) }
+
+    private func projection(_ path: String, timeout: TimeInterval) async throws -> JSON {
+        let r = try request(path, timeout: timeout)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        if http.statusCode == 401 { throw BackendError.unauthorized }
+        guard http.statusCode == 200,
+              let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return json
     }
 
     /// Local price table (GET/PUT /v1/prices).
@@ -139,6 +160,36 @@ struct BackendClient {
         guard let http = resp as? HTTPURLResponse,
               let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
         guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, json["last_error"].string) }
+        return json
+    }
+
+    /// Budget config + estimate-based progress (GET/PUT /v1/budget). GET never
+    /// triggers a collection; it uses the backend's current snapshot.
+    func getBudget() async throws -> JSON {
+        let r = try request("v1/budget", timeout: 10)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return json
+    }
+
+    /// nil amounts clear the budget (no alerts). Amounts travel as Decimal
+    /// strings; the backend rejects anything non-numeric or negative.
+    func putBudget(daily: String?, weekly: String?, multiplier: String) async throws -> JSON {
+        var r = try request("v1/budget", method: "PUT", timeout: 10)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["daily_cny": (daily as Any?) ?? NSNull(),
+                                   "weekly_cny": (weekly as Any?) ?? NSNull(),
+                                   "anomaly_multiplier": multiplier]
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+        guard let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
         return json
     }
 

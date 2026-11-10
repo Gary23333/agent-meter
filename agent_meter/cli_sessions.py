@@ -32,6 +32,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
+from . import daily as daily_mod
 from .model import SourceError, metric, period_bounds, source, timestamp
 from .zstd_io import ZSTD_ERRORS as _ZSTD_ERRORS, decompressed, is_compressed, route as _zstd_route
 
@@ -120,13 +121,20 @@ def _metric_value(records, now, zone, app, coverage, dedup_rule):
     for p in periods.values():
         p["timezone"] = str(zone)
     daily = {}
+    dm = {}
     for row in records:
         if row[0] <= now:
             day = datetime.fromtimestamp(row[0], zone).date().isoformat()
             daily[day] = daily.get(day, 0) + sum(row[2:])
+            t, model, fresh, output, reasoning, cache_read, cache_write, *unknown = row
+            daily_mod.add(dm, day, model,
+                          {"fresh_input": fresh, "output": output, "reasoning": reasoning,
+                           "cache_read": cache_read, "cache_write": cache_write,
+                           "unclassified": unknown[0] if unknown else 0})
     return {"peak_split": "request_timestamp",
             "periods": periods,
             "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
+            "daily_models": daily_mod.rows(dm, app),
             "coverage": coverage, "dedup_rule": dedup_rule}
 
 

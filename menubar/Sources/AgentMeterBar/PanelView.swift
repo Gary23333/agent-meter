@@ -7,8 +7,8 @@ enum Tab: String, CaseIterable, Identifiable {
         switch self {
         case .accounts: return "账户额度"
         case .forecast: return "重置预测"
-        case .usage: return "本机消耗"
-        case .apps: return "应用"
+        case .usage:    return "本机消耗"
+        case .apps:     return "应用"
         }
     }
 }
@@ -17,7 +17,11 @@ struct PanelView: View {
     @Environment(UsageStore.self) private var store
     @AppStorage("panelTab") private var tabRaw = Tab.accounts.rawValue
 
-    private var selectedTab: Tab { tabRaw == "activity" ? .apps : (Tab(rawValue: tabRaw) ?? .accounts) }
+    /// "activity"/"projects" are pre-merge tab ids that now live inside the apps tab.
+    private var selectedTab: Tab {
+        if tabRaw == "activity" || tabRaw == "projects" { return .apps }
+        return Tab(rawValue: tabRaw) ?? .accounts
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -108,6 +112,8 @@ struct PanelView: View {
             Button("连接网页账户 / API 密钥…") { ConnectionManager.shared.showConnections() }
             Button("调整卡片顺序…") { SourceOrderWindow.show() }
             Button("API 价格表（本机估算）…") { PricesWindow.show() }
+            Button("预算与异常提醒…") { BudgetWindow.show() }
+            Button("数据状态与省资源…") { DataStatusWindow.show() }
             Toggle("读取 Claude 额度", isOn: Binding(get: { store.claudeEnabled }, set: { store.claudeEnabled = $0 }))
             Toggle("全员重置预测（联网读第三方追踪站）", isOn: Binding(get: { store.forecastEnabled }, set: { store.forecastEnabled = $0 }))
             Divider()
@@ -149,7 +155,7 @@ struct PanelView: View {
             switch selectedTab {
             case .accounts: AccountsView(snapshot: snapshot, now: store.now)
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
-            case .usage: UsageView(snapshot: snapshot, now: store.now)
+            case .usage: UsageView(snapshot: snapshot, now: store.now, budget: store.budget)
             case .apps: ActivityView(snapshot: snapshot)
             }
         }

@@ -1,5 +1,9 @@
 # Agent 用量菜单栏应用共享知识
 
+2026-11-08 接入批次落地：MiMo Code / DevECo / Kimi 旧 CLI 三个历史账本、ZCode 桌面端登录与重置卡（真机 3 张周卡）、即梦 dreamina-canvas 回退路由、签名与钥匙串加固、Qoder 版本漂移监测；E 组后端（daily_models/项目归因/周报环比/状态面板省资源）已合入，端点与 UI 见 [E 组契约](../e-group-features-2026-11-08.md)。真机 verify 3,185 项零失败（包内后端 3,122 项）。验收与待用户登录项见[批次验收](../harness-batch-acceptance-2026-11-08.md)。
+
+2026-11-08 制定 [Harness 接入完善与升级计划](../harness-integration-upgrade-plan-2026-11-08.md)：A 级历史账本（MiMo Code、Kimi 旧 CLI）、签名与钥匙串加固、账户真实验收与功能升级分阶段推进；当日实测 Qoder 0.5.6 token 仍全 0。计划不作为自动执行指令。
+
 2026-11-04 工作区 0.9.9 将会话和覆盖整合为应用页。现行统计链路、直读与历史来源边界、回归和本机核对见[本机统计升级记录](../local-accounting-0.9.9.md)。
 
 2026-10-26 Qoder 第三方记录复核补充：10 月 24–26 日的本机文件中，找到 DeepSeek-Flash 407 条、MiniMax-M3.1-Flash 796 条去重请求响应，但相关 `message.usage` 全部缺失，桌面数据库也没有补充真实 Token。此前按 `usage` 筛选会漏掉 BYOK 记录；旧“Token 采不到”的结论仅适用于已检查的本机样本，不能推广为所有版本和模型。详见[Qoder 第三方专项复核](../research/qoder-byok-local-usage-recon-2026-10-26.md)。本轮只诊断，未实现新采集器。

@@ -17,6 +17,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
+from . import daily as daily_mod
 from .model import SourceError, metric, period_bounds, source, timestamp
 
 COLUMNS = {"started_at", "provider_id", "model_id", "status", "attempt_index",
@@ -115,6 +116,7 @@ def collect_zcode_local(path, now, zone=ZoneInfo("Asia/Shanghai")):
         "periods": periods_value(rows, now, zone),
         "peak_split": "request_timestamp",
         "daily_buckets": daily_value(rows, zone),
+        "daily_models": daily_models_value(rows, zone),
         "coverage": "zcode_local_model_usage_db",
         "dedup_rule": "one_row_per_model_request_attempt",
         "retry_attempt_rows": retry_rows,
@@ -135,3 +137,12 @@ def daily_value(rows, zone):
         day = datetime.fromtimestamp(row[0] / 1000, zone).date().isoformat()
         daily[day] = daily.get(day, 0) + sum(row[3:])
     return [{"date": d, "tokens": n} for d, n in sorted(daily.items())]
+
+
+def daily_models_value(rows, zone):
+    dm = {}
+    for started, model, _status, fresh, output, reasoning, cache_write, cache_read in rows:
+        day = datetime.fromtimestamp(started / 1000, zone).date().isoformat()
+        daily_mod.add(dm, day, model, {"fresh_input": fresh, "output": output, "reasoning": reasoning,
+                                       "cache_read": cache_read, "cache_write": cache_write})
+    return daily_mod.rows(dm, "zcode")

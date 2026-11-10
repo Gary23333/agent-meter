@@ -15,6 +15,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .kimi_tokens import load_records, summarize
+from . import daily as daily_mod
 from .model import SourceError, metric, period_bounds, source
 
 
@@ -33,15 +34,20 @@ def collect_kimi_desktop_tokens(sessions_dir, now, zone=ZoneInfo("Asia/Shanghai"
     for p in periods.values():
         p["timezone"] = str(zone)
     daily = defaultdict(int)
-    for t, _, fresh, out, read, write in records:
+    dm = {}
+    for t, model, fresh, out, read, write in records:
         if t > now:
             continue
-        daily[datetime.fromtimestamp(t, zone).date().isoformat()] += fresh + out + read + write
+        day = datetime.fromtimestamp(t, zone).date().isoformat()
+        daily[day] += fresh + out + read + write
+        daily_mod.add(dm, day, model, {"fresh_input": fresh, "output": out,
+                                       "cache_read": read, "cache_write": write})
     out = source("kimi_desktop", "local_session_history", now)
     out["metrics"]["tokens"] = metric({
         "periods": periods,
         "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
+        "daily_models": daily_mod.rows(dm, "kimi_desktop"),
         "coverage": "kimi_desktop_local_sessions",
         "dedup_rule": "usage.record_turn_only",
         "excluded_session_scope_records": excluded,

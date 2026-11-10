@@ -53,11 +53,11 @@ sh scripts/build-app.sh
 
 ## 离线预览
 
-除三个标签页外，还会输出 `ticker-*.png`（行情条）和 `alerts.txt`（以当前快照在 现在、+10 天、+11.5 天、+13.2 天 试算的提醒）。
+除四个标签页（账户额度、应用、重置预测、本机消耗）外，还会输出 `ticker-*.png`（行情条）和 `alerts.txt`（以当前快照在 现在、+10 天、+11.5 天、+13.2 天 试算的提醒）。项目归因折叠在「应用」页底部，预览展开态可先 `defaults write AgentMeterBar projectsSectionExpanded -bool YES` 再渲染。
 
 ```sh
 swift build
 .build/debug/AgentMeterBar --preview /path/to/snapshot.json out/
 ```
 
-不连接后端，把三个标签页按浅色 / 深色渲染为 PNG。
+不连接后端，把四个标签页按浅色 / 深色渲染为 PNG。

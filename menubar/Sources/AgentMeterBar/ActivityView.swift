@@ -19,6 +19,7 @@ struct ActivityView: View {
                         .foregroundStyle(.secondary)
                 }
                 rows(tracker, now: context.date)
+                ProjectsSection()
             }
             .onAppear {
                 tracker.panelAppeared()

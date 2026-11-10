@@ -190,13 +190,37 @@ final class ConnectionManager {
         return n == 1 ? provider : provider + "#" + String(n)
     }
 
-    /// Off the main thread: a Keychain prompt must not freeze the app.
+    /// Providers whose sessions may be read at startup. Mirrors the source
+    /// toggles UsageStore persists in UserDefaults; providers without a toggle
+    /// are enabled. UserDefaults reads are thread-safe, so this also works
+    /// from the detached startup task.
+    nonisolated static func enabledProviders(defaults: UserDefaults = .standard) -> Set<String> {
+        var ids = Set(WebProvider.all.map(\.id) + WebProvider.apiKeyProviders.map(\.id))
+        // UsageStore.claudeEnabled persists "claudeEnabled" (defaults to true).
+        if defaults.object(forKey: "claudeEnabled") as? Bool == false { ids.remove("claude") }
+        return ids
+    }
+
+    /// Startup read list: known providers only, disabled sources skipped, so a
+    /// stale slot of an off source can never trigger a Keychain read/prompt.
+    nonisolated static func startupSlots(_ slots: [String], defaults: UserDefaults = .standard) -> [String] {
+        let enabled = enabledProviders(defaults: defaults)
+        return slots.filter { enabled.contains(provider(ofSlot: $0)) }
+    }
+
+    /// Off the main thread. Reads only enabled sources and never interacts:
+    /// slots that need authorization (or a locked keychain) are logged and
+    /// left for an explicit user connect action, so startup shows no prompt.
     nonisolated func storedSessions() async -> [String: [String: String]] {
-        let ids = Set(WebProvider.all.map(\.id) + WebProvider.apiKeyProviders.map(\.id))
-        return await Task.detached {
+        await Task.detached {
             var out: [String: [String: String]] = [:]
-            for slot in SessionKeychain.slots() where ids.contains(ConnectionManager.provider(ofSlot: slot)) {
-                if let s = SessionKeychain.load(slot) { out[slot] = s }
+            for slot in Self.startupSlots(SessionKeychain.slots()) {
+                switch SessionKeychain.loadResult(slot) {
+                case .success(let session):
+                    out[slot] = session
+                case .failure(let reason):
+                    NSLog("AgentMeterBar keychain: slot %@ not loaded at startup: %@", slot, reason.logDescription)
+                }
             }
             return out
         }.value
@@ -208,7 +232,9 @@ final class ConnectionManager {
         UsageStore.shared.syncSessionsAndRefresh()
     }
 
-    /// The stored session fields of one slot (Keychain read).
+    /// The stored session fields of one slot. Interactive Keychain read: only
+    /// for explicit user actions (connect / save), never at startup; macOS may
+    /// ask the user to authorize here, which is the intended place for it.
     func session(for slot: String) -> [String: String]? { SessionKeychain.load(slot) }
 
     func disconnect(_ slot: String) {

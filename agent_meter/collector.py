@@ -21,8 +21,10 @@ from .discovery import discover
 from .kimi import collect_kimi
 from .kimi_tokens import collect_kimi_tokens
 from .kimi_desktop_tokens import collect_kimi_desktop_tokens
+from .kimi_legacy_tokens import collect_kimi_legacy_tokens
 from .model import SCHEMA_VERSION, SourceError, failed_source, metric, source, timestamp
 from .opencode_tokens import collect_opencode_tokens
+from .mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
 from .qoder import collect_qoder
 from .qoder_tokens import collect_qoder_credits, merge_credits_metric
 from .web_sources import as_account_lists, collect_qoder_web, collect_trae, collect_workbuddy
@@ -34,7 +36,8 @@ from .mimo import collect_mimo
 from .stepfun import collect_stepfun
 from .volcengine import collect_volcengine
 from .zcode import collect_zcode
-from .dreamina import collect_dreamina
+from .zcode_desktop import collect_zcode_desktop
+from .dreamina import collect_dreamina, collect_dreamina_canvas
 from .minimax_design import collect_design
 from .billing import refresh_countdowns
 from .reset_forecast import CACHE_NAME, collect_reset_forecast, refresh_forecast_countdowns
@@ -47,7 +50,12 @@ def default_config():
     home=Path.home()
     return {"home":str(home),"app_roots":["/Applications",str(home/"Applications")],
             "opencode_db":str(home/".local/share/opencode/opencode.db"),
+            # MiMo Code / DevECo keep independent opencode-isomorphic ledgers.
+            "mimocode_db":str(home/".local/share/mimocode/mimocode.db"),
+            "deveco_db":str(home/".local/share/deveco/deveco-stable.db"),
             "zcode_usage_db":str(home/".zcode/cli/db/db.sqlite"),
+            # ZCode desktop's own login store; reset cards need its JWT.
+            "zcode_v2_dir":str(home/".zcode/v2"),
             "workbuddy_projects_dir":str(home/".workbuddy/projects"),
             # Direct CLI session logs; every reader owns its own ledger.
             "codex_sessions_dir":str(home/".codex/sessions"),"codex_archives_dir":str(home/".codex/archived_sessions"),
@@ -75,9 +83,14 @@ def default_config():
             "codex_binary":shutil.which("codex"),"kimi_binary":shutil.which("kimi"),
             # Kimi.app's Agent runtime keeps its own ledger with the same schema.
             "kimi_desktop_sessions_dir":str(home/"Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions"),
+            # Pre-migration Kimi CLI ledger; writes stopped 2026-06-17.
+            "kimi_legacy_sessions_dir":str(home/".kimi/sessions"),
             "qoder_app":"/Applications/Qoder CN.app","node_binary":shutil.which("node"),
             "qoder_projects_dir":str(home/".qoder-cn/projects"),
             "dreamina_binary":shutil.which("dreamina") or (str(home/".local/bin/dreamina") if (home/".local/bin/dreamina").is_file() else None),
+            # The canvas CLI replaced `dreamina`; its auth account route has no
+            # credit query, so it is only the fallback identity/VIP transport.
+            "dreamina_canvas_binary":shutil.which("dreamina-canvas") or (str(home/".local/bin/dreamina-canvas") if (home/".local/bin/dreamina-canvas").is_file() else None),
             "design_gateway_url":"http://127.0.0.1:8001",
             "design_mcp_entry":"http://127.0.0.1:18810/mcp",
             "design_probe_mcp":True,"billing_overrides":{},
@@ -107,6 +120,7 @@ def safe_collect(source_id,scope,now,fn):
                       "not_authenticated","qoder_not_authenticated","qoder_sdk_not_installed","qoder_usage_unavailable","codexbar_not_installed",
                       "minimax_credential_not_connected","deepseek_credential_not_connected",
                       "zcode_credential_not_connected","volcengine_credential_not_connected","mimo_not_authenticated",
+                      "zcode_desktop_not_installed","zcode_desktop_credentials_unreadable","zcode_desktop_node_missing",
                       "stepfun_credential_not_connected","stepfun_not_authenticated",
                       "volcengine_not_authenticated","volcengine_ark_key_not_supported",
                       "dreamina_cli_not_available","dreamina_not_authenticated","design_gateway_not_ready",
@@ -116,9 +130,10 @@ def safe_collect(source_id,scope,now,fn):
                       "codex_sessions_not_found","claude_projects_not_found","gemini_chats_not_found","mcode_db_not_found",
                       "agy_conversations_not_found","design_opencode_db_not_found",
                       "dsh_sessions_not_found","zstd_unavailable",
-                      "kimi_desktop_sessions_not_found",
+                      "kimi_desktop_sessions_not_found","kimi_legacy_sessions_not_found",
+                      "mimocode_db_not_found","deveco_db_not_found",
                       "claude_not_logged_in","claude_subscription_login_missing","claude_token_expired","claude_keychain_denied","claude_keychain_timeout",
-                      "claude_keychain_unavailable","web_session_missing","disabled_by_user","disabled_in_config","local_only_mode",
+                      "claude_keychain_unavailable","web_session_missing","disabled_by_user","disabled_in_config","local_only_mode","skipped_low_resource",
                       "history_store_not_found"}
         return failed_source(source_id,scope,now,e.code,"not_connected" if e.code in disconnected else "error")
     except Exception:
@@ -164,6 +179,56 @@ def collect_antigravity(config,now):
     return out
 
 
+def collect_qoder_route(config,web_session,runtime,now,timeout):
+    """Web console login first; an expired website session must not hide a
+    working local Qoder SDK login, so the SDK route is the fallback."""
+    web_error=None
+    if web_session:
+        try:
+            return collect_qoder_web(web_session,now,timeout)
+        except SourceError as e:
+            web_error=e
+    try:
+        return collect_qoder(config["qoder_app"],config["node_binary"],runtime,now,timeout)
+    except SourceError as e:
+        raise (web_error or e)
+
+
+def collect_zcode_route(config,web_session,now,timeout):
+    """Web console login keeps priority for quota; the desktop login adds the
+    reset cards it alone can read, and stands in when no web session exists.
+    Either route failing never discards the other's data."""
+    desktop=None
+    try:
+        desktop=collect_zcode_desktop(config["zcode_v2_dir"],config.get("node_binary"),now,timeout)
+    except SourceError:
+        pass
+    web_error=None
+    if web_session:
+        try:
+            out=collect_zcode(web_session,now,timeout)
+            if desktop and desktop["metrics"]["reset_cards"]["status"]=="available":
+                out["metrics"]["reset_cards"]=desktop["metrics"]["reset_cards"]
+                out["diagnostics"]["cards_transport"]="zcode_desktop_login"
+            return out
+        except SourceError as e:
+            web_error=e
+    if desktop:
+        return desktop
+    raise web_error or SourceError("zcode_credential_not_connected")
+
+
+def collect_dreamina_route(config,now,timeout):
+    if not config.get("enable_dreamina_cli"):
+        raise SourceError("web_session_missing")
+    override=config["billing_overrides"].get("dreamina")
+    if config.get("dreamina_binary"):
+        return collect_dreamina(config["dreamina_binary"],now,timeout,override)
+    if config.get("dreamina_canvas_binary"):
+        return collect_dreamina_canvas(config["dreamina_canvas_binary"],now,timeout,override)
+    raise SourceError("dreamina_cli_not_available")
+
+
 def collect(config=None,now=None):
     config=dict(default_config(),**(config or {}))
     now=time.time() if now is None else now
@@ -177,7 +242,12 @@ def collect(config=None,now=None):
     accounts=as_account_lists(config.get("web_sessions"))
     web={p:lst[0] for p,lst in accounts.items()}
     # Switches from the app (e.g. Claude off), also in memory only.
-    user_off=set((config.get("preferences") or {}).get("disabled_sources") or [])
+    preferences=config.get("preferences") or {}
+    user_off=set(preferences.get("disabled_sources") or [])
+    # Low-resource mode: longer cache TTL and an opt-in list of heavy ledgers
+    # to skip; skipped sources stay visible with their own reason.
+    low_resource=bool(preferences.get("low_resource_mode"))
+    skip_ledgers=set(preferences.get("skip_ledgers_low_resource") or []) if low_resource else set()
     # Optional API-equivalent price table for every local token ledger.
     from .prices import estimate_source_cost, load_prices
     table=load_prices(config["runtime_dir"])
@@ -191,18 +261,16 @@ def collect(config=None,now=None):
       "kimi":("account",lambda:collect_kimi(config["home"],config["kimi_binary"],now,timeout,
           url=config.get("kimi_url"),start_server=config["start_kimi_server"],cwd=str(runtime))),
       # A website login (if connected) replaces the Qoder SDK route.
-      "qoder":("account",lambda:collect_qoder_web(web["qoder"],now,timeout) if "qoder" in web
-               else collect_qoder(config["qoder_app"],config["node_binary"],runtime,now,timeout)),
+      "qoder":("account",lambda:collect_qoder_route(config,web.get("qoder"),runtime,now,timeout)),
       "workbuddy":("account",lambda:collect_workbuddy(web.get("workbuddy"),now,timeout)),
       "trae_cn":("account",lambda:collect_trae(web.get("trae_cn"),now,timeout)),
       "minimax_code":("account",lambda:collect_minimax(str(runtime),now,timeout,(web.get("minimax_code") or {}).get("api_key"))),
-      "dreamina":("creative_account",lambda:collect_dreamina(config["dreamina_binary"],now,timeout,config["billing_overrides"].get("dreamina"))
-                  if config.get("enable_dreamina_cli") else _raise(SourceError("web_session_missing"))),
+      "dreamina":("creative_account",lambda:collect_dreamina_route(config,now,timeout)),
       "minimax_design":("creative_personal_account",lambda:collect_design(config["design_gateway_url"],now,timeout,
           config["billing_overrides"].get("minimax_design"),config["node_binary"],config["design_mcp_entry"],config["design_probe_mcp"])),
       "deepseek_api":("api_account",lambda:collect_deepseek(now,timeout,(web.get("deepseek_api") or {}).get("api_key"),
           (web.get("deepseek_api") or {}).get("user_token"))),
-      "zcode":("account",lambda:collect_zcode(web.get("zcode"),now,timeout)),
+      "zcode":("account",lambda:collect_zcode_route(config,web.get("zcode"),now,timeout)),
       "mimo":("api_account",lambda:collect_mimo(web.get("mimo"),now,timeout) if "mimo" in web
               else _raise(SourceError("web_session_missing"))),
       "stepfun":("account",lambda:collect_stepfun(web.get("stepfun"),now,timeout)),
@@ -216,6 +284,9 @@ def collect(config=None,now=None):
                      else collect_antigravity(config,now)),
       "deepseek_harness":("local_session_history",lambda:collect_dsh_sessions(config["dsh_sessions_dir"],now,zstd_binary=config["zstd_binary"])),
       "kimi_desktop":("local_session_history",lambda:collect_kimi_desktop_tokens(config["kimi_desktop_sessions_dir"],now)),
+      "kimi_legacy":("local_session_history",lambda:collect_kimi_legacy_tokens(config["kimi_legacy_sessions_dir"],now)),
+      "mimo_code":("local_session_history",lambda:collect_mimocode_tokens(config["mimocode_db"],now)),
+      "deveco":("local_session_history",lambda:collect_deveco_tokens(config["deveco_db"],now)),
       # Global-reset forecasts: third-party wording, never an account clock.
       "reset_forecast":("external_forecast",lambda:collect_reset_forecast(
           now=now,cache_path=str(runtime/CACHE_NAME),
@@ -253,7 +324,8 @@ def collect(config=None,now=None):
     sources=[]
     with ThreadPoolExecutor(max_workers=min(16,max(4,len(jobs)))) as pool:
         futures={key:pool.submit(safe_collect,key,scope,now,fn) for key,(scope,fn) in jobs.items()
-                 if not switched_off(key) and (not config["local_only"] or local_job(key, scope))}
+                 if not switched_off(key) and key.split("#",1)[0] not in skip_ledgers
+                 and (not config["local_only"] or local_job(key, scope))}
         # Parse the local session logs alongside the network jobs. submit()
         # runs immediately, so the user switches must gate each one.
         token_futures={}
@@ -272,11 +344,11 @@ def collect(config=None,now=None):
         ):
             # Claude's switch only stops the quota/keychain route; its local
             # token ledger (CLI + desktop) stays independent of that toggle.
-            if provider == "claude" or not switched_off(provider):
+            if (provider == "claude" or not switched_off(provider)) and provider not in skip_ledgers:
                 token_futures[provider]=pool.submit(fn)
         # Codex 内置生图的按张统计（文件 + 历史库调用数），与账户网络无关。
         image_futures={}
-        if not switched_off("codex"):
+        if not switched_off("codex") and "codex" not in skip_ledgers:
             image_futures["codex"]=pool.submit(
                 lambda:codex_image_metric(config["codex_images_dir"],config["codex_history_db"],now,
                                           currency=table.currency,
@@ -284,12 +356,14 @@ def collect(config=None,now=None):
         # Qoder CN's local credits ledger is account-page statistics, never a
         # tokens metric: it must not enter the local-consumption sum.
         credits_futures={}
-        if not switched_off("qoder"):
+        if not switched_off("qoder") and "qoder" not in skip_ledgers:
             credits_futures["qoder"]=pool.submit(lambda:collect_qoder_credits(config["qoder_projects_dir"],now))
         for key in jobs:
             if key not in futures:
-                reason=("local_only_mode" if not switched_off(key) else
-                        "disabled_by_user" if key.split("#",1)[0] in user_off else "disabled_in_config")
+                base=key.split("#",1)[0]
+                reason=("disabled_by_user" if base in user_off else
+                        "disabled_in_config" if switched_off(key) else
+                        "skipped_low_resource" if base in skip_ledgers else "local_only_mode")
                 sources.append(failed_source(key,jobs[key][0],now,reason,"not_connected"))
                 continue
             result=futures[key].result()
@@ -346,8 +420,9 @@ def collect(config=None,now=None):
         estimated=estimate_source_cost(tokens,table)
         if estimated is not None:src["metrics"]["cost"]=estimated
     apps=discover(config["app_roots"])
-    if config.get("enable_dreamina_cli") and config.get("dreamina_binary"):
-        apps.append({"name":"即梦 CLI","provider":"dreamina","installed":True,"path":config["dreamina_binary"],
+    dreamina_cli=config.get("dreamina_binary") or config.get("dreamina_canvas_binary")
+    if config.get("enable_dreamina_cli") and dreamina_cli:
+        apps.append({"name":"即梦 CLI","provider":"dreamina","installed":True,"path":dreamina_cli,
                      "version":None,"bundle_id":None,"discovery_kind":"configured_cli"})
     usage=application_usage(sources)
     coverage=coverage_matrix(apps,sources,usage)
@@ -457,8 +532,12 @@ class SnapshotService:
         with self.lock:
             self._invalidate()
 
+    def _ttl(self):
+        base=self.config.get("cache_ttl_seconds",120)
+        return base*3 if (self.config.get("preferences") or {}).get("low_resource_mode") else base
+
     def _cached(self,now):
-        if self.snapshot is None or now-self.last_refresh>=self.config["cache_ttl_seconds"]:
+        if self.snapshot is None or now-self.last_refresh>=self._ttl():
             return None
         out=copy.deepcopy(self.snapshot)
         out["served_from_cache"]=True

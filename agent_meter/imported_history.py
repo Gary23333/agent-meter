@@ -14,6 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
+from . import daily as daily_mod
 from .model import SourceError, metric, period_bounds, source, timestamp
 
 TOKEN_KEYS = ("requests", "fresh_input", "output", "reasoning", "cache_read", "cache_write")
@@ -166,20 +167,27 @@ def _metric_value(store, now, zone):
     for p in periods.values():
         p["timezone"] = str(zone)
     buckets = {}
+    dm = {}
     for row in store["detail"]:
         t = row[2]
         if t > now:
             continue
         day = datetime.fromtimestamp(t, zone).date().isoformat()
         buckets[day] = buckets.get(day, 0) + row[3] + row[4] + row[5] + row[6]
+        daily_mod.add(dm, day, row[1], {"fresh_input": row[3], "output": row[4],
+                                        "cache_read": row[5], "cache_write": row[6]}, app=row[0])
     end_date = datetime.fromtimestamp(now, zone).date().isoformat()
     for app, model, date, requests, fresh, output, cache_read, cache_write in store["daily"]:
         if date > end_date:
             continue
         buckets[date] = buckets.get(date, 0) + fresh + output + cache_read + cache_write
+        daily_mod.add(dm, date, model, {"fresh_input": fresh, "output": output,
+                                        "cache_read": cache_read, "cache_write": cache_write},
+                      app=app, requests=requests)
     return {"peak_split": "request_timestamp_and_daily_rollups",
             "periods": periods,
             "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(buckets.items())],
+            "daily_models": daily_mod.rows(dm),
             "coverage": "imported_history_store",
             "dedup_rule": "one_time_import_before_local_ledgers",
             "history": {"imported_at": timestamp(store["imported_at"]) if isinstance(store["imported_at"], (int, float)) else None,

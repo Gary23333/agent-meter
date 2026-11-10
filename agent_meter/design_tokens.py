@@ -31,6 +31,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
+from . import daily as daily_mod
 from .opencode_tokens import _tokens
 from .model import SourceError, metric, period_bounds, timestamp
 
@@ -163,12 +164,16 @@ def collect_design_tokens(db_path, reference_db, now, zone=ZoneInfo("Asia/Shangh
     for p in periods.values():
         p["timezone"] = str(zone)
     daily = {}
-    for day, _t, _model, _agent, fresh, output, reasoning, cache_read, cache_write in rows:
+    dm = {}
+    for day, _t, model, _agent, fresh, output, reasoning, cache_read, cache_write in rows:
         daily[day] = daily.get(day, 0) + fresh + output + reasoning + cache_read + cache_write
+        daily_mod.add(dm, day, model, {"fresh_input": fresh, "output": output, "reasoning": reasoning,
+                                       "cache_read": cache_read, "cache_write": cache_write})
     return metric({
         "periods": periods,
         "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
+        "daily_models": daily_mod.rows(dm, "minimax_design"),
         "coverage": "minimax_design_embedded_opencode_message_db",
         "dedup_rule": "exclude_sessions_also_in_standalone_opencode_db",
         "opencode_overlap": {"state": overlap_state, "excluded_sessions": len(excluded_sessions)},

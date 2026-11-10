@@ -233,7 +233,9 @@ class WiringTests(unittest.TestCase):
         with mock.patch("agent_meter.collector.discover", return_value=[]):
             snap = collect({"disabled_sources": ["codex", "claude", "kimi", "qoder", "workbuddy", "trae_cn",
                                                  "minimax_code", "dreamina", "minimax_design", "deepseek_api"],
-                            "runtime_dir": self.tmp}, now=NOW)
+                            "runtime_dir": self.tmp,
+                            # Isolate the desktop-login route: no credentials.json here.
+                            "zcode_v2_dir": self.tmp}, now=NOW)
         by_id = {s["id"]: s for s in snap["sources"]}
         for sid in ("zcode", "mimo", "volcengine"):
             self.assertEqual(by_id[sid]["status"], "not_connected", sid)

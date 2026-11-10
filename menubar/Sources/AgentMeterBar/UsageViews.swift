@@ -18,6 +18,8 @@ enum Period: String, CaseIterable, Identifiable {
 struct UsageView: View {
     let snapshot: Snapshot
     let now: Date
+    /// Optional so previews and reports can render without a backend budget.
+    var budget: BudgetStatus? = nil
     @AppStorage("usagePeriod") private var periodRaw = Period.today.rawValue
 
     private var period: Period { Period(rawValue: periodRaw) ?? .today }
@@ -32,6 +34,10 @@ struct UsageView: View {
                 }
             }
 
+            if let budget, budget.showsProgress {
+                BudgetProgressRow(budget: budget)
+            }
+
             if let data = LocalUsage.merged(snapshot: snapshot, period: period) {
                 PeriodSummary(data: data, history: snapshot.history, snapshot: snapshot, period: period, now: now)
             } else {
@@ -40,6 +46,8 @@ struct UsageView: View {
                         .font(.system(size: 12)).themeForeground(.secondary)
                 }
             }
+
+            PeriodCompareCard()
         }
     }
 }

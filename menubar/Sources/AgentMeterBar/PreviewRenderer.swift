@@ -99,6 +99,70 @@ enum PreviewRenderer {
         ])))
     }
 
+    /// Synthetic projections for the E2/E3/E4 surfaces (no backend in preview).
+    private static func previewFeeds(_ store: UsageStore) {
+        store.projects = ProjectsFeed(.object([
+            "projects": .array([
+                .object(["project_path": .string("/Users/u/项目/NEW-agent 统计"), "tokens": .number(6_120_000_000),
+                         "requests": .number(1520), "apps": .object(["zcode": .object(["tokens": .number(4_800_000_000), "requests": .number(1200)]),
+                                                                     "deepseek_harness": .object(["tokens": .number(1_320_000_000), "requests": .number(320)])])]),
+                .object(["project_path": .string("/Users/u/Movies/项目/0916-宝格丽烟花"), "tokens": .number(2_450_000_000),
+                         "requests": .number(640), "apps": .object(["opencode": .object(["tokens": .number(2_450_000_000), "requests": .number(640)])])]),
+                .object(["project_path": .string("/Users/u/Documents/项目/agent-launcher"), "tokens": .number(1_880_000_000),
+                         "requests": .number(910), "apps": .object(["claude": .object(["tokens": .number(1_210_000_000), "requests": .number(520)]),
+                                                                    "mimo_code": .object(["tokens": .number(670_000_000), "requests": .number(390)])])]),
+            ]),
+            "attributed_tokens": .number(10_450_000_000), "total_tokens": .number(39_400_000_000),
+            "unattributed": .object(["tokens": .number(28_950_000_000),
+                                     "by_app": .object(["kimi": .object(["tokens": .number(12_300_000_000)]),
+                                                        "claude": .object(["tokens": .number(9_100_000_000)])])]),
+            "source_gaps": .array([]),
+        ]))
+        let period: JSON = .object([
+            "current": .object(["tokens": .number(2_710_000_000), "cost_cny": .string("396.40"), "days_with_data": .number(9)]),
+            "previous": .object(["tokens": .number(13_690_000_000), "cost_cny": .string("1860.10")]),
+            "delta": .object(["tokens_pct": .number(-80.21), "cost_pct": .number(-78.69), "cache_hit_rate_change": .number(0.041)]),
+            "top_movers": .array([
+                .object(["model": .string("account:bigmodel-coding-plan/GLM-5.3-Flash"), "tokens": .number(1_600_000_000), "delta_tokens": .number(-6_400_000_000)]),
+                .object(["model": .string("deepseek-v4-pro"), "tokens": .number(620_000_000), "delta_tokens": .number(180_000_000)]),
+            ]),
+            "basis": .string("daily_rollup_base_price_no_peak_split"),
+            "sources_without_daily_detail": .array([]),
+        ])
+        store.weekReport = PeriodReport(period)
+        store.monthReport = PeriodReport(period)
+        store.statusFeed = StatusFeed(.object([
+            "sources": .array([
+                .object(["id": .string("codex"), "scope": .string("account"), "status": .string("stale"),
+                         "reason": .string("rpc_timeout"), "observed_at": .object(["display": .string("04:00")]),
+                         "last_error": .string("rpc_timeout")]),
+                .object(["id": .string("zcode"), "scope": .string("account"), "status": .string("available"),
+                         "reason": .null, "observed_at": .object(["display": .string("04:12")]), "last_error": .null]),
+                .object(["id": .string("mimo_code"), "scope": .string("local_session_history"), "status": .string("available"),
+                         "reason": .null, "observed_at": .object(["display": .string("04:12")]), "last_error": .null]),
+                .object(["id": .string("stepfun"), "scope": .string("account"), "status": .string("not_connected"),
+                         "reason": .string("stepfun_credential_not_connected"), "observed_at": .object(["display": .string("04:12")]), "last_error": .null]),
+            ]),
+            "stale_sources": .array([.string("codex")]),
+            "unpriced_models": .array([.string("space-bunny-free"), .string("kimi-for-coding")]),
+            "disabled_sources": .array([.string("claude")]),
+            "low_resource_mode": .bool(false), "skipped_ledgers": .array([]),
+            "cache_ttl_seconds": .number(120),
+            "snapshot_at": .object(["display": .string("2026-11-09 04:12")]), "served_from_cache": .bool(false),
+        ]))
+        store.budget = BudgetStatus(.object([
+            "status": .string("ok"), "date": .string("2026-11-09"), "week_start": .string("2026-11-09"),
+            "config": .object(["daily_cny": .string("50"), "weekly_cny": .string("300"), "anomaly_multiplier": .string("2.0")]),
+            "daily": .object(["budget_cny": .string("50"), "spent_cny": .string("32.50"),
+                              "remaining_cny": .string("17.50"), "exceeded": .bool(false), "partial": .bool(false),
+                              "top_apps": .array([.object(["name": .string("codex"), "cost_cny": .string("21.40")])]),
+                              "top_models": .array([.object(["name": .string("gpt-5.4"), "cost_cny": .string("18.10")])])]),
+            "weekly": .object(["budget_cny": .string("300"), "spent_cny": .string("126.80"),
+                               "remaining_cny": .string("173.20"), "exceeded": .bool(false), "partial": .bool(false)]),
+            "anomaly": .object(["triggered": .bool(false)]), "events": .array([]),
+        ]))
+    }
+
     static func run(snapshot path: String, outDir: String) {
         guard let data = FileManager.default.contents(atPath: path),
               let json = try? JSONDecoder().decode(JSON.self, from: data) else {
@@ -109,6 +173,7 @@ enum PreviewRenderer {
         store.preview(Snapshot(json))
         PanelView.expandForPreview = true
         previewActivity()
+        previewFeeds(store)
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
         let snap = Snapshot(json)
@@ -161,6 +226,31 @@ enum PreviewRenderer {
                 host.cacheDisplay(in: host.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?
                     .write(to: URL(fileURLWithPath: outDir).appendingPathComponent("connections-light.png"))
+            }
+        }
+
+        do {
+            let host = NSHostingView(rootView: DataStatusView().environment(store)
+                .background(Color(nsColor: .windowBackgroundColor)))
+            host.appearance = NSAppearance(named: .aqua)
+            host.frame = NSRect(x: 0, y: 0, width: 470, height: 620)
+            host.layoutSubtreeIfNeeded()
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: outDir).appendingPathComponent("status-light.png"))
+            }
+        }
+        do {
+            let host = NSHostingView(rootView: BudgetSettingsView().environment(store)
+                .background(Color(nsColor: .windowBackgroundColor)))
+            host.appearance = NSAppearance(named: .aqua)
+            host.frame = NSRect(x: 0, y: 0, width: 460, height: 480)
+            host.layoutSubtreeIfNeeded()
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: outDir).appendingPathComponent("budget-light.png"))
             }
         }
 

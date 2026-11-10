@@ -50,7 +50,9 @@ PLIST
 # signing changes every build and re-prompts. SIGN_MODE picks the identity:
 # dev (default) = Apple Development, dist = Developer ID Application
 # (+ hardened runtime + timestamp + optional notarization), adhoc = ad-hoc.
-# SIGN_IDENTITY still overrides for backward compatibility.
+# dev/dist FAIL when no matching identity is visible: silently falling back
+# to ad-hoc changes the binary identity and invalidates Keychain grants.
+# SIGN_IDENTITY still overrides for backward compatibility (explicit choice).
 pick_sign_identity() {
     security find-identity -v -p codesigning | awk -v pat="$1" '$0 ~ pat { print $2; exit }'
 }
@@ -62,8 +64,12 @@ else
         dev)
             sign_id="${SIGN_DEV_IDENTITY:-$(pick_sign_identity 'Apple Development')}"
             if [ -z "$sign_id" ]; then
-                echo "warning: no Apple Development certificate found, falling back to ad-hoc signing" >&2
-                sign_id="-"
+                echo "error: SIGN_MODE=dev found no usable Apple Development signing identity; refusing to fall back to ad-hoc." >&2
+                echo "  Looked with: security find-identity -v -p codesigning" >&2
+                echo "  Ad-hoc signing changes the binary identity on every build and invalidates existing Keychain authorizations." >&2
+                echo "  Fix: run the build where the signing certificates are visible (unlocked login keychain)," >&2
+                echo "       or set SIGN_DEV_IDENTITY / SIGN_IDENTITY explicitly. Use SIGN_MODE=adhoc only if you really want a throwaway signature." >&2
+                exit 1
             fi
             ;;
         dist)
@@ -73,6 +79,11 @@ else
         adhoc) sign_id="-" ;;
         *) echo "error: invalid SIGN_MODE: $SIGN_MODE (dev | dist | adhoc)" >&2; exit 1 ;;
     esac
+fi
+# "-" (ad-hoc) is only legitimate in explicit adhoc mode, never as a fallback.
+if [ "$sign_id" = "-" ] && [ "$SIGN_MODE" != "adhoc" ]; then
+    echo "error: ad-hoc signing ('-') is only allowed with SIGN_MODE=adhoc (requested via SIGN_IDENTITY with SIGN_MODE=$SIGN_MODE)" >&2
+    exit 1
 fi
 # dist pre-sign: `--deep` does NOT cover loose Mach-O under Contents/Resources
 # (the embedded PyInstaller backend), but notarization requires every binary to

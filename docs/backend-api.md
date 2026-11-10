@@ -155,6 +155,33 @@ wire.jsonl 口径（与 CLI Kimi Code 相同）：
 
 与已接 CLI `kimi` 来源的关系：两者按 session id 与逐条 usage 记录核对，实测样本没有重叠，因此**不合并也不剔除**：两条账本各自独立汇总，各自计量。verify 对四个周期的 totals 与按模型分项做独立重算对账。
 
+## MiMo Code / DevECo 本机账本（opencode 同构）
+
+`agent_meter/mimocode_tokens.py` 读取两个独立产品的 opencode 同构 drizzle sqlite 账本，解析复用 `opencode_tokens.collect_message_db_tokens`（只读 `message.time_created/data`，assistant 消息的 `data.tokens {total,input,output,reasoning,cache:{read,write}}` 与 `data.modelID`；input 为新鲜输入、缓存单列；reasoning 含在 output 内时按 total 等式拆分）：
+
+- `mimo_code`：配置键 `mimocode_db`，默认 `~/.local/share/mimocode/mimocode.db`。本机实测 868 条（2026-09-10→09-22，此后停写），模型 mimo-x-pro-preview / deepseek-flash / mimo-v2.6-pro。`coverage=mimocode_local_message_db`。错误码 `mimocode_db_not_found` / `mimocode_db_read_failed` / `unsupported_mimocode_schema`。
+- `deveco`：配置键 `deveco_db`，默认 `~/.local/share/deveco/deveco-stable.db`。本机实测 4 条（2026-09-17，GLM-5.3）。`coverage=deveco_local_message_db`。错误码 `deveco_db_*` / `unsupported_deveco_schema`。
+
+两者均为独立来源（scope `local_session_history`），与 opencode、@hilo Design 库互不重叠，只进「本机消耗」页；停写账本照常显示历史，不推测零消耗。`dedup_rule=one_assistant_message_per_response`，峰谷按请求时间戳拆分。会话活动页复用 opencode 适配器（`session.directory` 提供项目路径）。verify 用同一条 SQL 参考式对四个周期独立重算（`json_valid` 过滤坏行）。注意口径：`total_tokens` 为分项之和，与库内 `tokens.total` 字段在 reasoning 归属不同的行上可能有差异（本机 MiMo Code 差 173,422，全部来自 total 字段与分项不一致的行）。
+
+## Kimi 旧 CLI 历史账本
+
+`agent_meter/kimi_legacy_tokens.py` 读取迁移前的 `~/.kimi/sessions`（配置键 `kimi_legacy_sessions_dir`），递归 `**/wire.jsonl`（含 subagents / tasks 深层路径）。每行 `{message:{payload:{token_usage,message_id}},timestamp}`：`fresh_input=input_other`、`output=output`、`cache_read=input_cache_read`、`cache_write=input_cache_creation`；**timestamp 是秒级浮点**（与 kimi-code 的毫秒整数不同）；payload 无模型字段，一律 `unknown`、不按价格表估价（`model_attribution=unknown_no_model_field`）。去重键优先 `message_id`，缺失时按 (文件, 行号)，重复与非法行计入 `excluded_duplicate_records`。
+
+独立来源 `kimi_legacy`（scope `local_session_history`），`coverage=kimi_legacy_local_sessions`，`dedup_rule=message_id_or_file_line`；与 `kimi`（kimi-code）、`kimi_desktop` 会话零重叠，三本账各自独立汇总。2026-06-17 迁移后停写，属历史缺口补齐。错误码 `kimi_legacy_sessions_not_found`。文件缓存按 `("kimi_legacy", root)` 命名空间隔离。verify 复用 `reference_kimi_period` 独立重算四周期 totals 与模型分项。本机实测：80 文件、3,971 条、396,282,036 token（2026-02-13→06-17）。
+
+## ZCode 桌面端本机登录与重置卡
+
+`agent_meter/zcode_desktop.py` 直读 ZCode 桌面端自己的登录存储 `~/.zcode/v2/credentials.json`（配置键 `zcode_v2_dir`），补齐网页路线读不到的重置卡，并在没有网页会话时独立提供额度。凭据为 `enc:v1:` 信封：`base64url(iv).base64url(tag).base64url(ct)`，AES-256-GCM，密钥 `SHA-256(secret)`；secret 取环境变量 `ZCODE_CREDENTIAL_SECRET`，否则机器本地回退值 `zcode-credential-fallback:<platform>:<home>:<username>`（契约对照 UsageBar-tauri 2605fd5 与 token-monitor c62544e 两个固定版本，本机 ZCode 3.17.2 实测解密成功）。标准库无 AES，解密经 node 辅助脚本在内存完成：信封与 secret 走 stdin、明文走 stdout，不落盘、不进日志与快照。
+
+读取三个条目：`zcodejwttoken`（ZCode JWT）、`oauth:active_provider` 决定当前家庭（bigmodel/zai），取对应 `oauth:<family>:access_token` 与 `oauth:<family>:user_info`（身份仅用于 SHA-256 account_key）。重置卡查询 `GET https://zcode.z.ai/api/v1/coding-plan/reset/status`，头 `Authorization: Bearer <jwt>`、`X-Bigmodel-Authorization: <coding token>`、`Bigmodel-Target-Type: PERSONAL`——**只查询，绝不兑换**。响应 `data.available_five_hour_resets` / `data.available_week_resets` 逐卡保留全部（不照搬参考实现的 6 张截断），过期卡（expires_at+60s 早于当前）剔除，无过期时间的卡标 `no_expiry_reported` 不臆测；reset_cards 指标结构与 Codex 一致（available_count/cards/details_state/next_known_expiry）。额度另试 `open.bigmodel.cn/api/monitor/usage/quota/limit` Bearer coding token，失败只标 `zcode_desktop_quota_unavailable`，不影响卡。
+
+collector 路由：网页会话优先读额度，桌面登录补卡（`diagnostics.cards_transport=zcode_desktop_login`）；无网页会话时桌面路线独立成卡；两者皆无 → `zcode_credential_not_connected`。错误码：`zcode_desktop_not_installed` / `zcode_desktop_credentials_unreadable` / `zcode_desktop_node_missing` / `zcode_reset_api_error` / `unsupported_zcode_reset_contract`。本机验收（2026-11-08）：3 张周重置卡可用、最近到期 2026-12-22，额度 2 行可读。
+
+## 即梦 CLI 路由（dreamina 与 dreamina-canvas）
+
+`enable_dreamina_cli` 打开时按顺序选择传输：旧 `dreamina user_credit`（配置键 `dreamina_binary`，返回积分）优先；旧 CLI 不存在时回退 `dreamina-canvas auth account --format json --non-interactive`（配置键 `dreamina_canvas_binary`，默认探测 PATH 与 `~/.local/bin`）。canvas 契约（本机实测 schemaVersion=1）：`{ok:true,data:{userId,isVip,vipLevel}}`——**画布 CLI 不提供积分查询**，credits 标 `not_provided`（reason `dreamina_canvas_cli_no_credit_query`），由网页 observations 经 `merge_dreamina` 补齐；VIP 等级进 subscription。未登录 → `dreamina_not_authenticated`；两个 CLI 都不存在 → `dreamina_cli_not_available`。默认仍关闭 CLI 路由，网页采集不受影响。
+
 ## 会话活动（GET /v1/activity，schema 1）
 
 `agent_meter/activity.py` 提供一个**独立于全量快照的轻量活动视图**：只扫最近窗口（`activity_window_hours`，默认 24 小时），按会话/线程聚合，绝不触发完整账户采集与全历史解析；文件源先按 mtime 预过滤（窗口外文件不解压不解析），解析结果进独立的 4 MB 小缓存（不挤占 token 账本的 16 MB 共享缓存）。服务端 `SnapshotService.activity()` 额外做 3 秒 TTL 防抖（配置变更即失效重算），菜单栏活动页按 5 秒（页签可见）/15 秒（后台有进行中）/120 秒（空闲）轮询该端点。**只读 usage、status 与路径元数据；绝不读提示词、对话正文、工具输出与会话标题**。费用按 USD 价格表逐模型匹配估算（`estimated_cost_usd`，无匹配模型的行留空——未计价 ≠ 0）。

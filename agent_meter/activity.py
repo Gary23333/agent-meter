@@ -741,11 +741,13 @@ def gemini_activities(gemini_dir, window_start, idle_seconds, now):
 # OpenCode: message db grouped by session; directory from the session table.
 
 
-def opencode_activities(db_path, window_start, idle_seconds, now):
-    with opencode_tokens.readonly_database(db_path) as conn:
+def opencode_activities(db_path, window_start, idle_seconds, now, *, app="opencode",
+                        schema_code="unsupported_opencode_schema",
+                        missing_code="opencode_db_not_found", read_code="opencode_db_read_failed"):
+    with opencode_tokens.readonly_database(db_path, missing_code=missing_code, read_code=read_code) as conn:
         columns = {r[1] for r in conn.execute("PRAGMA table_info(message)")}
         if not {"time_created", "data", "session_id"} <= columns:
-            raise SourceError("unsupported_opencode_schema")
+            raise SourceError(schema_code)
         directories = {}
         if {"id", "directory"} <= {r[1] for r in conn.execute("PRAGMA table_info(session)")}:
             directories = {r[0]: r[1] for r in conn.execute("SELECT id, directory FROM session")
@@ -776,12 +778,52 @@ def opencode_activities(db_path, window_start, idle_seconds, now):
     for session_id, state in sorted(sessions.items()):
         status, basis = _recency_status(state["last"], now, idle_seconds)
         out.append(_activity(
-            "opencode", "recent_activity", status=status, status_basis=basis,
+            app, "recent_activity", status=status, status_basis=basis,
             session_id=session_id, project_path=directories.get(session_id),
             started_at=state["started"], last_event_at=state["last"],
             last_model=max(state["models"], key=state["models"].get),
             requests=state["requests"], tokens=_tokens_dict(**state["tokens"]),
             notes=NOTE_RECENCY_ONLY, extra={"_costs": state["costs"]}))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Old Kimi CLI: pre-migration wire.jsonl ledgers (stopped 2026-06-17). No cwd
+# or model fields exist in this format; sessions are identified by directory.
+
+
+def kimi_legacy_activities(root, window_start, idle_seconds, now):
+    from . import kimi_legacy_tokens
+    root = Path(root)
+    if not root.is_dir():
+        raise SourceError("kimi_legacy_sessions_not_found")
+    out = []
+    for path in sorted(root.glob("**/wire.jsonl")):
+        try:
+            if path.stat().st_mtime < window_start:
+                continue
+            records, _ = kimi_legacy_tokens._parse_file(path)
+        except OSError:
+            continue
+        rows = [r for r in records if window_start <= r[0] <= now]
+        if not rows:
+            continue
+        tokens = dict.fromkeys(TOKEN_KEYS, 0)
+        costs = {}
+        for t, fresh, output, read, write, _key in rows:
+            tokens["fresh_input"] += fresh
+            tokens["output"] += output
+            tokens["cache_read"] += read
+            tokens["cache_write"] += write
+            _cost_record(costs, "unknown", t, fresh, output, 0, read, write)
+        times = [r[0] for r in rows]
+        status, basis = _recency_status(max(times), now, idle_seconds)
+        out.append(_activity(
+            "kimi_legacy", "recent_activity", status=status, status_basis=basis,
+            session_id=path.parent.name, project_path=None,
+            started_at=min(times), last_event_at=max(times), last_model="unknown",
+            requests=len(rows), tokens=_tokens_dict(**tokens),
+            notes=NOTE_RECENCY_ONLY, extra={"_costs": costs}))
     return out
 
 
@@ -835,6 +877,14 @@ def collect_activity(config, now=None, table=None):
                                              config.get("claude_desktop_sessions_dir")))
     run("gemini", lambda: gemini_activities(config["gemini_dir"], window_start, idle_seconds, now))
     run("opencode", lambda: opencode_activities(config["opencode_db"], window_start, idle_seconds, now))
+    run("mimo_code", lambda: opencode_activities(config["mimocode_db"], window_start, idle_seconds, now,
+                                                 app="mimo_code", schema_code="unsupported_mimocode_schema",
+                                                 missing_code="mimocode_db_not_found", read_code="mimocode_db_read_failed"))
+    run("deveco", lambda: opencode_activities(config["deveco_db"], window_start, idle_seconds, now,
+                                              app="deveco", schema_code="unsupported_deveco_schema",
+                                              missing_code="deveco_db_not_found", read_code="deveco_db_read_failed"))
+    run("kimi_legacy", lambda: kimi_legacy_activities(config["kimi_legacy_sessions_dir"],
+                                                      window_start, idle_seconds, now))
 
     activities, sources_meta = [], {}
     for name, rows, meta in entries:

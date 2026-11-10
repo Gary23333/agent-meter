@@ -163,7 +163,7 @@ def reference_opencode(conn,start,end,zone):
     for created,role,inp,out,reasoning,read,write,total in conn.execute(
             "SELECT time_created,json_extract(data,'$.role'),json_extract(data,'$.tokens.input'),"
             "json_extract(data,'$.tokens.output'),json_extract(data,'$.tokens.reasoning'),"
-            "json_extract(data,'$.tokens.cache.read'),json_extract(data,'$.tokens.cache.write'),json_extract(data,'$.tokens.total') FROM message"):
+            "json_extract(data,'$.tokens.cache.read'),json_extract(data,'$.tokens.cache.write'),json_extract(data,'$.tokens.total') FROM message WHERE json_valid(data)"):
         if role!="assistant" or any(type(v) is not int or v<0 for v in (inp,out,reasoning,read,write)):continue
         if reasoning<=out and total==inp+out+read+write:out-=reasoning
         seconds=created/1000
@@ -607,6 +607,45 @@ def verify_snapshot(snapshot,config,native_reference=None):
                     for field,ref_value in ref.items():
                         check("kimi_desktop."+period+".model."+model+"."+field,group.get(field)==ref_value,
                               {"backend":group.get(field),"reference":ref_value})
+    kl=next((s for s in snapshot["sources"] if s["id"]=="kimi_legacy" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
+    if kl and "kimi_legacy_sessions_dir" in config:
+        from .kimi_legacy_tokens import load_records as load_legacy_records
+        try:
+            legacy_records,_=load_legacy_records(config["kimi_legacy_sessions_dir"])
+        except Exception:
+            legacy_records=None
+            checks.append({"name":"kimi_legacy_local.reload","status":"fail","detail":"reference reload failed"})
+        if legacy_records is not None:
+            for period in ("today","7d","30d","all"):
+                value=kl["metrics"]["tokens"]["value"]["periods"][period]
+                totals,models=reference_kimi_period(legacy_records,*period_bounds(now,period,zone))
+                for field,ref in totals.items():
+                    check("kimi_legacy."+period+"."+field,value["totals"][field]==ref,
+                          {"backend":value["totals"][field],"reference":ref})
+                backend={g["model"]:g for g in value["groups"]}
+                check("kimi_legacy."+period+".models",set(backend)==set(models),
+                      {"backend":sorted(backend),"reference":sorted(models)})
+                for model,ref in models.items():
+                    group=backend.get(model) or {}
+                    for field,ref_value in ref.items():
+                        check("kimi_legacy."+period+".model."+model+"."+field,group.get(field)==ref_value,
+                              {"backend":group.get(field),"reference":ref_value})
+    # Calendar-report invariant: per-day model rows must sum to the same
+    # numbers as the day buckets (both come from one pass over the records).
+    for src in snapshot["sources"]:
+        tokens=src.get("metrics",{}).get("tokens") or {}
+        value=tokens.get("value") if isinstance(tokens.get("value"),dict) else None
+        if tokens.get("status") not in {"available","partial"} or not value:
+            continue
+        buckets=value.get("daily_buckets"); dm=value.get("daily_models")
+        if not isinstance(buckets,list) or not isinstance(dm,list):
+            continue
+        ref={}
+        for row in dm:
+            ref[row["date"]]=ref.get(row["date"],0)+row.get("total_tokens",0)
+        backend={b["date"]:b["tokens"] for b in buckets}
+        check(src["id"]+".daily_models.match_buckets",ref==backend,
+              None if ref==backend else {"daily_models":ref,"daily_buckets":backend})
     oc=next((s for s in snapshot["sources"] if s["id"]=="opencode" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
     if oc:
         from .opencode_tokens import readonly_database as opencode_database
@@ -616,6 +655,23 @@ def verify_snapshot(snapshot,config,native_reference=None):
                 reference=reference_opencode(conn,*period_bounds(now,period,zone),zone)
                 for field,value in reference.items():
                     check("opencode."+period+"."+field,actual[field]==value,{"backend":actual[field],"reference":value})
+    # MiMo Code / DevECo: independent opencode-isomorphic ledgers, recomputed
+    # with the same SQL reference but never merged with the opencode source.
+    for sid,config_key,missing_code,read_code in (
+            ("mimo_code","mimocode_db","mimocode_db_not_found","mimocode_db_read_failed"),
+            ("deveco","deveco_db","deveco_db_not_found","deveco_db_read_failed")):
+        mc=next((s for s in snapshot["sources"] if s["id"]==sid and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)
+        if mc and config_key in config:
+            from .opencode_tokens import readonly_database as family_database
+            try:
+                with family_database(config[config_key],missing_code=missing_code,read_code=read_code) as conn:
+                    for period in ("today","7d","30d","all"):
+                        actual=mc["metrics"]["tokens"]["value"]["periods"][period]["totals"]
+                        reference=reference_opencode(conn,*period_bounds(now,period,zone),zone)
+                        for field,value in reference.items():
+                            check(sid+"."+period+"."+field,actual[field]==value,{"backend":actual[field],"reference":value})
+            except SourceError as e:
+                check(sid+".reference_readable",False,{"reason":e.code})
     # MiniMax Design agent tokens (attached to its account source): the
     # copied-session exclusion and the totals are recomputed independently.
     md=next((s for s in snapshot["sources"] if s["id"]=="minimax_design" and s["metrics"]["tokens"]["status"] in {"available","partial"}),None)

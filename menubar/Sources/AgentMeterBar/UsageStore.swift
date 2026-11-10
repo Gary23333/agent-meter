@@ -45,6 +45,8 @@ final class UsageStore {
     static let shared = UsageStore()
 
     var snapshot: Snapshot?
+    /// Latest GET /v1/budget payload; refreshed on the snapshot cadence.
+    var budget: BudgetStatus?
     /// Login slots whose short-lived token is being renewed in a hidden window.
     var renewingSlots: Set<String> = []
     var phase: Phase = .idle
@@ -71,13 +73,33 @@ final class UsageStore {
     var claudeEnabled: Bool {
         didSet {
             UserDefaults.standard.set(claudeEnabled, forKey: "claudeEnabled")
-            Task { await pushPreferences(); await fetch(force: true) }
+            Task {
+                // Startup skips disabled sources; turning one back on loads
+                // its slots now (still without a Keychain prompt).
+                if claudeEnabled { await reloadStoredSessions() }
+                await pushPreferences()
+                await fetch(force: true)
+            }
         }
     }
     /// Third-party global-reset polling can be switched off.
     var forecastEnabled: Bool {
         didSet {
             UserDefaults.standard.set(forecastEnabled, forKey: "forecastEnabled")
+            Task { await pushPreferences(); await fetch(force: true) }
+        }
+    }
+    /// Low-resource mode (E4): the backend triples its snapshot cache TTL and
+    /// skips the ledgers listed in `skipLedgersLowResource`.
+    var lowResourceMode: Bool {
+        didSet {
+            UserDefaults.standard.set(lowResourceMode, forKey: "lowResourceMode")
+            Task { await pushPreferences(); await fetch(force: true) }
+        }
+    }
+    var skipLedgersLowResource: [String] {
+        didSet {
+            UserDefaults.standard.set(skipLedgersLowResource, forKey: "skipLedgersLowResource")
             Task { await pushPreferences(); await fetch(force: true) }
         }
     }
@@ -107,6 +129,8 @@ final class UsageStore {
         claudeEnabled = d.object(forKey: "claudeEnabled") as? Bool ?? true
         forecastEnabled = d.object(forKey: "forecastEnabled") as? Bool ?? true
         lowQuotaThreshold = d.object(forKey: "lowQuotaThreshold") as? Double ?? 20
+        lowResourceMode = d.object(forKey: "lowResourceMode") as? Bool ?? false
+        skipLedgersLowResource = d.stringArray(forKey: "skipLedgersLowResource") ?? []
     }
 
     var projectDirectory: URL? { client?.project }
@@ -141,14 +165,10 @@ final class UsageStore {
                 try? await Task.sleep(for: .seconds(6 * 60 * 60))
             }
         })
-        // Saved website logins load in the background; a Keychain prompt
-        // (e.g. after a rebuild) then delays only those sources.
-        let stored = await ConnectionManager.shared.storedSessions()
-        if !stored.isEmpty {
-            sessions = stored
-            await pushSessions()
-            await fetch(force: true)
-        }
+        // Saved website logins load in the background, without any Keychain
+        // prompt: only enabled sources are read non-interactively; slots that
+        // need authorization wait for an explicit user connect action.
+        await reloadStoredSessions()
         await observeDreamina()
         loops.append(Task { [weak self] in
             while !Task.isCancelled {
@@ -247,6 +267,7 @@ final class UsageStore {
                 lastFetched = Date()
                 errorMessage = nil
                 Notifier.shared.evaluate(result, store: self, now: Date())
+                await refreshBudget()
                 TokenRenewer.shared.consider(result)
             } catch {
                 errorMessage = error.localizedDescription
@@ -258,6 +279,64 @@ final class UsageStore {
         fetchTask = task
         await task.value
         fetchTask = nil
+    }
+
+    /// Budget follows the snapshot cadence. The backend reuses its current
+    /// snapshot (no extra collection); events dedup through the Notifier's
+    /// fired set, so recovery back-fills never re-notify the same day/week.
+    private func refreshBudget() async {
+        guard let client else { return }
+        do {
+            let status = BudgetStatus(try await client.getBudget())
+            budget = status
+            Notifier.shared.evaluateBudget(status, store: self, now: Date())
+        } catch {
+            NSLog("AgentMeterBar budget fetch: %@", String(describing: error))
+        }
+    }
+
+    /// Settings window save: PUT the config, then re-read the computed state.
+    func saveBudget(daily: String?, weekly: String?, multiplier: String) async throws {
+        guard let client else { throw BackendError.unreachable }
+        _ = try await client.putBudget(daily: daily, weekly: weekly, multiplier: multiplier)
+        await refreshBudget()
+    }
+
+    // MARK: - E2/E3/E4 projections
+
+    var projects: ProjectsFeed?
+    var weekReport: PeriodReport?
+    var monthReport: PeriodReport?
+    var statusFeed: StatusFeed?
+    @ObservationIgnored private var projectsAt = Date.distantPast
+    @ObservationIgnored private var reportAt: [String: Date] = [:]
+    @ObservationIgnored private var statusAt = Date.distantPast
+
+    func loadProjects(force: Bool = false) async {
+        guard let client else { return }
+        if !force && Date().timeIntervalSince(projectsAt) < 120 { return }
+        projectsAt = Date()
+        do { projects = ProjectsFeed(try await client.getProjects()) }
+        catch { NSLog("AgentMeterBar projects fetch: %@", String(describing: error)) }
+    }
+
+    func loadReport(kind: String, force: Bool = false) async {
+        guard let client else { return }
+        let last = reportAt[kind] ?? .distantPast
+        if !force && Date().timeIntervalSince(last) < 60 { return }
+        reportAt[kind] = Date()
+        do {
+            let report = PeriodReport(try await client.getPeriods(kind: kind))
+            if kind == "week" { weekReport = report } else { monthReport = report }
+        } catch { NSLog("AgentMeterBar periods fetch: %@", String(describing: error)) }
+    }
+
+    func loadStatus(force: Bool = false) async {
+        guard let client else { return }
+        if !force && Date().timeIntervalSince(statusAt) < 30 { return }
+        statusAt = Date()
+        do { statusFeed = StatusFeed(try await client.getStatus()) }
+        catch { NSLog("AgentMeterBar status fetch: %@", String(describing: error)) }
     }
 
     private func updateTickerDeltas(_ snapshot: Snapshot) {
@@ -299,7 +378,8 @@ final class UsageStore {
         var off: [String] = []
         if !claudeEnabled { off.append("claude") }
         if !forecastEnabled { off.append("reset_forecast") }
-        do { try await client.putPreferences(disabled: off) }
+        do { try await client.putPreferences(disabled: off, lowResource: lowResourceMode,
+                                             skipLedgers: skipLedgersLowResource) }
         catch { NSLog("AgentMeterBar preferences push: %@", String(describing: error)) }
     }
 
@@ -317,6 +397,17 @@ final class UsageStore {
         } catch {
             NSLog("AgentMeterBar observation push: %@", String(describing: error))
         }
+    }
+
+    /// Merges the non-interactively readable sessions of enabled sources into
+    /// memory and hands them to the backend. Never prompts; failed slots are
+    /// logged by ConnectionManager and left for an explicit connect action.
+    private func reloadStoredSessions() async {
+        let stored = await ConnectionManager.shared.storedSessions()
+        guard !stored.isEmpty else { return }
+        sessions.merge(stored) { _, new in new }
+        await pushSessions()
+        await fetch(force: true)
     }
 
     func cacheSession(_ id: String, _ session: [String: String]?) {

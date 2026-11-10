@@ -13,6 +13,7 @@ KNOWN = {
     "Cherry Studio": "cherry", "LM Studio": "lmstudio",
     "Cursor": "cursor", "Windsurf": "windsurf",
     "Gemini": "gemini", "OpenCode": "opencode", "Antigravity": "antigravity",
+    "MiMo Code": "mimo_code", "DevECo": "deveco",
 }
 
 

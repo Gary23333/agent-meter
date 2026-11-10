@@ -15,16 +15,17 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import peak
+from . import daily as daily_mod
 from .model import SourceError, metric, period_bounds, source, timestamp
 
 COLUMNS = {"time_created", "data"}
 
 
 @contextmanager
-def readonly_database(path):
+def readonly_database(path, *, missing_code="opencode_db_not_found", read_code="opencode_db_read_failed"):
     path = Path(path).expanduser()
     if not path.is_file():
-        raise SourceError("opencode_db_not_found")
+        raise SourceError(missing_code)
     conn = None
     try:
         conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
@@ -33,17 +34,17 @@ def readonly_database(path):
         conn.execute("BEGIN")
         yield conn
     except sqlite3.Error:
-        raise SourceError("opencode_db_read_failed") from None
+        raise SourceError(read_code) from None
     finally:
         if conn is not None:
             conn.rollback()
             conn.close()
 
 
-def validate_schema(conn):
+def validate_schema(conn, *, schema_code="unsupported_opencode_schema"):
     columns = {r[1] for r in conn.execute("PRAGMA table_info(message)")}
     if not COLUMNS <= columns:
-        raise SourceError("unsupported_opencode_schema")
+        raise SourceError(schema_code)
 
 
 def _close(bucket_values):
@@ -52,7 +53,7 @@ def _close(bucket_values):
     return bucket_values
 
 
-def summarize(rows, start, end):
+def summarize(rows, start, end, *, app="opencode"):
     """rows are (day, ts_ms, model, fresh, output, reasoning, read, write)."""
     out = {"requests": 0, "fresh_input": 0, "output": 0, "reasoning": 0, "cache_read": 0, "cache_write": 0}
     split = {"peak": peak.bucket(), "offpeak": peak.bucket()}
@@ -81,7 +82,7 @@ def summarize(rows, start, end):
     out["cache_hit_rate"] = out["cache_read"] / denominator if denominator else None
     return {"start": timestamp(start) if start is not None else None, "end": timestamp(end),
             "totals": out,
-            "groups": [{"app": "opencode", "model": m, **v,
+            "groups": [{"app": app, "model": m, **v,
                         "total_tokens": sum(v[k] for k in ("fresh_input", "output", "reasoning", "cache_read", "cache_write")),
                         "peak": _close(model_splits[m]["peak"]),
                         "offpeak": _close(model_splits[m]["offpeak"])}
@@ -117,9 +118,14 @@ def _tokens(data, *, include_agent=False):
     return (model, *values)
 
 
-def collect_opencode_tokens(path, now, zone=ZoneInfo("Asia/Shanghai")):
-    with readonly_database(path) as conn:
-        validate_schema(conn)
+def collect_message_db_tokens(path, now, *, source_id, app, coverage,
+                              missing_code="opencode_db_not_found",
+                              read_code="opencode_db_read_failed",
+                              schema_code="unsupported_opencode_schema",
+                              zone=ZoneInfo("Asia/Shanghai")):
+    """Shared reader for opencode-family message databases (one row per response)."""
+    with readonly_database(path, missing_code=missing_code, read_code=read_code) as conn:
+        validate_schema(conn, schema_code=schema_code)
         rows = []
         malformed = 0
         for time_created, data in conn.execute("SELECT time_created, data FROM message WHERE time_created <= ?", (now*1000,)):
@@ -130,19 +136,28 @@ def collect_opencode_tokens(path, now, zone=ZoneInfo("Asia/Shanghai")):
                 continue
             day = datetime.fromtimestamp(time_created / 1000, zone).date().isoformat()
             rows.append((day, time_created, *parsed))
-    periods = {p: summarize(rows, *period_bounds(now, p, zone)) for p in ("today", "7d", "30d", "all")}
+    periods = {p: summarize(rows, *period_bounds(now, p, zone), app=app) for p in ("today", "7d", "30d", "all")}
     for p in periods.values():
         p["timezone"] = str(zone)
     daily = {}
+    dm = {}
     for day, t, model, fresh, output, reasoning, cache_read, cache_write in rows:
         daily[day] = daily.get(day, 0) + fresh + output + reasoning + cache_read + cache_write
-    out = source("opencode", "local_session_history", now)
+        daily_mod.add(dm, day, model, {"fresh_input": fresh, "output": output, "reasoning": reasoning,
+                                       "cache_read": cache_read, "cache_write": cache_write})
+    out = source(source_id, "local_session_history", now)
     out["metrics"]["tokens"] = metric({
         "periods": periods,
         "peak_split": "request_timestamp",
         "daily_buckets": [{"date": d, "tokens": n} for d, n in sorted(daily.items())],
-        "coverage": "opencode_local_message_db",
+        "daily_models": daily_mod.rows(dm, app),
+        "coverage": coverage,
         "dedup_rule": "one_assistant_message_per_response",
         "malformed_token_rows": malformed,
     })
     return out
+
+
+def collect_opencode_tokens(path, now, zone=ZoneInfo("Asia/Shanghai")):
+    return collect_message_db_tokens(path, now, source_id="opencode", app="opencode",
+                                     coverage="opencode_local_message_db", zone=zone)

@@ -82,10 +82,36 @@ def make_server(service,token,port=8769):
                                     "sync":catalog_status(service.config["runtime_dir"]),
                                     "converted_patterns":sorted(table.converted)})
                 return
+            if route.path=="/v1/budget":
+                # Config + current snapshot only; never triggers a collection.
+                from .budget import budget_state
+                try:self.send_json(200,budget_state(service))
+                except Exception:self.send_json(500,{"error":"budget_failed"})
+                return
             if route.path=="/v1/activity":
                 # Lightweight recent-activity scan; independent of the full snapshot.
                 try:self.send_json(200,service.activity())
                 except Exception:self.send_json(500,{"error":"activity_failed"})
+                return
+            if route.path in {"/v1/projects","/v1/status","/v1/periods/week","/v1/periods/month"}:
+                # Projections of the cached snapshot; no new account collection.
+                try:
+                    import time as _time
+                    data=service.get()
+                    now=_time.time()
+                    if route.path=="/v1/projects":
+                        from .projects import project_usage
+                        self.send_json(200,project_usage(service.config,data))
+                    elif route.path=="/v1/status":
+                        from .status import collection_status
+                        self.send_json(200,collection_status(data,service.config,now))
+                    else:
+                        from .report_periods import compute_period_report
+                        from .prices import load_prices
+                        table=load_prices(service.config["runtime_dir"],"CNY")
+                        self.send_json(200,compute_period_report(data,table,now,route.path.rsplit("/",1)[-1]))
+                except Exception:
+                    self.send_json(500,{"error":"projection_failed"})
                 return
             if route.path not in {"/v1/snapshot","/v1/coverage","/v1/sources"}:
                 self.send_json(404,{"error":"not_found"});return
@@ -114,7 +140,7 @@ def make_server(service,token,port=8769):
         def do_PUT(self):
             # Website logins from the menu bar app: kept in memory, never echoed.
             if not self.authorized():return
-            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences","/v1/prices"}:self.send_json(404,{"error":"not_found"});return
+            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences","/v1/prices","/v1/budget"}:self.send_json(404,{"error":"not_found"});return
             if self.headers.get("Transfer-Encoding") or not (self.headers.get("Content-Type","").split(";")[0].strip()=="application/json"):
                 self.send_json(400,{"error":"json_body_required"});self.close_connection=True;return
             try:length=int(self.headers.get("Content-Length",""))
@@ -124,6 +150,12 @@ def make_server(service,token,port=8769):
             try:body=json.loads(self.rfile.read(length))
             except (ValueError,UnicodeDecodeError):
                 self.send_json(400,{"error":"invalid_json"});return
+            if self.path=="/v1/budget":
+                from .budget import save_budget
+                try:saved=save_budget(service.config["runtime_dir"],body)
+                except ValueError:
+                    self.send_json(400,{"error":"invalid_budget"});return
+                self.send_json(200,saved);return
             if self.path=="/v1/preferences":
                 off=body.get("disabled_sources") if isinstance(body,dict) and set(body)<={"disabled_sources"} else None
                 if not isinstance(off,list) or any(x not in TOGGLEABLE for x in off):

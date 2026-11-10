@@ -39,6 +39,18 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UserDefaults.standard.set(fired, forKey: firedKey)
     }
 
+    /// Budget / anomaly events share the quota alerts' fired-set dedup: the
+    /// backend event id embeds the calendar day (or the week's Monday), so a
+    /// back-fill after a collection outage is the same key and never re-fires.
+    func evaluateBudget(_ budget: BudgetStatus, store: UsageStore, now: Date) {
+        guard store.notificationsEnabled else { return }
+        for alert in budget.pendingAlerts(fired: fired) {
+            post(Alert(key: alert.key, title: alert.title, body: alert.body))
+            fired[alert.key] = now.timeIntervalSince1970
+        }
+        UserDefaults.standard.set(fired, forKey: firedKey)
+    }
+
     func sendTest() {
         post(Alert(key: "test-\(Date().timeIntervalSince1970)", title: "Agent 用量 · 测试通知",
                    body: "额度不足和到期提醒会以这种方式出现。"))
