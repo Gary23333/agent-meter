@@ -1,6 +1,6 @@
 # Agent 用量菜单栏应用共享知识
 
-2026-11-10 Qoder 每日积分接入完成：`agent_meter/qoder_campaign.py` + `helpers/qoder_auth.mjs`（桌面 `auth.v1.dat` 的 Chromium v10 信封，用 Qoder 自己的 Electron 运行时在内存解密），端点 `openapi.qoder.com.cn` 的 `/sash/api/v1/me/campaigns` 与 `.../claim`；**必须带 `Cosy-ClientType: 10` 否则活动列表为空**，领取响应是扁平结构、成功看 HTTP 状态。每日 10:00（北京时间）发布活动、领取后 30 天有效。macOS 读钥匙串会弹一次授权框（`Qoder CN App Safe Storage`）。见[复勘记录](../research/qoder-campaigns-recon-2026-11-10.md)。
+2026-11-10 发布 v0.10.3：Qoder 每日积分接入完成，`agent_meter/qoder_campaign.py` + `helpers/qoder_auth.mjs`（桌面 `auth.v1.dat` 的 Chromium v10 信封，用 Qoder 自己的 Electron 运行时在内存解密），端点 `openapi.qoder.com.cn` 的 `/sash/api/v1/me/campaigns` 与 `.../claim`；**必须带 `Cosy-ClientType: 10` 否则活动列表为空**，领取响应是扁平结构、成功看 HTTP 状态。每日 10:00（北京时间）发布活动、领取后 30 天有效。macOS 读钥匙串会弹一次授权框（`Qoder CN App Safe Storage`）。见[复勘记录](../research/qoder-campaigns-recon-2026-11-10.md)。
 
 2026-11-10 发布 v0.10.2：合入积分签到与集卡（`agent_meter/rewards.py` + `collection.py`，研究边界见[签到与集卡研究](../research/checkin-automation-and-collection-2026-11-09.md)）。**项目不再 100% 只读**：自动领取是可选写操作（默认关、按平台开关），README/SECURITY 已改口径；`PUT /v1/preferences` 统一为五键契约（顺带修复省资源键此前被服务端 400 的存量缺口）。回归 Python 637 / Swift 74 / verify 3,209 全过。
 
