@@ -1,0 +1,110 @@
+{
+ "format": "agentmeter-pet/1",
+ "id": "bit",
+ "name": "比特",
+ "name_en": "Bit",
+ "version": "1.0.0",
+ "author": "you",
+ "license": "CC0-1.0",
+ "description": "16 色像素宠物：手绘感的 32×32 精灵图，演示精灵图渲染器与生图流水线产物的形态（本包的帧由脚本绘制，不是模型生成）。",
+ "renderer": "sprite",
+ "stage": {
+  "width": 240,
+  "height": 260,
+  "ground": 0.93
+ },
+ "sprite": {
+  "frame": {
+   "width": 32,
+   "height": 32
+  },
+  "pivot": {
+   "x": 0.5,
+   "y": 1.0
+  },
+  "pixelated": true,
+  "motion": true,
+  "anchors": {
+   "head": {
+    "x": 0.5,
+    "y": 0.3
+   },
+   "body": {
+    "x": 0.5,
+    "y": 0.62
+   },
+   "prop": {
+    "x": 0.7,
+    "y": 0.8
+   }
+  },
+  "states": {
+   "idle": {
+    "image": "sprites/idle.png",
+    "frames": 2,
+    "fps": 4
+   },
+   "working": {
+    "image": "sprites/working.png",
+    "frames": 4,
+    "fps": 8
+   },
+   "tired": {
+    "image": "sprites/tired.png",
+    "frames": 2,
+    "fps": 3
+   },
+   "alarm": {
+    "image": "sprites/alarm.png",
+    "frames": 2,
+    "fps": 8
+   },
+   "sleeping": {
+    "image": "sprites/sleeping.png",
+    "frames": 2,
+    "fps": 2
+   },
+   "celebrate": {
+    "image": "sprites/celebrate.png",
+    "frames": 4,
+    "fps": 8
+   },
+   "offline": {
+    "image": "sprites/offline.png",
+    "frames": 2,
+    "fps": 2
+   },
+   "waiting": {
+    "image": "sprites/waiting.png",
+    "frames": 2,
+    "fps": 4
+   }
+  }
+ },
+ "voice": {
+  "idle": [
+   "滴滴～",
+   "像素也有心事。",
+   "戳我一下？"
+  ],
+  "working": [
+   "敲代码中，像素飞舞。"
+  ],
+  "tired": [
+   "像素……变暗了……"
+  ],
+  "alarm": [
+   "红色警报！！"
+  ],
+  "celebrate": [
+   "撒像素！",
+   "满血复活！"
+  ],
+  "sleeping": [
+   "Zzz……"
+  ],
+  "offline": [
+   "信号丢失……"
+  ]
+ }
+}

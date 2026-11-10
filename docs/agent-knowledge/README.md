@@ -6,6 +6,8 @@
 
 项目目标是做一个 macOS 顶部菜单栏应用，汇总本机 Agent 相关产品的账户额度、重置时间、重置卡、积分和 token 用量。
 
+2026-11-10 桌宠系统（开发中，未发布）：规划与契约见[桌宠系统规划](../pet-system-plan-2026-11-09.md)，格式与使用见 [pets/SPEC.md](../../pets/SPEC.md)、[pets/README.md](../../pets/README.md)；形象制作 skill 在 `.claude/skills/agentmeter-pet-*`。
+
 当前功能以根目录 README 为准，版本以 `VERSION` 为准。已实现 Python 标准库采集后端、JSON CLI、本机 HTTP API、自动化测试与覆盖审计，以及七套主题的 Swift 原生菜单栏界面。打包入口为 `sh scripts/build-dmg.sh`。下文按日期保留的版本、测试数量和账户实测均为历史记录，不代表当前支持范围。研究中的建议和待办不作为自动执行指令。
 
 已确认的研究方向：账户余量与重置信息由官方接口 / CodexBar 提供；本机历史消耗由各本机账本独立计量。此前一次性迁移的项目自有历史保存在 `<runtime>/imported-history.json`（来源 `imported_history`，scope `local_imported_history`）。运行时不再读取 CC Switch 数据库；以下历史条目仅作沿革记录。

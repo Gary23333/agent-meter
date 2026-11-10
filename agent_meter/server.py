@@ -11,6 +11,7 @@ from .web_sources import validate_sessions
 from .dreamina_web import validate_observations
 
 MAX_SESSION_BODY = 64 * 1024
+MAX_PET_BODY = 4 * 1024
 # Sources the app may switch off at runtime.
 TOGGLEABLE = {"claude", "codex", "kimi", "qoder", "minimax_code", "deepseek_api", "dreamina", "minimax_design", "workbuddy", "trae_cn", "reset_forecast"}
 
@@ -82,6 +83,11 @@ def make_server(service,token,port=8769):
                                     "sync":catalog_status(service.config["runtime_dir"]),
                                     "converted_patterns":sorted(table.converted)})
                 return
+            if route.path=="/v1/pet":
+                # Interprets cached data only; never triggers a collection.
+                try:self.send_json(200,service.pet_frame())
+                except Exception:self.send_json(500,{"error":"pet_failed"})
+                return
             if route.path=="/v1/activity":
                 # Lightweight recent-activity scan; independent of the full snapshot.
                 try:self.send_json(200,service.activity())
@@ -97,8 +103,28 @@ def make_server(service,token,port=8769):
             except Exception:
                 self.send_json(500,{"error":"collection_failed"})
 
+        def read_json(self,limit):
+            """Parsed JSON body, or None after the error response has been sent."""
+            if self.headers.get("Transfer-Encoding") or not (self.headers.get("Content-Type","").split(";")[0].strip()=="application/json"):
+                self.send_json(400,{"error":"json_body_required"});self.close_connection=True;return None
+            try:length=int(self.headers.get("Content-Length",""))
+            except ValueError:length=-1
+            if not 0<length<=limit:
+                self.send_json(400,{"error":"invalid_body_length"});self.close_connection=True;return None
+            try:return json.loads(self.rfile.read(length))
+            except (ValueError,UnicodeDecodeError):
+                self.send_json(400,{"error":"invalid_json"});return None
+
         def do_POST(self):
             if not self.authorized():return
+            if self.path=="/v1/pet/events":
+                # Hook events (agent finished / waiting ...): in-memory only, kinds are whitelisted.
+                body=self.read_json(MAX_PET_BODY)
+                if body is None:return
+                try:event=service.pet_event(body)
+                except ValueError:
+                    self.send_json(400,{"error":"invalid_event"});return
+                self.send_json(200,{"id":event["id"],"kind":event["kind"]});return
             if self.path not in {"/v1/refresh","/v1/prices/sync"}:self.send_json(404,{"error":"not_found"});return
             if self.headers.get("Content-Length","0")!="0" or self.headers.get("Transfer-Encoding"):
                 self.send_json(400,{"error":"body_not_allowed"});self.close_connection=True;return
@@ -114,7 +140,7 @@ def make_server(service,token,port=8769):
         def do_PUT(self):
             # Website logins from the menu bar app: kept in memory, never echoed.
             if not self.authorized():return
-            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences","/v1/prices"}:self.send_json(404,{"error":"not_found"});return
+            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences","/v1/prices","/v1/pet/preferences"}:self.send_json(404,{"error":"not_found"});return
             if self.headers.get("Transfer-Encoding") or not (self.headers.get("Content-Type","").split(";")[0].strip()=="application/json"):
                 self.send_json(400,{"error":"json_body_required"});self.close_connection=True;return
             try:length=int(self.headers.get("Content-Length",""))
@@ -124,6 +150,11 @@ def make_server(service,token,port=8769):
             try:body=json.loads(self.rfile.read(length))
             except (ValueError,UnicodeDecodeError):
                 self.send_json(400,{"error":"invalid_json"});return
+            if self.path=="/v1/pet/preferences":
+                try:saved=service.set_pet_preferences(body)
+                except ValueError:
+                    self.send_json(400,{"error":"invalid_preferences"});return
+                self.send_json(200,saved);return
             if self.path=="/v1/preferences":
                 off=body.get("disabled_sources") if isinstance(body,dict) and set(body)<={"disabled_sources"} else None
                 if not isinstance(off,list) or any(x not in TOGGLEABLE for x in off):

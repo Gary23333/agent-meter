@@ -192,6 +192,9 @@ final class ConnectionManager {
 
     /// Off the main thread: a Keychain prompt must not freeze the app.
     nonisolated func storedSessions() async -> [String: [String: String]] {
+        // Development builds are signed differently from the installed app, so reading its Keychain items would
+        // raise a password prompt; AGENT_METER_NO_KEYCHAIN=1 skips them (those sources then simply stay empty).
+        if ProcessInfo.processInfo.environment["AGENT_METER_NO_KEYCHAIN"] == "1" { return [:] }
         let ids = Set(WebProvider.all.map(\.id) + WebProvider.apiKeyProviders.map(\.id))
         return await Task.detached {
             var out: [String: [String: String]] = [:]

@@ -16,6 +16,7 @@ README → AGENTS（存在时）→ 对应模块说明 → 构建与测试脚本
 | [scripts/](scripts/) | 构建、验证与辅助脚本。 |
 | [docs/](docs/) | 说明、方案与验收资料。 |
 | [release/](release/) | 最新发布产物与发布入口。 |
+| [pets/](pets/README.md) | 桌宠：网页运行时、内置形象包、形象制作与校验工具（开发中）。面板里的「桌宠」标签页在 `menubar/Sources/AgentMeterBar/Pet*.swift`（`PetTabView` 界面、`PetStage` 舞台、`PetFeed` 共享轮询、`PetThumbnails` 缩略图、`PetStatus` / `PetCatalog` 文案）。 |
 
 ## 文件分工
 
@@ -27,4 +28,4 @@ README → AGENTS（存在时）→ 对应模块说明 → 构建与测试脚本
 
 ## 当前一级目录
 
-`agent_meter/`, `docs/`, `examples/`, `menubar/`, `release/`, `scripts/`, `tests/`
+`agent_meter/`, `docs/`, `examples/`, `menubar/`, `pets/`, `release/`, `scripts/`, `tests/`

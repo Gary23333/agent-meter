@@ -6,7 +6,9 @@ dist/
 *.egg-info/
 .DS_Store
 .build/
-.claude/
+# Local agent state stays private; the project's shared skills are source and are tracked.
+.claude/*
+!.claude/skills/
 .codex/
 # Local agent runtime state, per-machine scratch rather than project source.
 .video_agent/

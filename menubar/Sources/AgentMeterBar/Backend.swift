@@ -13,8 +13,8 @@ enum BackendError: LocalizedError {
         switch self {
         case .projectNotFound: return "找不到后端项目目录（需包含 agent_meter）。可设置环境变量 AGENT_METER_HOME。"
         case .tokenMissing: return "未找到 .runtime/api.token，后端可能尚未启动。"
-        case .unauthorized: return "本地 token 不匹配。8769 端口上可能是另一个后端实例。"
-        case .unreachable: return "无法连接本机后端 127.0.0.1:8769。"
+        case .unauthorized: return "本地 token 不匹配。\(BackendClient.port) 端口上可能是另一个后端实例。"
+        case .unreachable: return "无法连接本机后端 127.0.0.1:\(BackendClient.port)。"
         case .startFailed: return "后端启动失败，详见 .runtime/menubar-backend.log。"
         case .http(let code, let err): return "后端返回 \(code)\(err.map { "（\($0)）" } ?? "")。"
         case .invalidResponse: return "后端返回了无法解析的数据。"
@@ -23,10 +23,20 @@ enum BackendError: LocalizedError {
 }
 
 /// Talks to `python3 -m agent_meter serve`. No Origin header is sent, so the
-/// backend's browser rejection does not apply; Host is 127.0.0.1:8769.
+/// backend's browser rejection does not apply; Host is 127.0.0.1:<port>.
 struct BackendClient {
+    static let defaultPort = 8769
+    /// 8769, unless `AGENT_METER_PORT` says otherwise. That is for development only: it lets a build under test
+    /// run next to the installed app, which owns 8769 and its data.
+    static let port: Int = port(from: ProcessInfo.processInfo.environment)
+
+    static func port(from environment: [String: String]) -> Int {
+        if let raw = environment["AGENT_METER_PORT"], let value = Int(raw), (1024...65535).contains(value) { return value }
+        return defaultPort
+    }
+
     let project: URL
-    let base = URL(string: "http://127.0.0.1:8769")!
+    let base = URL(string: "http://127.0.0.1:\(BackendClient.port)")!
 
     private var tokenURL: URL { project.appendingPathComponent(".runtime/api.token") }
 
@@ -158,6 +168,35 @@ struct BackendClient {
         return ActivityFeed(json)
     }
 
+    /// The desktop pet's current frame (raw JSON, forwarded to the web view). Cheap: it only interprets
+    /// cached data and never triggers a collection.
+    func petFrame() async throws -> Data {
+        let r = try request("v1/pet", timeout: 10)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        if http.statusCode == 401 { throw BackendError.unauthorized }
+        guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
+        return data
+    }
+
+    /// Hook-style events for the pet (focus timer, price sync ...). In-memory on the backend, never persisted.
+    func petEvent(_ payload: [String: Any]) async throws {
+        var r = try request("v1/pet/events", method: "POST", timeout: 5)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (_, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
+    }
+
+    func putPetPreferences(_ preferences: [String: Any]) async throws {
+        var r = try request("v1/pet/preferences", method: "PUT", timeout: 5)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: preferences)
+        let (_, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
+    }
+
     func snapshot(force: Bool) async throws -> Snapshot {
         let r = try request(force ? "v1/refresh" : "v1/snapshot", method: force ? "POST" : "GET", timeout: 120)
         let data: Data, resp: URLResponse
@@ -236,13 +275,15 @@ final class BackendProcess {
         // A login shell picks up credentials exported in the user's profile
         // (MINIMAX_TOKEN_PLAN_KEY, DEEPSEEK_API_KEY); exec keeps the PID.
         p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        // A build on a development port does not start the Kimi helper: that belongs to the installed app.
+        let flags = BackendClient.port == BackendClient.defaultPort ? "--start-kimi-server" : "--port \(BackendClient.port)"
         if Self.bundledExecutable != nil,
            !FileManager.default.fileExists(atPath: project.appendingPathComponent("agent_meter/__init__.py").path) {
-            p.arguments = ["-lc", "export PATH=\"$AGENT_METER_PATH:$PATH\"; exec \"$AGENT_METER_BACKEND\" serve --start-kimi-server"]
+            p.arguments = ["-lc", "export PATH=\"$AGENT_METER_PATH:$PATH\"; exec \"$AGENT_METER_BACKEND\" serve \(flags)"]
             // The path is passed as data, so spaces and shell characters in an
             // installation directory cannot alter the command.
         } else {
-            p.arguments = ["-lc", "export PATH=\"$AGENT_METER_PATH:$PATH\"; exec python3 -m agent_meter serve --start-kimi-server"]
+            p.arguments = ["-lc", "export PATH=\"$AGENT_METER_PATH:$PATH\"; exec python3 -m agent_meter serve \(flags)"]
         }
         p.currentDirectoryURL = project
         var env = ProcessInfo.processInfo.environment

@@ -1,0 +1,72 @@
+{
+ "format": "agentmeter-pet/1",
+ "id": "tibo",
+ "name": "Tibo",
+ "name_en": "Tibo",
+ "version": "1.0.0",
+ "author": "AgentMeter",
+ "license": "MIT",
+ "description": "App 里「重置预测」页那位 Q 版吉祥物的 3D 版（沿用同一套配色）：期待重置时会抱出重置器，真的重置了就按下红按钮。",
+ "renderer": "three",
+ "stage": {
+  "width": 240,
+  "height": 260,
+  "ground": 0.9
+ },
+ "three": {
+  "avatar": "avatar.json",
+  "camera": {
+   "fov": 28,
+   "position": [
+    0,
+    0.9,
+    5.3
+   ],
+   "target": [
+    0,
+    0.82,
+    0
+   ]
+  },
+  "lights": "soft"
+ },
+ "states": {
+  "excited": {
+   "show": [
+    "resetter"
+   ]
+  },
+  "celebrate": {
+   "show": [
+    "resetter"
+   ]
+  }
+ },
+ "voice": {
+  "idle": [
+   "重置什么时候来呢～",
+   "今天也盯着额度。"
+  ],
+  "working": [
+   "在干活，别催。",
+   "敲敲敲。"
+  ],
+  "excited": [
+   "听说要重置了！",
+   "重置器已就位！"
+  ],
+  "celebrate": [
+   "重置啦！！",
+   "按下去了！"
+  ],
+  "tired": [
+   "额度见底了……"
+  ],
+  "alarm": [
+   "红灯！红灯！"
+  ],
+  "sleeping": [
+   "（梦见额度满格）"
+  ]
+ }
+}

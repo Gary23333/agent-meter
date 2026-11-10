@@ -1,0 +1,72 @@
+{
+ "format": "agentmeter-pet/1",
+ "id": "cat",
+ "name": "缓存猫",
+ "name_en": "Cache Cat",
+ "version": "1.0.0",
+ "author": "AgentMeter",
+ "license": "MIT",
+ "description": "抱着小鱼（缓存命中）的橘猫：token 一多就开吃，尾巴会跟着心情摇；睡着时会蜷成一团。",
+ "renderer": "three",
+ "stage": {
+  "width": 240,
+  "height": 260,
+  "ground": 0.9
+ },
+ "three": {
+  "avatar": "avatar.json",
+  "camera": {
+   "fov": 28,
+   "position": [
+    0,
+    0.9,
+    5.3
+   ],
+   "target": [
+    0,
+    0.82,
+    0
+   ]
+  },
+  "lights": "soft"
+ },
+ "states": {
+  "eating": {
+   "show": [
+    "fish"
+   ]
+  }
+ },
+ "voice": {
+  "idle": [
+   "喵～",
+   "缓存命中率，我最关心。",
+   "摸摸我？"
+  ],
+  "working": [
+   "敲键盘比抓老鼠有趣。",
+   "喵喵，代码在跑。"
+  ],
+  "tired": [
+   "没力气抓鱼了……",
+   "喵呜……饿。"
+  ],
+  "alarm": [
+   "额度喵喵叫！！"
+  ],
+  "exhausted": [
+   "躺平，等重置，喵。"
+  ],
+  "eating": [
+   "吃 token 吃 token！",
+   "嚼嚼嚼～"
+  ],
+  "celebrate": [
+   "喵！满血！",
+   "撒花喵～"
+  ],
+  "sleeping": [
+   "呼噜呼噜……"
+  ]
+ }
+}

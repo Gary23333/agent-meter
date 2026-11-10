@@ -1,10 +1,85 @@
 import AppKit
 import SwiftUI
+import WebKit
 
-/// `AgentMeterBar --preview snapshot.json outDir` renders every tab in light
-/// and dark appearance to PNG, without contacting the backend.
+/// `AgentMeterBar --preview snapshot.json outDir [--tab <tab>] [--theme <style>]` renders every tab in light
+/// and dark appearance to PNG, without contacting the backend. `--tab` and `--theme` narrow the run.
 @MainActor
 enum PreviewRenderer {
+    private static var petStateApplied = false
+
+    private static func argument(_ name: String) -> String? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: name), args.count > i + 1 else { return nil }
+        return args[i + 1]
+    }
+
+    /// A believable moment for the 桌宠 tab: one Codex session running, a healthy quota, two recent hook events.
+    private static func previewPet() {
+        let now = Date().timeIntervalSince1970
+        var frame = PetController.demoFrame(state: "working")
+        frame["reasons"] = ["state=working", "activity.running=1", "energy=ok(82)"]
+        frame["today"] = ["known": true, "tokens": 128_400_000.0] as [String: Any]
+        frame["reminders"] = [["id": "demo-card", "kind": "reset_card", "text": "Codex 重置卡即将到期：2 张将于明天 16:53 到期", "tone": "warn",
+                               "priority": 70, "action": ["kind": "open_panel", "tab": "accounts"] as [String: Any]] as [String: Any]]
+        frame["events"] = [
+            ["id": "e1", "kind": "agent_done", "source": "claude", "text": "", "at": now - 140, "ttl": 30] as [String: Any],
+            ["id": "e2", "kind": "agent_started", "source": "codex", "text": "", "at": now - 20, "ttl": 1800] as [String: Any],
+        ]
+        PetFeed.shared.inject(frame)
+    }
+
+    /// The tab's page and the gallery thumbnails are drawn asynchronously; wait until both are in.
+    private static func waitForPet(theme: PanelTheme, scheme: String, deadline: Date = Date().addingTimeInterval(40), _ done: @escaping @MainActor () -> Void) {
+        let thumbnails = PetThumbnails.shared
+        let complete = PetStageHost.shared.ready && thumbnails.isComplete(for: PetResources.allPacks(), theme: theme.rawValue, scheme: scheme)
+        if complete, let state = argument("--pet-state"), !petStateApplied {
+            // `--pet-state alarm`: show that state on the stage, the way a click on its chip would.
+            petStateApplied = true
+            PetStageHost.shared.previewState(state)
+        }
+        if complete || Date() > deadline {
+            // Give the pet a moment to finish its first transitions before the picture is taken.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { MainActor.assumeIsolated { done() } }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                MainActor.assumeIsolated { waitForPet(theme: theme, scheme: scheme, deadline: deadline, done) }
+            }
+        }
+    }
+
+    private static func webViews(in view: NSView) -> [WKWebView] {
+        (view as? WKWebView).map { [$0] } ?? view.subviews.flatMap(webViews(in:))
+    }
+
+    /// A web view's pixels belong to the GPU process and are not part of `cacheDisplay`, so each one is
+    /// snapshotted separately and drawn over the bitmap at its place in the hierarchy.
+    private static func composite(_ host: NSView, into rep: NSBitmapImageRep, _ done: @escaping @MainActor () -> Void) {
+        let views = webViews(in: host).filter { !$0.isHidden && $0.window != nil && $0.bounds.width > 1 }
+        guard !views.isEmpty else { done(); return }
+        var remaining = views.count
+        for view in views {
+            let draw: @MainActor (NSImage?) -> Void = { image in
+                if let image, let context = NSGraphicsContext(bitmapImageRep: rep) {
+                    let frame = host.convert(view.bounds, from: view)
+                    let rect = host.isFlipped ? NSRect(x: frame.minX, y: rep.size.height - frame.maxY, width: frame.width, height: frame.height) : frame
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = context
+                    image.draw(in: rect)
+                    NSGraphicsContext.restoreGraphicsState()
+                }
+                remaining -= 1
+                if remaining == 0 { done() }
+            }
+            if view is PetWebView {
+                // The pet page draws on animation frames, which an off-screen window never gets: it paints itself on request.
+                PetStageHost.shared.capture { image in draw(image) }
+            } else {
+                view.takeSnapshot(with: nil) { image, _ in MainActor.assumeIsolated { draw(image) } }
+            }
+        }
+    }
+
     /// Representative activity rows covering every status and granularity.
     private static func previewActivity() {
         func ts(_ seconds: Double) -> JSON {
@@ -109,11 +184,13 @@ enum PreviewRenderer {
         store.preview(Snapshot(json))
         PanelView.expandForPreview = true
         previewActivity()
+        previewPet()
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+        let onlyTab = argument("--tab"), onlyTheme = argument("--theme")
 
         let snap = Snapshot(json)
         // Both presets and a no-cost variant, in every theme.
-        if let report = ReportData.build(snapshot: snap, period: .week, now: Date()) {
+        if onlyTab == nil, let report = ReportData.build(snapshot: snap, period: .week, now: Date()) {
             var hidden = ShareOptions.review
             hidden.costs = false
             for theme in PanelTheme.allCases {
@@ -129,13 +206,13 @@ enum PreviewRenderer {
 
         // Dry-run alert rules now and at later times so expiry rules are exercised.
         var report = ""
-        for days in [0.0, 10, 11.5, 13.2] {
+        for days in (onlyTab == nil ? [0.0, 10, 11.5, 13.2] : []) {
             let at = Date().addingTimeInterval(days * 86400)
             report += "== now + \(days) days\n"
             for a in Notifier.shared.alerts(snap, threshold: 20, now: at) { report += "[\(a.key)] \(a.title)：\(a.body)\n" }
         }
         try? report.write(toFile: outDir + "/alerts.txt", atomically: true, encoding: .utf8)
-        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+        for appearance in (onlyTab == nil ? [NSAppearance.Name.aqua, .darkAqua] : []) {
             let items = snap.tickerItems(now: Date())
             let strip = HStack(spacing: 18) { ForEach(items) { TickerCell(item: $0) } }
                 .padding(.horizontal, 8).frame(height: 24)
@@ -151,7 +228,7 @@ enum PreviewRenderer {
             }
         }
 
-        do {
+        if onlyTab == nil {
             let host = NSHostingView(rootView: ConnectionsView().environment(store)
                 .background(Color(nsColor: .windowBackgroundColor)))
             host.appearance = NSAppearance(named: .aqua)
@@ -188,8 +265,10 @@ enum PreviewRenderer {
 
         // Every theme; aurora keeps the original file names, others get a prefix.
         var jobs: [(PanelTheme, Tab, NSAppearance.Name)] = []
-        for theme in PanelTheme.allCases {
-            for tab in Tab.allCases { for a in [NSAppearance.Name.aqua, .darkAqua] { jobs.append((theme, tab, a)) } }
+        for theme in PanelTheme.allCases where onlyTheme == nil || theme.rawValue == onlyTheme {
+            for tab in Tab.allCases where onlyTab == nil || tab.rawValue == onlyTab {
+                for a in [NSAppearance.Name.aqua, .darkAqua] { jobs.append((theme, tab, a)) }
+            }
         }
         let savedTheme = store.theme
         let savedTab = UserDefaults.standard.object(forKey: "panelTab")
@@ -211,18 +290,29 @@ enum PreviewRenderer {
             host.frame.size = host.fittingSize
             window.setContentSize(host.fittingSize)
             window.orderFrontRegardless()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                host.layoutSubtreeIfNeeded()
-                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
-                    host.cacheDisplay(in: host.bounds, to: rep)
-                    let name = (theme == .aurora ? "" : theme.rawValue + "-") + "\(tab.rawValue)-\(appearance == .darkAqua ? "dark" : "light").png"
-                    try? rep.representation(using: .png, properties: [:])?
-                        .write(to: URL(fileURLWithPath: outDir).appendingPathComponent(name))
+            let dark = (theme.forcedScheme ?? (appearance == .darkAqua ? .dark : .light)) == .dark
+            DispatchQueue.main.asyncAfter(deadline: .now() + (tab == .pet ? 0.2 : 0.6)) {
+                MainActor.assumeIsolated {
+                    @MainActor func capture() {
+                        host.layoutSubtreeIfNeeded()
+                        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                            window.orderOut(nil)
+                            next()
+                            return
+                        }
+                        host.cacheDisplay(in: host.bounds, to: rep)
+                        composite(host, into: rep) {
+                            let name = (theme == .aurora ? "" : theme.rawValue + "-") + "\(tab.rawValue)-\(appearance == .darkAqua ? "dark" : "light").png"
+                            try? rep.representation(using: .png, properties: [:])?
+                                .write(to: URL(fileURLWithPath: outDir).appendingPathComponent(name))
+                            window.orderOut(nil)
+                            next()
+                        }
+                    }
+                    if tab == .pet { waitForPet(theme: theme, scheme: dark ? "dark" : "light", capture) } else { capture() }
                 }
-                window.orderOut(nil)
-                next()
             }
         }
-        renderReport { next() }
+        if onlyTab == nil { renderReport { next() } } else { next() }
     }
 }

@@ -19,6 +19,12 @@ cp "$bin" "$app/Contents/MacOS/AgentMeterBar"
 strip -S "$app/Contents/MacOS/AgentMeterBar"
 cp -R "$root/.runtime/build/backend/agent-meter-backend" "$app/Contents/Resources/backend"
 cp "$here/Resources/AppIcon.icns" "$app/Contents/Resources/"
+# Desktop pet: the web runtime and the built-in packs (data, images and the runtime's own scripts). The app serves
+# them to its web view through agentpet://; tests, the vendor build recipe and the dev package.json stay out.
+mkdir -p "$app/Contents/Resources/Pet"
+rsync -a --exclude 'test' --exclude 'package.json' --exclude '.DS_Store' \
+    --exclude 'vendor/build.sh' --exclude 'vendor/entry.js' "$root/pets/runtime" "$app/Contents/Resources/Pet/"
+rsync -a --exclude '.DS_Store' "$root/pets/presets" "$app/Contents/Resources/Pet/"
 cp "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/"
 cp "$root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 # Include the licenses for the redistributed Python runtime and bootloader.

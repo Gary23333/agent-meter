@@ -1,0 +1,65 @@
+{
+ "format": "agentmeter-pet/1",
+ "id": "gauge",
+ "name": "量量",
+ "name_en": "Gauge",
+ "version": "1.0.0",
+ "author": "AgentMeter",
+ "license": "MIT",
+ "description": "圆滚滚的小仪表兽。身后的圆环就是你正在用的额度：满格是主题色，见底会变橙变红；脸盘会跟着心情和光标转。",
+ "renderer": "three",
+ "stage": {
+  "width": 240,
+  "height": 260,
+  "ground": 0.9
+ },
+ "three": {
+  "avatar": "avatar.json",
+  "camera": {
+   "fov": 28,
+   "position": [
+    0,
+    0.9,
+    5.3
+   ],
+   "target": [
+    0,
+    0.82,
+    0
+   ]
+  },
+  "lights": "soft"
+ },
+ "states": {},
+ "voice": {
+  "idle": [
+   "圆环满满，心情不错～",
+   "我一直在盯着额度。",
+   "戳我可以看摘要哦。"
+  ],
+  "working": [
+   "圆环转起来！",
+   "Agent 干活，我值班。",
+   "叮叮当当，敲得好快。"
+  ],
+  "tired": [
+   "圆环缩了一圈……",
+   "电量有点低了。"
+  ],
+  "alarm": [
+   "红圈了红圈了！",
+   "快没电啦！！"
+  ],
+  "exhausted": [
+   "圆环空了……",
+   "我先躺平，等重置。"
+  ],
+  "celebrate": [
+   "圆环回满！",
+   "耶～满格！"
+  ],
+  "sleeping": [
+   "Zzz……圆环也在休息。"
+  ]
+ }
+}

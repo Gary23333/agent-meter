@@ -37,6 +37,7 @@ from .zcode import collect_zcode
 from .dreamina import collect_dreamina
 from .minimax_design import collect_design
 from .billing import refresh_countdowns
+from .pet import PetMind
 from .reset_forecast import CACHE_NAME, collect_reset_forecast, refresh_forecast_countdowns
 from .dreamina_web import merge_dreamina
 from .workbuddy_tokens import collect_workbuddy_tokens
@@ -388,6 +389,8 @@ class SnapshotService:
         self._activity=None
         self._activity_at=0
         self._activity_generation=-1
+        # Desktop pet: interprets data this service already holds, never collects.
+        self.pet=PetMind(clock)
 
     def activity(self,now=None):
         """Recent session/turn activity, cached for a few seconds.
@@ -422,6 +425,27 @@ class SnapshotService:
                 self._activity_at=current
                 self._activity_generation=generation
             return copy.deepcopy(payload)
+
+    def peek(self):
+        """The last collected snapshot, or None; never starts a collection.
+
+        Returned by reference for cheap polling: stored snapshots are replaced, never
+        mutated, so readers must treat the result as read-only.
+        """
+        with self.lock:
+            return self.snapshot
+
+    def pet_frame(self,now=None,offline=False):
+        """One PetFrame from cached data. Activity is scanned at most every 5 s (30 s when idle)."""
+        current=self.clock() if now is None else float(now)
+        activity=self.pet.poll_activity(lambda:self.activity(current),current)
+        return self.pet.frame(self.peek(),activity,current,offline=offline)
+
+    def pet_event(self,body):
+        return self.pet.add_event(body)
+
+    def set_pet_preferences(self,values):
+        return self.pet.set_preferences(values)
 
     def _invalidate(self):
         self.last_refresh=0

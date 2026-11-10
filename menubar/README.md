@@ -66,3 +66,18 @@ menubar/.build/debug/AgentMeterBar --preview /path/to/snapshot.json out/
 ```
 
 预览不连接后端。公开截图请使用[合成演示快照](../docs/images/README.md)，不要输入真实账户快照；已有截图的版本来源与当前生成结果应分别记录。
+
+加 `--tab pet`（只渲染一个标签页，约 12 秒一套风格）、`--theme aurora`（只渲染一套风格）、`--pet-state alarm`（让舞台试玩某个状态）可以快速看「桌宠」页；`-petPack cat` 换形象（命令行参数只对本次运行生效，不写偏好）。桌宠页里的 web view 不在屏幕上时拿不到动画帧，所以预览里舞台由页面主动「画一张」再合成进截图。
+
+## 在已安装的 App 旁边运行开发构建
+
+已安装的 App 占着 8769 端口。开发构建用环境变量换一个端口、跳过钥匙串，并把面板放进普通窗口：
+
+```sh
+swift build --package-path menubar
+ln -sf AgentMeterBar menubar/.build/debug/AgentMeterBarDev        # 进程名不同 → 偏好域不同，不碰 AgentMeterBar / 已安装 App 的设置
+AGENT_METER_HOME="$PWD" AGENT_METER_PORT=18769 AGENT_METER_NO_KEYCHAIN=1 \
+  menubar/.build/debug/AgentMeterBarDev --panel-window -petEnabled YES -claudeEnabled NO -forecastEnabled NO
+```
+
+后端在 `$AGENT_METER_HOME/.runtime`（已忽略）；退出开发实例用面板里的「退出」，或对它自己的 PID `kill`（不要 `pkill AgentMeterBar`，会把已安装的 App 一起结束）。`--selftest` 会在这个窗口里跑一组真实事件的自检并退出。

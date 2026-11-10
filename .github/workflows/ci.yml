@@ -32,6 +32,20 @@ jobs:
           python -m pip install build
           python -m build
           python scripts/check-package-version.py
+  pets:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Runtime logic tests
+        run: node --test pets/runtime/test/*.test.mjs
+      - name: Validate built-in pet packs
+        run: python3 pets/tools/petpack.py validate pets/presets/* --strict
   swift:
     runs-on: macos-15
     timeout-minutes: 25

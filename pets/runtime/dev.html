@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentMeter 桌宠 · 开发台</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f5f5f7; --fg: #1d1d1f; --card: #fff; --line: #d2d2d7; --accent: #5e5ce6; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f5f5f7; --card: #2c2c2e; --line: #48484a; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 13px/1.5 system-ui, -apple-system, "PingFang SC", sans-serif; background: var(--bg); color: var(--fg); }
+    main { display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 16px; padding: 16px; max-width: 1100px; margin: 0 auto; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    p.sub { margin: 0 0 12px; opacity: .7; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; opacity: .6; margin: 0 0 8px; }
+    label { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    label > span { width: 64px; opacity: .75; flex: none; }
+    select, input[type=text], input[type=range] { flex: 1; min-width: 0; }
+    select, input[type=text] { padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; }
+    button { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; font: inherit; }
+    button:hover { border-color: var(--accent); }
+    button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    #stage { position: sticky; top: 16px; height: 520px; border-radius: 12px; border: 1px dashed var(--line);
+      background: repeating-conic-gradient(rgba(128,128,128,.12) 0% 25%, transparent 0% 50%) 50% / 24px 24px; overflow: hidden; }
+    iframe { display: block; margin: 0 auto; width: 100%; height: 100%; border: 0; background: transparent; }
+    pre { margin: 0; max-height: 150px; overflow: auto; font: 11px/1.4 ui-monospace, monospace; opacity: .8; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>桌宠开发台</h1>
+    <p class="sub">在浏览器里直接驱动运行时：和原生 App 用同一份页面、同一套帧格式。</p>
+    <section>
+      <h2>形象与外观</h2>
+      <label><span>形象</span><select id="pack"></select></label>
+      <label><span>主题</span><select id="theme"></select></label>
+      <label><span>明暗</span><select id="scheme"><option>light</option><option>dark</option></select></label>
+      <label><span>大小</span><select id="scale"><option value="0.75">小</option><option value="1" selected>中</option><option value="1.3">大</option></select></label>
+      <label><span>舞台</span><select id="mode"><option value="window">桌面窗口</option><option value="embed">面板标签页（392×280）</option><option value="still">缩略图（240×260）</option></select></label>
+      <label><span>额度显示</span><select id="hud"><option value="pill">胶囊</option><option value="full">胶囊 + 会话</option><option value="off">关闭</option></select></label>
+    </section>
+    <section>
+      <h2>状态（基础）</h2>
+      <div class="row" id="states"></div>
+      <label><span>额度 %</span><input type="range" id="energy" min="0" max="100" value="82"><b id="energyValue">82</b></label>
+      <label><span>未知额度</span><input type="checkbox" id="unknown"> <span style="width:auto">数据未知（不是 0）</span></label>
+      <div class="row"><button id="cycle">依次播放全部状态</button></div>
+    </section>
+    <section>
+      <h2>短反应</h2>
+      <div class="row" id="reactions"></div>
+    </section>
+    <section>
+      <h2>气泡与提醒</h2>
+      <label><span>文字</span><input type="text" id="bubbleText" value="Codex 5 小时额度只剩 18%，2小时30分后重置"></label>
+      <label><span>语气</span><select id="bubbleTone"><option>info</option><option>good</option><option>warn</option><option>danger</option><option>chat</option></select></label>
+      <div class="row"><button id="say">发送气泡</button><button id="reminder">发送带跳转的提醒</button></div>
+    </section>
+    <section><h2>来自页面的消息</h2><pre id="log"></pre></section>
+  </div>
+  <div id="stage"><iframe id="frame" title="pet"></iframe></div>
+</main>
+<script type="module">
+const STATES = ['idle', 'working', 'busy', 'waiting', 'painting', 'tired', 'alarm', 'exhausted', 'alert', 'focus', 'excited', 'confused', 'sleeping', 'offline'];
+const REACTIONS = ['celebrate', 'eating', 'startle', 'wave', 'painting'];
+const THEMES = ['aurora', 'minimal', 'native', 'porcelain', 'titanium', 'neon', 'prism'];
+const MOOD = { working: 'determined', busy: 'worried', tired: 'worried', alarm: 'worried', exhausted: 'sad', sleeping: 'sleepy', alert: 'surprised',
+  excited: 'excited', confused: 'confused', offline: 'confused', focus: 'determined' };
+const $ = (id) => document.getElementById(id);
+let state = 'idle', seq = 0, cycleTimer = null;
+
+const packs = await fetch('../presets/index.json', { cache: 'no-store' }).then((r) => r.json()).catch(() => [{ id: 'gauge', name: '量量' }]);
+$('pack').innerHTML = packs.map((p) => `<option value="${p.id}">${p.name} · ${p.id}</option>`).join('');
+if (packs.some((p) => p.id === 'gauge')) $('pack').value = 'gauge';
+$('theme').innerHTML = THEMES.map((t) => `<option>${t}</option>`).join('');
+$('states').innerHTML = STATES.map((s) => `<button data-state="${s}">${s}</button>`).join('');
+$('reactions').innerHTML = REACTIONS.map((s) => `<button data-reaction="${s}">${s}</button>`).join('');
+
+function load() {
+  const mode = $('mode').value;
+  const q = new URLSearchParams({ pack: $('pack').value, packRoot: '../presets/', theme: $('theme').value, scheme: $('scheme').value,
+    scale: $('scale').value, hud: mode === 'window' ? $('hud').value : 'off' });
+  if (mode === 'embed') q.set('embed', '1');
+  if (mode === 'still') q.set('still', '1');
+  const size = { window: ['100%', '100%'], embed: ['392px', '280px'], still: ['240px', '260px'] }[mode];
+  Object.assign($('frame').style, { width: size[0], height: size[1], outline: mode === 'window' ? 'none' : '1px dashed var(--line)' });
+  $('frame').src = `index.html?${q}`;
+}
+const post = (msg) => $('frame').contentWindow && $('frame').contentWindow.postMessage({ toPet: msg }, '*');
+
+function frame(extra = {}) {
+  const now = Date.now() / 1000;
+  const unknown = $('unknown').checked || state === 'offline' || state === 'confused';
+  let remaining = +$('energy').value;
+  if (state === 'alarm') remaining = Math.min(remaining, 4);
+  if (state === 'tired') remaining = Math.min(remaining, 15);
+  if (state === 'exhausted') remaining = 0;
+  const tone = remaining <= 0 ? 'empty' : remaining <= 5 ? 'critical' : remaining <= 20 ? 'low' : 'ok';
+  const running = state === 'busy' ? 3 : state === 'working' ? 1 : 0;
+  return {
+    schema_version: 1, generated_at: now, state, mood: MOOD[state] || 'happy', intensity: 0.7, reaction: null,
+    energy: unknown ? { known: false, stale: false, tone: 'unknown' } : { known: true, remaining, tone, drives_state: true, scope: 'auto', label: 'Codex · 5 小时', resets_at: now + 9060, stale: false },
+    meters: unknown ? [] : [{ id: 'codex:primary', source: 'codex', name: 'Codex', window: '5 小时', remaining, tone, resets_at: now + 9060, stale: false },
+      { id: 'claude:limit7d', source: 'claude', name: 'Claude', window: '7 天', remaining: 64, tone: 'ok', resets_at: now + 4 * 86400, stale: false }],
+    activity: { known: true, running, apps: running ? [{ app: 'codex', label: 'Codex', count: running, project: 'NEW-agent 统计' }] : [] },
+    focus: { active: state === 'focus', ends_at: now + 1500 }, reminders: [], ...extra,
+  };
+}
+const send = (extra) => post({ type: 'frame', frame: frame(extra) });
+
+function select(s) {
+  state = s;
+  for (const b of $('states').children) b.classList.toggle('on', b.dataset.state === s);
+  send();
+}
+$('states').onclick = (e) => { if (e.target.dataset.state) { stop(); select(e.target.dataset.state); } };
+$('reactions').onclick = (e) => {
+  const id = e.target.dataset.reaction;
+  if (id) send({ reaction: { id, key: `dev-${++seq}`, until: Date.now() / 1000 + 8, reason: 'dev' } });
+};
+$('energy').oninput = () => { $('energyValue').textContent = $('energy').value; send(); };
+$('unknown').onchange = () => send();
+$('say').onclick = () => post({ type: 'say', bubble: { id: `dev-say-${++seq}`, text: $('bubbleText').value, tone: $('bubbleTone').value, ttl: 8, priority: 50 } });
+$('reminder').onclick = () => send({ reminders: [{ id: `dev-rem-${++seq}`, text: $('bubbleText').value, tone: $('bubbleTone').value, priority: 70, action: { kind: 'open_panel', tab: 'accounts' } }] });
+function stop() { clearInterval(cycleTimer); cycleTimer = null; $('cycle').classList.remove('on'); }
+$('cycle').onclick = () => {
+  if (cycleTimer) return stop();
+  $('cycle').classList.add('on');
+  let i = STATES.indexOf(state);
+  cycleTimer = setInterval(() => select(STATES[++i % STATES.length]), 3200);
+};
+for (const id of ['pack', 'theme', 'scheme', 'scale', 'hud', 'mode']) $(id).onchange = load;
+$('frame').onload = () => { setTimeout(() => select(state), 600); };
+window.addEventListener('message', (e) => {
+  if (!e.data || !e.data.fromPet) return;
+  const m = e.data.fromPet;
+  if (m.type === 'rects') return;
+  $('log').textContent = `${new Date().toLocaleTimeString()}  ${JSON.stringify(m).slice(0, 200)}\n` + $('log').textContent.slice(0, 1800);
+});
+load();
+</script>
+</body>
+</html>

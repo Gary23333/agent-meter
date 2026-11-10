@@ -1,0 +1,65 @@
+{
+ "format": "agentmeter-pet/1",
+ "id": "bot",
+ "name": "码码",
+ "name_en": "Codey",
+ "version": "1.0.0",
+ "author": "AgentMeter",
+ "license": "MIT",
+ "description": "戴屏幕脸的小机器人：胸口的小表盘是额度，开心时眼睛是 ^ ^，干活时敲键盘敲得飞快。",
+ "renderer": "three",
+ "stage": {
+  "width": 240,
+  "height": 260,
+  "ground": 0.9
+ },
+ "three": {
+  "avatar": "avatar.json",
+  "camera": {
+   "fov": 28,
+   "position": [
+    0,
+    0.95,
+    5.4
+   ],
+   "target": [
+    0,
+    0.82,
+    0
+   ]
+  },
+  "lights": "soft"
+ },
+ "states": {},
+ "voice": {
+  "idle": [
+   "系统运行正常。",
+   "待命中……滴。",
+   "胸口表盘一切正常。"
+  ],
+  "working": [
+   "编译中，请勿打扰。",
+   "键盘已过热（假的）。"
+  ],
+  "tired": [
+   "电量偏低。",
+   "进入省电模式……"
+  ],
+  "alarm": [
+   "警告！电量不足！"
+  ],
+  "exhausted": [
+   "电量耗尽。关机。"
+  ],
+  "celebrate": [
+   "任务完成！",
+   "耶，运行成功。"
+  ],
+  "sleeping": [
+   "待机……"
+  ],
+  "offline": [
+   "连接断开。重连中……"
+  ]
+ }
+}

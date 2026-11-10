@@ -1,0 +1,1244 @@
+{
+ "format": "agentmeter-avatar/1",
+ "palette": {
+  "gel": "#7ee8c7",
+  "gelDark": "#4fcfa8",
+  "leaf": "#4fbf6a",
+  "ink": "#17463a",
+  "white": "#ffffff",
+  "blush": "#ff9fb8",
+  "tongue": "#ff6f91"
+ },
+ "materials": {
+  "ink": {
+   "kind": "basic",
+   "color": "ink",
+   "decal": true
+  },
+  "white": {
+   "kind": "basic",
+   "color": "white",
+   "decal": true
+  },
+  "blush": {
+   "kind": "basic",
+   "color": "blush",
+   "opacity": 0.55,
+   "decal": true
+  },
+  "tongue": {
+   "kind": "basic",
+   "color": "tongue",
+   "decal": true
+  },
+  "heart": {
+   "kind": "basic",
+   "color": "#ff5c8a",
+   "decal": true
+  },
+  "shadow": {
+   "kind": "basic",
+   "color": "#000000",
+   "opacity": 0.28,
+   "texture": "softdot"
+  },
+  "gel": {
+   "kind": "toon",
+   "color": "gel",
+   "steps": 3
+  },
+  "gelDark": {
+   "kind": "toon",
+   "color": "gelDark",
+   "steps": 3
+  },
+  "leaf": {
+   "kind": "toon",
+   "color": "leaf",
+   "steps": 3
+  },
+  "shine": {
+   "kind": "basic",
+   "color": "#ffffff",
+   "opacity": 0.6,
+   "decal": true
+  }
+ },
+ "outline": {
+  "enabled": true,
+  "thickness": 0.014,
+  "color": "#1f6b57"
+ },
+ "nodes": [
+  {
+   "id": "root",
+   "type": "group"
+  },
+  {
+   "id": "shadow",
+   "type": "disc",
+   "parent": "root",
+   "radius": 0.74,
+   "position": [
+    0,
+    0.004,
+    0
+   ],
+   "rotation": [
+    -90,
+    0,
+    0
+   ],
+   "scale": [
+    1,
+    0.8,
+    1
+   ],
+   "material": "shadow",
+   "outline": false
+  },
+  {
+   "id": "body",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    0,
+    0.5,
+    0
+   ]
+  },
+  {
+   "id": "shell",
+   "type": "sphere",
+   "parent": "body",
+   "radius": 0.62,
+   "scale": [
+    1.12,
+    0.86,
+    1.0
+   ],
+   "segments": [
+    44,
+    30
+   ],
+   "material": "gel"
+  },
+  {
+   "id": "shine1",
+   "type": "disc",
+   "parent": "body",
+   "radius": 0.1,
+   "scale": [
+    1,
+    0.55,
+    1
+   ],
+   "position": [
+    -0.3023,
+    0.2734,
+    0.4669
+   ],
+   "rotation": [
+    -38.3043,
+    -22.1084,
+    35
+   ],
+   "material": "shine",
+   "outline": false
+  },
+  {
+   "id": "shine2",
+   "type": "disc",
+   "parent": "body",
+   "radius": 0.04,
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "position": [
+    -0.1612,
+    0.3644,
+    0.4382
+   ],
+   "rotation": [
+    -48.2813,
+    -11.0715,
+    0
+   ],
+   "material": "shine",
+   "outline": false
+  },
+  {
+   "id": "head",
+   "type": "group",
+   "parent": "body"
+  },
+  {
+   "id": "eyeL",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    -16.5183,
+    0
+   ]
+  },
+  {
+   "id": "eyeLPupil",
+   "type": "disc",
+   "parent": "eyeL",
+   "radius": 0.075,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeLGlint",
+   "type": "disc",
+   "parent": "eyeL",
+   "radius": 0.025500000000000002,
+   "position": [
+    0.0225,
+    0.045,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeBigL",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    -16.5183,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeBigLPupil",
+   "type": "disc",
+   "parent": "eyeBigL",
+   "radius": 0.0975,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeBigLGlint",
+   "type": "disc",
+   "parent": "eyeBigL",
+   "radius": 0.033150000000000006,
+   "position": [
+    0.029249999999999998,
+    0.058499999999999996,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeHappyL",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.0857,
+    0.5834
+   ],
+   "rotation": [
+    -11.2228,
+    -16.5479,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.048,
+   "outer": 0.084,
+   "start": 0,
+   "arc": 180
+  },
+  {
+   "id": "eyeSleepL",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.1261,
+    0.5734
+   ],
+   "rotation": [
+    -16.5338,
+    -16.4587,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.04125,
+   "outer": 0.07275,
+   "start": 180,
+   "arc": 180
+  },
+  {
+   "id": "eyeXL",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    -16.5183,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeXaL",
+   "type": "plane",
+   "parent": "eyeXL",
+   "size": [
+    0.1275,
+    0.027
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeXbL",
+   "type": "plane",
+   "parent": "eyeXL",
+   "size": [
+    0.1275,
+    0.027
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeHeartL",
+   "type": "extrude",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    -16.5183,
+    0
+   ],
+   "material": "heart",
+   "visible": false,
+   "outline": false,
+   "shape": "heart",
+   "size": 0.08625,
+   "depth": 0.01,
+   "bevel": 0.004
+  },
+  {
+   "id": "browWorryL",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.232,
+    0.5269
+   ],
+   "rotation": [
+    -30.7244,
+    -16.0798,
+    18
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.11249999999999999,
+    0.022
+   ]
+  },
+  {
+   "id": "browDetL",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    -0.2211,
+    0.2219,
+    0.5328
+   ],
+   "rotation": [
+    -29.3483,
+    -16.1241,
+    -16
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.11249999999999999,
+    0.022
+   ]
+  },
+  {
+   "id": "cheekL",
+   "type": "disc",
+   "parent": "head",
+   "position": [
+    -0.4021,
+    -0.0605,
+    0.5052
+   ],
+   "rotation": [
+    9.1897,
+    -32.1288,
+    0
+   ],
+   "material": "blush",
+   "outline": false,
+   "radius": 0.058
+  },
+  {
+   "id": "eyeR",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    16.5183,
+    0
+   ]
+  },
+  {
+   "id": "eyeRPupil",
+   "type": "disc",
+   "parent": "eyeR",
+   "radius": 0.075,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeRGlint",
+   "type": "disc",
+   "parent": "eyeR",
+   "radius": 0.025500000000000002,
+   "position": [
+    0.0225,
+    0.045,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeBigR",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    16.5183,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeBigRPupil",
+   "type": "disc",
+   "parent": "eyeBigR",
+   "radius": 0.0975,
+   "scale": [
+    1,
+    1.1700000000000002,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeBigRGlint",
+   "type": "disc",
+   "parent": "eyeBigR",
+   "radius": 0.033150000000000006,
+   "position": [
+    0.029249999999999998,
+    0.058499999999999996,
+    0.004
+   ],
+   "material": "white",
+   "outline": false
+  },
+  {
+   "id": "eyeHappyR",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.0857,
+    0.5834
+   ],
+   "rotation": [
+    -11.2228,
+    16.5479,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.048,
+   "outer": 0.084,
+   "start": 0,
+   "arc": 180
+  },
+  {
+   "id": "eyeSleepR",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.1261,
+    0.5734
+   ],
+   "rotation": [
+    -16.5338,
+    16.4587,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.04125,
+   "outer": 0.07275,
+   "start": 180,
+   "arc": 180
+  },
+  {
+   "id": "eyeXR",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    16.5183,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "eyeXaR",
+   "type": "plane",
+   "parent": "eyeXR",
+   "size": [
+    0.1275,
+    0.027
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeXbR",
+   "type": "plane",
+   "parent": "eyeXR",
+   "size": [
+    0.1275,
+    0.027
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "eyeHeartR",
+   "type": "extrude",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.1009,
+    0.5801
+   ],
+   "rotation": [
+    -13.2109,
+    16.5183,
+    0
+   ],
+   "material": "heart",
+   "visible": false,
+   "outline": false,
+   "shape": "heart",
+   "size": 0.08625,
+   "depth": 0.01,
+   "bevel": 0.004
+  },
+  {
+   "id": "browWorryR",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.232,
+    0.5269
+   ],
+   "rotation": [
+    -30.7244,
+    16.0798,
+    -18
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.11249999999999999,
+    0.022
+   ]
+  },
+  {
+   "id": "browDetR",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    0.2211,
+    0.2219,
+    0.5328
+   ],
+   "rotation": [
+    -29.3483,
+    16.1241,
+    16
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.11249999999999999,
+    0.022
+   ]
+  },
+  {
+   "id": "cheekR",
+   "type": "disc",
+   "parent": "head",
+   "position": [
+    0.4021,
+    -0.0605,
+    0.5052
+   ],
+   "rotation": [
+    9.1897,
+    32.1288,
+    0
+   ],
+   "material": "blush",
+   "outline": false,
+   "radius": 0.058
+  },
+  {
+   "id": "mouthSmile",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.0757,
+    0.6178
+   ],
+   "rotation": [
+    9.3876,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "outline": false,
+   "inner": 0.034,
+   "outer": 0.055,
+   "start": 180,
+   "arc": 180,
+   "scale": [
+    1.3,
+    1,
+    1
+   ]
+  },
+  {
+   "id": "mouthOpen",
+   "type": "group",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.116,
+    0.6093
+   ],
+   "rotation": [
+    14.4148,
+    0.0,
+    0
+   ],
+   "visible": false
+  },
+  {
+   "id": "mouthOpenBg",
+   "type": "disc",
+   "parent": "mouthOpen",
+   "radius": 0.058,
+   "scale": [
+    1.15,
+    1.3,
+    1
+   ],
+   "material": "ink",
+   "outline": false
+  },
+  {
+   "id": "mouthTongue",
+   "type": "disc",
+   "parent": "mouthOpen",
+   "radius": 0.032,
+   "position": [
+    0,
+    -0.034,
+    0.003
+   ],
+   "scale": [
+    1.3,
+    0.8,
+    1
+   ],
+   "material": "tongue",
+   "outline": false
+  },
+  {
+   "id": "mouthFlat",
+   "type": "plane",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.116,
+    0.6093
+   ],
+   "rotation": [
+    14.4148,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "size": [
+    0.095,
+    0.02
+   ]
+  },
+  {
+   "id": "mouthFrown",
+   "type": "ring",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.1513,
+    0.5987
+   ],
+   "rotation": [
+    18.8371,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "inner": 0.03,
+   "outer": 0.05,
+   "start": 0,
+   "arc": 180,
+   "scale": [
+    1.2,
+    1,
+    1
+   ]
+  },
+  {
+   "id": "mouthO",
+   "type": "disc",
+   "parent": "head",
+   "position": [
+    0.0,
+    -0.121,
+    0.6079
+   ],
+   "rotation": [
+    15.045,
+    0.0,
+    0
+   ],
+   "material": "ink",
+   "visible": false,
+   "outline": false,
+   "radius": 0.036
+  },
+  {
+   "id": "armL",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    -0.64,
+    0.5,
+    0.06
+   ],
+   "rotation": [
+    0,
+    0,
+    -16
+   ]
+  },
+  {
+   "id": "armLMesh",
+   "type": "sphere",
+   "parent": "armL",
+   "radius": 0.11,
+   "scale": [
+    1,
+    1.25,
+    1
+   ],
+   "position": [
+    0,
+    -0.07,
+    0
+   ],
+   "material": "gelDark"
+  },
+  {
+   "id": "armR",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    0.64,
+    0.5,
+    0.06
+   ],
+   "rotation": [
+    0,
+    0,
+    16
+   ]
+  },
+  {
+   "id": "armRMesh",
+   "type": "sphere",
+   "parent": "armR",
+   "radius": 0.11,
+   "scale": [
+    1,
+    1.25,
+    1
+   ],
+   "position": [
+    0,
+    -0.07,
+    0
+   ],
+   "material": "gelDark"
+  },
+  {
+   "id": "antenna",
+   "type": "group",
+   "parent": "root",
+   "position": [
+    0,
+    0.99,
+    0
+   ]
+  },
+  {
+   "id": "stalk",
+   "type": "cylinder",
+   "parent": "antenna",
+   "radiusTop": 0.014,
+   "radiusBottom": 0.02,
+   "height": 0.22,
+   "position": [
+    0,
+    0.11,
+    0
+   ],
+   "material": "leaf",
+   "outline": false
+  },
+  {
+   "id": "leafL",
+   "type": "group",
+   "parent": "antenna",
+   "position": [
+    0,
+    0.22,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    38
+   ]
+  },
+  {
+   "id": "leafLMesh",
+   "type": "extrude",
+   "parent": "leafL",
+   "shape": "drop",
+   "size": 0.13,
+   "depth": 0.03,
+   "bevel": 0.008,
+   "position": [
+    0,
+    0.1,
+    0
+   ],
+   "scale": [
+    0.8,
+    1,
+    1
+   ],
+   "material": "leaf",
+   "outline": false
+  },
+  {
+   "id": "leafR",
+   "type": "group",
+   "parent": "antenna",
+   "position": [
+    0,
+    0.22,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    -38
+   ]
+  },
+  {
+   "id": "leafRMesh",
+   "type": "extrude",
+   "parent": "leafR",
+   "shape": "drop",
+   "size": 0.13,
+   "depth": 0.03,
+   "bevel": 0.008,
+   "position": [
+    0,
+    0.1,
+    0
+   ],
+   "scale": [
+    0.8,
+    1,
+    1
+   ],
+   "material": "leaf",
+   "outline": false
+  }
+ ],
+ "slots": {
+  "root": "root",
+  "body": "body",
+  "head": "head",
+  "armL": "armL",
+  "armR": "armR",
+  "antenna": "antenna",
+  "shadow": "shadow",
+  "mouth": "mouthOpen"
+ },
+ "face": {
+  "blink": [
+   "eyeL",
+   "eyeR"
+  ],
+  "look": [
+   {
+    "node": "eyeL",
+    "range": [
+     0.03,
+     0.022
+    ]
+   },
+   {
+    "node": "eyeR",
+    "range": [
+     0.03,
+     0.022
+    ]
+   }
+  ],
+  "managed": [
+   "browDetL",
+   "browDetR",
+   "browWorryL",
+   "browWorryR",
+   "eyeBigL",
+   "eyeBigR",
+   "eyeHappyL",
+   "eyeHappyR",
+   "eyeHeartL",
+   "eyeHeartR",
+   "eyeL",
+   "eyeR",
+   "eyeSleepL",
+   "eyeSleepR",
+   "eyeXL",
+   "eyeXR",
+   "mouthFlat",
+   "mouthFrown",
+   "mouthO",
+   "mouthOpen",
+   "mouthSmile"
+  ],
+  "expressions": {
+   "neutral": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "mouthSmile"
+    ]
+   },
+   "happy": {
+    "show": [
+     "eyeHappyL",
+     "eyeHappyR",
+     "mouthOpen"
+    ]
+   },
+   "excited": {
+    "show": [
+     "eyeBigL",
+     "eyeBigR",
+     "mouthOpen"
+    ]
+   },
+   "determined": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browDetL",
+     "browDetR",
+     "mouthFlat"
+    ]
+   },
+   "worried": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browWorryL",
+     "browWorryR",
+     "mouthFrown"
+    ]
+   },
+   "sad": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browWorryL",
+     "browWorryR",
+     "mouthFrown"
+    ]
+   },
+   "sleepy": {
+    "show": [
+     "eyeSleepL",
+     "eyeSleepR",
+     "mouthFlat"
+    ]
+   },
+   "surprised": {
+    "show": [
+     "eyeBigL",
+     "eyeBigR",
+     "mouthO"
+    ]
+   },
+   "confused": {
+    "show": [
+     "eyeL",
+     "eyeR",
+     "browWorryL",
+     "mouthFlat"
+    ]
+   },
+   "dizzy": {
+    "show": [
+     "eyeXL",
+     "eyeXR",
+     "mouthFrown"
+    ]
+   },
+   "yawn": {
+    "show": [
+     "eyeSleepL",
+     "eyeSleepR",
+     "mouthOpen"
+    ]
+   },
+   "love": {
+    "show": [
+     "eyeHeartL",
+     "eyeHeartR",
+     "mouthSmile"
+    ]
+   }
+  }
+ },
+ "props": {
+  "laptop": {
+   "parent": "root",
+   "position": [
+    0,
+    0.08,
+    0.74
+   ],
+   "rotation": [
+    0,
+    -14,
+    0
+   ],
+   "scale": 0.85
+  },
+  "sign": {
+   "parent": "root",
+   "position": [
+    0.92,
+    0.28,
+    0.12
+   ],
+   "scale": 0.95
+  },
+  "plug": {
+   "parent": "root",
+   "position": [
+    0,
+    0,
+    0.1
+   ]
+  },
+  "brush": {
+   "parent": "armR",
+   "position": [
+    0,
+    -0.17,
+    0.06
+   ],
+   "rotation": [
+    -70,
+    0,
+    0
+   ],
+   "scale": 0.8
+  },
+  "headphones": {
+   "parent": "body",
+   "position": [
+    0,
+    0.08,
+    0
+   ],
+   "scale": 1.9
+  },
+  "crystal": {
+   "parent": "root",
+   "position": [
+    0.9,
+    0,
+    0.3
+   ]
+  }
+ },
+ "anchors": {
+  "head": {
+   "node": "body",
+   "offset": [
+    0.1,
+    0.56,
+    0.1
+   ]
+  },
+  "body": {
+   "node": "body",
+   "offset": [
+    0,
+    0,
+    0.35
+   ]
+  },
+  "prop": {
+   "node": "armR",
+   "offset": [
+    0,
+    -0.2,
+    0.2
+   ]
+  },
+  "root": {
+   "node": "root",
+   "offset": [
+    0,
+    0.05,
+    0
+   ]
+  }
+ }
+}

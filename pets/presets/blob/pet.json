@@ -1,0 +1,95 @@
+{
+ "format": "agentmeter-pet/1",
+ "id": "blob",
+ "name": "团团",
+ "name_en": "Blobby",
+ "version": "1.0.0",
+ "author": "AgentMeter",
+ "license": "MIT",
+ "description": "果冻史莱姆：挤压拉伸特别夸张，额度耗尽时会化成一滩，回血时 Q 弹地蹦起来。",
+ "renderer": "three",
+ "stage": {
+  "width": 240,
+  "height": 260,
+  "ground": 0.9
+ },
+ "three": {
+  "avatar": "avatar.json",
+  "camera": {
+   "fov": 28,
+   "position": [
+    0,
+    0.9,
+    5.3
+   ],
+   "target": [
+    0,
+    0.82,
+    0
+   ]
+  },
+  "lights": "soft"
+ },
+ "states": {
+  "exhausted": {
+   "pose": {
+    "root": {
+     "pos": [
+      0,
+      -0.1,
+      0
+     ],
+     "scl": [
+      1.4,
+      0.5,
+      1.4
+     ]
+    }
+   }
+  },
+  "tired": {
+   "pose": {
+    "root": {
+     "scl": [
+      1.08,
+      0.9,
+      1.08
+     ]
+    }
+   }
+  },
+  "celebrate": {
+   "scale": {
+    "amp": 1.25,
+    "speed": 1.0
+   }
+  }
+ },
+ "voice": {
+  "idle": [
+   "Q 弹 Q 弹～",
+   "我是软的，不是硬的。"
+  ],
+  "working": [
+   "咕叽咕叽，在干活。",
+   "我也想帮忙！"
+  ],
+  "tired": [
+   "有点瘫……",
+   "要化了……"
+  ],
+  "alarm": [
+   "我要化啦！！"
+  ],
+  "exhausted": [
+   "已化成一滩。"
+  ],
+  "celebrate": [
+   "蹦蹦蹦！",
+   "回血啦！"
+  ],
+  "sleeping": [
+   "（咕嘟咕嘟）"
+  ]
+ }
+}
