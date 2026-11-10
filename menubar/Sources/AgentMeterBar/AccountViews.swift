@@ -74,6 +74,7 @@ struct AccountCard: View {
             header
             if !quotas.isEmpty { VStack(spacing: 9) { ForEach(quotas.indices, id: \.self) { QuotaBar(quota: quotas[$0], now: now) } } }
             details
+            if let reward = snapshot.reward(for: source.id) { RewardSection(reward: reward, now: now, tint: tint) }
             webUsage
             deepseekPeak
             dailyTokens
@@ -431,6 +432,87 @@ struct AccountCard: View {
         }
         return rows
     }
+}
+
+/// Daily free credits on the account card: today's state, the streak, and a
+/// claim button while something is waiting and auto-claim is off.
+private struct RewardSection: View {
+    let reward: RewardAccount
+    let now: Date
+    let tint: Color
+    @Environment(\.panelTheme) private var theme
+    private var store: UsageStore { .shared }
+
+    var body: some View {
+        VStack(spacing: 7) {
+            ForEach(rows.indices, id: \.self) { rows[$0] }
+            if !reward.claimable.isEmpty && reward.status == "available" && !reward.autoClaim {
+                HStack {
+                    Spacer()
+                    Button {
+                        Task { await store.claimReward(reward.id) }
+                    } label: {
+                        Text(store.claimingSlots.contains(reward.id) ? "领取中…" : "领取 \(Fmt.grouped(reward.claimableCredits)) 积分")
+                            .font(theme.font(11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(tint)
+                    .controlSize(.small)
+                    .disabled(store.claimingSlots.contains(reward.id))
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var rows: [InfoRow] {
+        if reward.status != "available" {
+            let text = reward.reason == "not_authenticated" ? "登录已失效，请重新登录" : (reward.reason == "disabled_by_user" ? "已关闭" : "暂时读不到")
+            return [InfoRow(symbol: "gift", title: "每日积分", value: text, valueTint: .secondary)]
+        }
+        let today = reward.today
+        var rows: [InfoRow] = []
+        let auto = reward.autoClaim ? "每日 \(reward.claimTime ?? store.claimTime) 自动领取" : nil
+        if reward.provider == "trae_cn" {
+            let signed = today["signed_in"].bool == true
+            let daily = (today["daily_credits"].double ?? 0) + (today["extra_credits"].double ?? 0)
+            let value = signed ? "今日已签到" : (today["enabled"].bool == false ? "签到未开放" : "今日未签到")
+            var detail = ["每日 \(Fmt.grouped(daily)) 积分"]
+            if let streak = reward.streakDays, streak > 0 { detail.append("连续 \(streak) 天") }
+            if let auto { detail.append(auto) }
+            rows.append(InfoRow(symbol: "gift", title: "每日签到", value: value, detail: detail.joined(separator: " · "),
+                                valueTint: signed ? .secondary : .orange))
+        } else {
+            let days = Int(today["streak_days"].double ?? 0)
+            var detail: [String] = []
+            if let tier = today["next_tier"].string, let left = today["next_tier_remaining"].double {
+                detail.append("距 \(tier.replacingOccurrences(of: "d", with: " 天")) 档还差 \(Int(left)) 天")
+            }
+            if let cards = today["makeup_cards"].double { detail.append("补签卡 \(Int(cards)) 张") }
+            rows.append(InfoRow(symbol: "flame", title: "连续活跃", value: "\(days) 天",
+                                detail: detail.isEmpty ? nil : detail.joined(separator: " · ")))
+            let waiting = reward.claimable.count
+            rows.append(InfoRow(symbol: "gift", title: "任务奖励",
+                                value: waiting > 0 ? "\(waiting) 个待领" : "暂无待领",
+                                detail: [Int(today["open_tasks"].double ?? 0) > 0 ? "进行中 \(Int(today["open_tasks"].double ?? 0)) 个" : nil, auto]
+                                    .compactMap { $0 }.joined(separator: " · ").nilIfEmpty,
+                                valueTint: waiting > 0 ? .orange : .secondary))
+        }
+        if reward.claimedToday > 0 {
+            let badges = reward.claimsToday.compactMap { $0["badge"].string }
+            rows.append(InfoRow(symbol: "checkmark.seal", title: "今日已领", value: "+\(Fmt.grouped(reward.claimedToday)) 积分",
+                                detail: badges.isEmpty ? nil : "徽章 " + badges.joined(separator: "、"), valueTint: tint, nested: true))
+        } else if let failed = reward.claimsToday.last(where: { ["error", "rejected"].contains($0["result"].string ?? "") }) {
+            rows.append(InfoRow(symbol: "exclamationmark.triangle", title: failed["final"].bool == true ? "未能自动领取" : "领取失败",
+                                value: failed["final"].bool == true ? "请在客户端签到" : (failed["code"].double.map { "代码 \(Int($0))" } ?? "稍后重试"),
+                                detail: failed["title"].string, valueTint: .orange, nested: true))
+        }
+        return rows
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 /// DeepSeek's peak / off-peak split inside its API account card: requests in

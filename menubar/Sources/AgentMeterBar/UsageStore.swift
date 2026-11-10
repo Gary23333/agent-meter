@@ -81,6 +81,31 @@ final class UsageStore {
             Task { await pushPreferences(); await fetch(force: true) }
         }
     }
+    /// Opt-in: the backend claims TRAE check-in and finished WorkBuddy tasks.
+    /// This is the app's only write to a provider account, so it starts off.
+    var autoClaimEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(autoClaimEnabled, forKey: "autoClaimEnabled")
+            Task { await pushPreferences(); await fetch(force: true) }
+            scheduleClaim()
+        }
+    }
+    /// Daily moment ("HH:MM", Beijing time) when auto-claim runs.
+    var claimTime: String {
+        didSet {
+            UserDefaults.standard.set(claimTime, forKey: "claimTime")
+            Task { await pushPreferences(); await fetch(force: true) }
+            scheduleClaim()
+        }
+    }
+    @ObservationIgnored private var claimTask: Task<Void, Never>?
+    /// Accounts with a "claim now" request in flight.
+    var claimingSlots: Set<String> = []
+    /// Trophies waiting for their celebration, and how many were shown in this run.
+    var pendingUnlocks: [Unlock] = []
+    var shownUnlocks = 0
+    /// Medal or card the user opened from the binder.
+    var detailTrophy: Unlock?
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     @ObservationIgnored private let backend = BackendProcess()
@@ -106,6 +131,8 @@ final class UsageStore {
         notificationsEnabled = d.object(forKey: "notificationsEnabled") as? Bool ?? true
         claudeEnabled = d.object(forKey: "claudeEnabled") as? Bool ?? true
         forecastEnabled = d.object(forKey: "forecastEnabled") as? Bool ?? true
+        autoClaimEnabled = d.object(forKey: "autoClaimEnabled") as? Bool ?? false
+        claimTime = d.string(forKey: "claimTime") ?? "08:00"
         lowQuotaThreshold = d.object(forKey: "lowQuotaThreshold") as? Double ?? 20
     }
 
@@ -190,7 +217,43 @@ final class UsageStore {
         }
     }
 
+    /// Choices for the claim time: just after midnight, then every half hour.
+    static let claimTimeOptions: [String] = ["00:05"] + (6...23).flatMap { h in [String(format: "%02d:00", h), String(format: "%02d:30", h)] }
+
+    /// Next claim moment in Beijing time after `date`.
+    static func nextClaim(after date: Date, time: String) -> Date {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let parts = time.split(separator: ":").compactMap { Int($0) }
+        let hour = parts.first ?? 8, minute = parts.count > 1 ? parts[1] : 0
+        let today = cal.date(bySettingHour: hour, minute: minute, second: 0, of: date) ?? date
+        return today > date ? today : cal.date(byAdding: .day, value: 1, to: today) ?? today
+    }
+
+    var nextClaimDate: Date? { autoClaimEnabled ? Self.nextClaim(after: Date(), time: claimTime) : nil }
+
+    /// Wakes up at the claim moment and refreshes, so claiming does not wait
+    /// for the regular poll. The backend decides what to claim.
+    private func scheduleClaim() {
+        claimTask?.cancel()
+        guard autoClaimEnabled else { return }
+        claimTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let target = Self.nextClaim(after: Date(), time: self.claimTime).addingTimeInterval(15)
+                try? await Task.sleep(for: .seconds(max(1, target.timeIntervalSinceNow)))
+                if Task.isCancelled { return }
+                await self.fetch(force: true)
+                // A second look a minute later catches the re-read after a claim.
+                try? await Task.sleep(for: .seconds(70))
+                if Task.isCancelled { return }
+                await self.fetch(force: true)
+            }
+        }
+    }
+
     private func startLoops() {
+        scheduleClaim()
         loops.append(Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(20))
@@ -247,6 +310,14 @@ final class UsageStore {
                 lastFetched = Date()
                 errorMessage = nil
                 Notifier.shared.evaluate(result, store: self, now: Date())
+                Notifier.shared.rewardResults(result)
+                if let collection = result.collection {
+                    let fresh = UnlockTracker.newUnlocks(in: collection)
+                    if !fresh.isEmpty {
+                        pendingUnlocks.append(contentsOf: fresh)
+                        if notificationsEnabled { Notifier.shared.unlocked(fresh, in: collection) }
+                    }
+                }
                 TokenRenewer.shared.consider(result)
             } catch {
                 errorMessage = error.localizedDescription
@@ -299,8 +370,30 @@ final class UsageStore {
         var off: [String] = []
         if !claudeEnabled { off.append("claude") }
         if !forecastEnabled { off.append("reset_forecast") }
-        do { try await client.putPreferences(disabled: off) }
+        let autoClaim = autoClaimEnabled ? ["trae_cn", "workbuddy"] : []
+        do { try await client.putPreferences(disabled: off, autoClaim: autoClaim, claimTime: claimTime) }
         catch { NSLog("AgentMeterBar preferences push: %@", String(describing: error)) }
+    }
+
+    func openTrophy(_ unlock: Unlock) {
+        withAnimation(.spring(response: 0.35)) { detailTrophy = unlock }
+    }
+
+    /// Closes the current celebration and moves to the next one.
+    func dismissUnlock() {
+        guard !pendingUnlocks.isEmpty else { return }
+        pendingUnlocks.removeFirst()
+        shownUnlocks = pendingUnlocks.isEmpty ? 0 : shownUnlocks + 1
+    }
+
+    /// The user's "领取" button: claims one account now, then shows the result.
+    func claimReward(_ slot: String) async {
+        guard let client, !claimingSlots.contains(slot) else { return }
+        claimingSlots.insert(slot)
+        defer { claimingSlots.remove(slot) }
+        do { try await client.claimReward(slot) }
+        catch { NSLog("AgentMeterBar claim %@: %@", slot, String(describing: error)) }
+        await fetch(force: false)
     }
 
     /// Reads 即梦 membership / credit detail from its own page (hidden web view).

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case accounts, apps, forecast, usage
+    case accounts, apps, forecast, usage, collection
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -9,6 +9,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .forecast: return "重置预测"
         case .usage: return "本机消耗"
         case .apps: return "应用"
+        case .collection: return "收集"
         }
     }
 }
@@ -35,7 +36,56 @@ struct PanelView: View {
         }
         .frame(width: 420)
         .themedRoot(store.theme)
+        .overlay { celebration }
+        .animation(.easeInOut(duration: 0.3), value: store.pendingUnlocks.first)
+        .animation(.easeInOut(duration: 0.25), value: store.detailTrophy)
         .onAppear { store.panelOpened() }
+    }
+
+    // MARK: Celebration
+
+    @State private var shareToast: String?
+
+    /// The unlock queue wins over a detail page the user opened.
+    @ViewBuilder private var celebration: some View {
+        if let data = store.snapshot?.collection {
+            if let unlock = store.pendingUnlocks.first {
+                stage(unlock, data, mode: .unlock(position: store.shownUnlocks + 1,
+                                                  total: store.shownUnlocks + store.pendingUnlocks.count)) {
+                    withAnimation(.spring(response: 0.4)) { store.dismissUnlock() }
+                    if store.pendingUnlocks.isEmpty { tabRaw = Tab.collection.rawValue }
+                }
+            } else if let detail = store.detailTrophy {
+                stage(detail, data, mode: .detail) {
+                    withAnimation(.spring(response: 0.35)) { store.detailTrophy = nil }
+                }
+            }
+        }
+    }
+
+    private func stage(_ unlock: Unlock, _ data: CollectionData, mode: TrophyStage.Mode,
+                       dismiss: @escaping () -> Void) -> some View {
+        TrophyStage(unlock: unlock, data: data, mode: mode,
+                    onShare: { action in
+                        let name = "AgentMeter-" + (data.medals.first { $0.id == unlock.id }?.name ?? data.def(unlock.id)?.name ?? "收藏")
+                        let message = TrophyShare.perform(action, png: TrophyShare.png(TrophyShareCard(unlock: unlock, data: data)), name: name)
+                        withAnimation(.spring(response: 0.3)) { shareToast = message }
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(2.5))
+                            withAnimation { if shareToast == message { shareToast = nil } }
+                        }
+                    },
+                    onDismiss: dismiss)
+            .overlay(alignment: .top) {
+                if let shareToast {
+                    Text(shareToast).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Capsule().fill(.black.opacity(0.6)))
+                        .padding(.top, 12)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .transition(.opacity.combined(with: .scale(scale: 1.04)))
     }
 
     // MARK: Header
@@ -110,6 +160,12 @@ struct PanelView: View {
             Button("API 价格表（本机估算）…") { PricesWindow.show() }
             Toggle("读取 Claude 额度", isOn: Binding(get: { store.claudeEnabled }, set: { store.claudeEnabled = $0 }))
             Toggle("全员重置预测（联网读第三方追踪站）", isOn: Binding(get: { store.forecastEnabled }, set: { store.forecastEnabled = $0 }))
+            Toggle("自动领取每日积分（TRAE 签到 · WorkBuddy 任务奖励）",
+                   isOn: Binding(get: { store.autoClaimEnabled }, set: { store.autoClaimEnabled = $0 }))
+            Picker("每日领取时间（北京时间）", selection: Binding(get: { store.claimTime }, set: { store.claimTime = $0 })) {
+                ForEach(UsageStore.claimTimeOptions, id: \.self) { Text($0).tag($0) }
+            }
+            .disabled(!store.autoClaimEnabled)
             Divider()
             Toggle("额度与到期提醒", isOn: Binding(get: { store.notificationsEnabled }, set: { store.notificationsEnabled = $0 }))
             Picker("额度不足阈值", selection: Binding(get: { store.lowQuotaThreshold }, set: { store.lowQuotaThreshold = $0 })) {
@@ -151,6 +207,7 @@ struct PanelView: View {
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now)
             case .apps: ActivityView(snapshot: snapshot)
+            case .collection: CollectionView(snapshot: snapshot, now: store.now)
             }
         }
         .padding(14)

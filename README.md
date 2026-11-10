@@ -35,7 +35,7 @@ python3 scripts/test-offline.py
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v5-success" alt="Schema: v5" />
-  <img src="https://img.shields.io/badge/Security-100%25%20Read--Only-red" alt="Security: 100% Read-Only" />
+  <img src="https://img.shields.io/badge/Security-Read--Only%20by%20Default-red" alt="Security: Read-Only by Default" />
   <img src="https://img.shields.io/badge/Release-v0.9.9-blue" alt="Release v0.9.9" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
@@ -128,6 +128,12 @@ python3 scripts/test-offline.py
 
 </details>
 
+### 收集册：卡片与奖章
+- **宝可梦式卡册**：5 小时 / 7 天额度窗口重置时，按峰值用量掉落普通 / 稀有 / 史诗 / 传说卡（50% / 80% / 90% / 用满）；重置卡在过期前用掉得「物尽其用」，过期未用得灰色「白白过期」；每日签到、连续 7 / 30 / 100 天、任务奖励与官方徽章也各有卡片。史诗与传说卡带镭射光泽动效。
+- **运动健康式奖章墙（46 枚）**：单日 1 亿 / 5 亿 / 10 亿 / 50 亿 Token、累计里程、连续活跃、多端并用、刷新个人最佳；单日 / 单月 / 累计的估算金额；单日、累计和连续天数的生图张数；即梦与 MiniMax Design 的创作积分；免费额度用量。按本机全部历史重算，首次打开就能解锁已达成的奖章。
+- **动效与分享**：奖章有金属厚度和缎带，卡片有系列底纹、编号与分层视差，跟随鼠标做 3D 倾斜、高光和火花，史诗 / 传说卡带镭射光泽；获得新奖章或新卡时播放解锁动画（3D 能量环、环绕粒子、彩带、翻转入场）；点任一奖章或卡片进入同款详情页。分享图带全息边框、透视网格和六项数据，可附项目二维码（可关），用量报告分享卡同样支持二维码。
+- **冲刺中**：显示每个未结算窗口的峰值，以及“再用多少 % 解锁哪张卡”。
+
 ### 4. 👥 多账号隔离支持（Multi-Account）
 - 每个网页登录来源支持最多 **5 个独立账号**（如「主号」、「小号」、「工作号」）；
 - 每个账号**独立成卡、独立进大盘行情条、独立计算提醒阈值**，严禁将不同账号的额度粗暴相加；
@@ -194,7 +200,7 @@ python3 scripts/test-offline.py
 我们深知开发者对**隐私与凭据安全**的极高要求。AgentMeter 遵循以下铁律设计：
 
 > [!IMPORTANT]
-> 1. **100% 只读保障 (Strictly Read-Only)**：核心逻辑绝不包含任何买入、兑换重置卡、更改套餐、发送模型 Prompt 的操作。
+> 1. **默认只读 (Read-Only by Default)**：核心逻辑绝不包含任何买入、兑换重置卡、更改套餐、发送模型 Prompt 的操作。唯一的写操作是可选的「自动领取每日积分」（TRAE 签到、WorkBuddy 已完成任务的奖励），默认关闭，需在设置里手动开启，并可选择每天的领取时间（北京时间），领取成功或多次失败都会发系统通知；它不会兑换连续天数档位、使用补签卡、接受新任务或抽奖。
 > 2. **凭据零泄露 (Zero Credential Leakage)**：
 >    - 网页 Session 与 API Key 仅保存在 macOS 系统的钥匙串（Keychain）中；
 >    - 传输给本机后端时仅通过 loopback 内存通道（`PUT /v1/web-sessions`），不写入快照文件或日志；查询时仅发送给对应服务的官方端点；

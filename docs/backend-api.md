@@ -221,6 +221,54 @@ wire.jsonl 口径（与 CLI Kimi Code 相同）：
 
 错误码：`stepfun_not_authenticated`（会话失效，Connect 错误 `unauthenticated`/`permission_denied` 或 HTTP 401/重定向）、`stepfun_api_error`、`stepfun_step_plan_usage_unrecognized`（有套餐但未识别用量格式）、`unsupported_stepfun_balance_contract`、`invalid_stepfun_{amount,rate,credits,response}`。余额查询成功而套餐查询失败时只降级 quota 指标，余额照常展示。
 
+## 每日积分领取（snapshot.rewards）
+
+`agent_meter/rewards.py`，仅由 `SnapshotService` 调用（CLI 的 `collect` 不涉及）。快照顶层新增 `rewards`：`{schema_version: 1, timezone: "Asia/Shanghai", accounts: [...]}`，每个网页登录账户一项（`trae_cn`、`trae_cn#2`、`workbuddy`…）：
+
+- `status` / `reason`：`available`；`not_connected`（`not_authenticated`、`disabled_by_user`、`local_only_mode`）；`error`（固定错误码）。
+- `today`：TRAE 为 `{kind: daily_checkin, enabled, signed_in, daily_credits, extra_credits, claimable}`；WorkBuddy 为 `{kind: growth_tasks, signed_in: null, streak_days, next_tier, next_tier_remaining, makeup_cards, makeup_cards_max, tiers, open_tasks, claimable}`。`claimable` 每项 `{item, title, credits}`，item 为 `daily_checkin` 或 `task:<task_code>`。
+- `claims_today`：`{item, title, at, result: ok|already|rejected|error, credits?, code?, reason?, badge?}`；`claimed_credits_today` / `claimed_credits_total`；`streak_days`（仅 TRAE：按北京时间连续已签到的天数，今天未签时截至昨天）；`history`：近 35 天 `{date, signed_in, claimed_credits}`。
+
+节流：每个账户 30 分钟最多读一次状态（跨日立即读）。领取只在 `PUT /v1/preferences` 的 `auto_claim`（`trae_cn`、`workbuddy` 子集，默认空）开启、且北京时间已过 `claim_time`（`HH:MM`，默认 `00:05`；菜单栏默认 08:00）时进行；过了领取时间后的第一次采集不受 30 分钟节流，立即读状态并领取。每个账户的摘要带 `claim_time` 与 `next_claim_at`（自动领取关闭时为 null）。菜单栏在领取时间过 15 秒和再过 70 秒各强制刷新一次，不等常规轮询；每次领取成功发一条系统通知（积分、连续天数、徽章），同一项当天第 3 次失败时发一条失败通知，已通知的结果记在 UserDefaults `notifiedClaims`，首次运行只记录不通知。同一项每天最多试 3 次、失败后 1 小时再试，`ok` / `already` 后不再试。TRAE 的 9004 记作 `already`，但不计为已签到（可能是参数错误），以领取后重读的状态为准。
+
+接口：
+
+- `PUT /v1/preferences` body `{"disabled_sources": [...], "auto_claim": [...], "claim_time": "08:00"}`，`auto_claim`、`claim_time` 可省略。
+- `POST /v1/rewards/claim/<slot>`（无 body，`#` 编码为 `%23`）：对该账户立即读状态并领取，不受开关和节流限制，返回最新 `rewards`，同时更新缓存快照。
+
+上游接口与实测记录见[每日积分研究](research/checkin-automation-and-collection-2026-11-09.md)。
+
+## 卡册与奖章（snapshot.collection）
+
+`agent_meter/collection.py`，由 `SnapshotService` 在每次采集后计算，不联网。快照顶层 `collection`：
+
+- `catalog`：卡片定义 `{id, name, series, series_name, rarity: common|rare|epic|legendary|faded, symbol, description}`。系列：5 小时窗口、7 天窗口、重置卡、签到与任务、纪念。
+- `cards`：已获得的卡 `{id: {count, first_at, last_at, sources}}`；`recent`：最近 12 次掉落 `{card, at, source, detail}`。
+- `open_windows`：未结算的额度窗口 `{source, kind: five_hour|seven_day, peak, resets_at, current_card, next_card, next_threshold}`。
+- `medals`：`{id, name, category, category_name, target, unit, symbol, tier: bronze|silver|gold|platinum, value, progress, earned, earned_on, count}`。
+- `stats`：`lifetime_tokens, active_days, current_streak, longest_streak, record_breaks, free_credits, best_day, today_tokens, max_apps_in_day, distinct_cards, catalog_size, total_cards, medals_earned, medals_total, by_rarity`。
+
+掉落规则：
+
+- 额度卡：按 `window_minutes`、`window{duration,unit}` 或桶名识别 5 小时 / 7 天窗口；同一窗口（`resets_at` 漂移不超过 10 分钟）记录峰值，下一次读到新的 `resets_at` 时结算一张，取峰值达到的最高档（50% / 80% / 90% / ≥99.5%），低于 50% 不掉卡。`stale`、`error` 来源不参与；来源消失且重置已过 1 天的窗口直接结算。
+- 重置卡：库存减少时，按到期时间判断“过期前用掉”（`rc_saved`）或“过期未用”（`rc_wasted`，灰色，不计入收集进度）；只有数量时按上次的最近到期时间判断。
+- 签到与任务：由 `rewards.json` 推算（每个签到日一张，连续 7 / 30 / 100 天的整数倍各一张；任务奖励与附带徽章各一张），每次重算。
+- 首次生成账本时掉一张「启程」。
+
+奖章每次按本机全部历史重算，旧历史首次即可解锁（共 46 枚，分铜 / 银 / 金 / 铂金）：
+
+- Token：单日（1 / 5 / 10 / 50 亿）、累计（10 / 100 / 1000 / 10000 亿）、连续活跃天数（7 / 30 / 100 / 365）、单日使用的应用数（3 / 5 / 8，不含 `imported_history`）、刷新个人最佳单日次数（1 / 10）。每日 Token 为各账本 `daily_buckets` 按日期相加。
+- 估算金额（人民币，USD 按 7.25 折算）：单日（¥100 / 500 / 1000 / 5000）、单个自然月（¥3000 / 1 万 / 3 万 / 10 万）、累计（¥1 万 / 5 万 / 10 万 / 100 万）。来源为各来源 `cost.value.daily`（`basis=local_price_table`），由 `prices.estimate_daily_cost` 按 `tokens.daily_models` 逐日计价；逐日行没有峰谷拆分，一律按谷价（基础价）计，所以逐日合计可能略低于期间总额。网页账单（`platform_web_usage`）不计入。
+- 生图：Codex 内置生图 `image_generation.value.daily_buckets` 的张数，单日（10 / 50 / 100 / 300）、累计（100 / 1000 / 5000 / 2 万）、连续出图天数（3 / 7 / 30）。
+- 创作积分：即梦、MiniMax Design 钱包余额每次下降的差额累加（充值、月度刷新只移动基线，开始记录之前的消耗无法得知），1000 / 1 万 / 10 万。
+- 免费积分：Qoder 非计费积分 + 已领取的每日积分，1000 / 1 万 / 10 万。
+
+`stats` 另含 `lifetime_cost_cny`、`best_cost_day`、`best_cost_month`、`lifetime_images`、`best_image_day`、`creative_credits_spent`。
+
+账本 `.runtime/collection.json`（0600）只保存未结算窗口、重置卡库存、创作钱包基线与已结算的掉落，不含凭据与对话内容；损坏时重新开始。
+
+菜单栏：「收集」标签页的奖章与卡片跟随鼠标做 3D 倾斜和高光（奖章有金属厚度、卡片内部分层视差，悬停处冒火花）；点任一奖章、卡片或最新掉落会打开详情页（与解锁动画同一个舞台：3D 能量环、环绕粒子、开场爆闪、指针拖尾），已获得的可直接复制或保存分享图，未获得的显示进度；收集册顶部有跟随鼠标的漂浮光尘；新获得的奖章或卡片（首次出现的 id，记在 UserDefaults `seenTrophies`，首次运行只记录不播放）会在面板上播放解锁动画，并发一条系统通知；解锁动画、详情页和收集册右上角都可以复制或保存分享图（540pt 宽，2x PNG）。分享图底部可附项目二维码（`https://github.com/Gary23333/agent-meter`，CoreImage 本地生成）：收集分享图的开关在详情页的二维码按钮和收集册分享菜单里（UserDefaults `trophyShareQR`，默认开）；用量报告分享卡在报告窗口勾选「项目二维码」（`ShareOptions.qrCode`，默认开，旧设置读取时补默认值）。开启「减弱动态效果」时只显示静态画面。
+
 ## 测试分层
 
 1. 人工可核算的固定样例：缓存语义、重复记录、时间边界、零与未知、截断卡片及货币。

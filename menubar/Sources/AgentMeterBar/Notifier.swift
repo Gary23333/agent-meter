@@ -44,6 +44,63 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                    body: "额度不足和到期提醒会以这种方式出现。"))
     }
 
+    /// Claim results: one notification per successful claim, and one per item
+    /// that used up its attempts for the day. Keys are remembered so a result
+    /// is never announced twice.
+    func rewardResults(_ snapshot: Snapshot) {
+        let key = "notifiedClaims"
+        var seen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        let first = UserDefaults.standard.stringArray(forKey: key) == nil
+        var fresh: [String] = []
+        for account in snapshot.rewards {
+            let name = Catalog.brand(account.id).name
+            var attempts: [String: Int] = [:]
+            for claim in account.claimsToday {
+                let item = claim["item"].string ?? ""
+                attempts[item, default: 0] += 1
+                let at = Int(claim["at"].double ?? 0)
+                let result = claim["result"].string ?? ""
+                let id = "\(account.id)|\(item)|\(at)"
+                guard !seen.contains(id) else { continue }
+                seen.insert(id)
+                fresh.append(id)
+                if first { continue }
+                let title = claim["title"].string ?? "每日积分"
+                if result == "ok" {
+                    var body = "+" + Fmt.grouped(claim["credits"].double ?? 0) + " 积分"
+                    if let streak = account.streakDays, streak > 1 { body += " · 已连续 \(streak) 天" }
+                    if let badge = claim["badge"].string { body += " · 获得徽章「\(badge)」" }
+                    post(Alert(key: "claim-" + id, title: "\(name) · \(title)领取成功", body: body))
+                } else if claim["final"].bool == true {
+                    post(Alert(key: "claim-" + id, title: "\(name) · \(title)未能自动领取",
+                               body: "服务拒绝了网页端领取，今天请在客户端里手动签到。"))
+                } else if claim["final"].bool == true {
+                    post(Alert(key: "claim-" + id, title: "\(name) · \(title)未能自动领取",
+                               body: "服务拒绝了网页端领取，今天请在客户端里手动签到。"))
+                } else if ["error", "rejected"].contains(result), attempts[item] == 3 {
+                    post(Alert(key: "claim-" + id, title: "\(name) · \(title)领取失败",
+                               body: "今天已重试 3 次，请打开网页手动领取，或检查登录是否失效。"))
+                }
+            }
+        }
+        // The first run stores its baseline even when empty, so the first
+        // real result after it is announced rather than taken as history.
+        guard first || !fresh.isEmpty else { return }
+        UserDefaults.standard.set(Array(seen.suffix(400)), forKey: key)
+    }
+
+    /// One notification per batch of new trophies (the panel shows each one).
+    func unlocked(_ unlocks: [Unlock], in data: CollectionData) {
+        let names = unlocks.compactMap { u in
+            u.kind == .medal ? data.medals.first { $0.id == u.id }.map { "「\($0.name)」奖章" }
+                             : data.def(u.id).map { "「\($0.name)」\($0.rarity.label)卡" }
+        }
+        guard !names.isEmpty else { return }
+        let title = unlocks.count == 1 ? "Agent 用量 · 解锁新收藏" : "Agent 用量 · 解锁 \(unlocks.count) 件新收藏"
+        post(Alert(key: "unlock-" + unlocks.map(\.id).joined(separator: "-"), title: title,
+                   body: names.prefix(4).joined(separator: "、") + (names.count > 4 ? " 等" : "") + "，打开面板查看。"))
+    }
+
     private func post(_ alert: Alert) {
         let content = UNMutableNotificationContent()
         content.title = alert.title
@@ -52,6 +109,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.threadIdentifier = "agent-meter"
         center?.add(UNNotificationRequest(identifier: alert.key, content: content, trigger: nil)) { error in
             if let error { NSLog("AgentMeterBar notification failed: %@", String(describing: error)) }
+            else { NSLog("AgentMeterBar notification posted: %@", alert.key) }
         }
     }
 

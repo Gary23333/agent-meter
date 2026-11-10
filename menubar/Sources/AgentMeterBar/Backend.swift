@@ -99,12 +99,21 @@ struct BackendClient {
     }
 
     /// Runtime on/off switches for sources (kept in backend memory).
-    func putPreferences(disabled: [String]) async throws {
+    func putPreferences(disabled: [String], autoClaim: [String], claimTime: String) async throws {
         var r = try request("v1/preferences", method: "PUT", timeout: 10)
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try JSONSerialization.data(withJSONObject: ["disabled_sources": disabled])
+        r.httpBody = try JSONSerialization.data(withJSONObject: ["disabled_sources": disabled, "auto_claim": autoClaim, "claim_time": claimTime])
         let (_, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
+    }
+
+    /// Claims one account's daily rewards now ("trae_cn", "workbuddy#2"...).
+    /// The path component percent-encodes "#".
+    func claimReward(_ slot: String) async throws {
+        let r = try request("v1/rewards/claim/" + slot, method: "POST", timeout: 60)
+        let (_, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
     }
 
     /// Local price table (GET/PUT /v1/prices).
