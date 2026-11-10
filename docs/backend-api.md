@@ -250,20 +250,20 @@ collector 路由：网页会话优先读额度，桌面登录补卡（`diagnosti
 
 ## 每日积分领取（snapshot.rewards）
 
-`agent_meter/rewards.py`，仅由 `SnapshotService` 调用（CLI 的 `collect` 不涉及）。快照顶层新增 `rewards`：`{schema_version: 1, timezone: "Asia/Shanghai", accounts: [...]}`，每个网页登录账户一项（`trae_cn`、`trae_cn#2`、`workbuddy`…）：
+`agent_meter/rewards.py`，仅由 `SnapshotService` 调用（CLI 的 `collect` 不涉及）。快照顶层新增 `rewards`：`{schema_version: 1, timezone: "Asia/Shanghai", accounts: [...]}`，每个可领取账户一项（`trae_cn`、`trae_cn#2`、`workbuddy`…；`qoder` 为桌面客户端凭据型，单账号）：
 
 - `status` / `reason`：`available`；`not_connected`（`not_authenticated`、`disabled_by_user`、`local_only_mode`）；`error`（固定错误码）。
-- `today`：TRAE 为 `{kind: daily_checkin, enabled, signed_in, daily_credits, extra_credits, claimable}`；WorkBuddy 为 `{kind: growth_tasks, signed_in: null, streak_days, next_tier, next_tier_remaining, makeup_cards, makeup_cards_max, tiers, open_tasks, claimable}`。`claimable` 每项 `{item, title, credits}`，item 为 `daily_checkin` 或 `task:<task_code>`。
+- `today`：TRAE 为 `{kind: daily_checkin, enabled, signed_in, daily_credits, extra_credits, claimable}`；WorkBuddy 为 `{kind: growth_tasks, signed_in: null, streak_days, next_tier, next_tier_remaining, makeup_cards, makeup_cards_max, tiers, open_tasks, claimable}`；Qoder 为 `{kind: campaign, enabled, signed_in: null, campaigns, claimable, daily_refresh}`，`campaigns` 每项 `{campaign_id, title, credits, status, active, start_at, end_at}`，`daily_refresh` 是当日活动发布的北京时间（`HH:MM`，实测 10:00）。`claimable` 每项 `{item, title, credits}`，item 为 `daily_checkin`、`task:<task_code>` 或 `campaign:<campaign_id>`。
 - `claims_today`：`{item, title, at, result: ok|already|rejected|error, credits?, code?, reason?, badge?}`；`claimed_credits_today` / `claimed_credits_total`；`streak_days`（仅 TRAE：按北京时间连续已签到的天数，今天未签时截至昨天）；`history`：近 35 天 `{date, signed_in, claimed_credits}`。
 
-节流：每个账户 30 分钟最多读一次状态（跨日立即读）。领取只在 `PUT /v1/preferences` 的 `auto_claim`（`trae_cn`、`workbuddy` 子集，默认空）开启、且北京时间已过 `claim_time`（`HH:MM`，默认 `00:05`；菜单栏默认 08:00）时进行；过了领取时间后的第一次采集不受 30 分钟节流，立即读状态并领取。每个账户的摘要带 `claim_time` 与 `next_claim_at`（自动领取关闭时为 null）。菜单栏在领取时间过 15 秒和再过 70 秒各强制刷新一次，不等常规轮询；每次领取成功发一条系统通知（积分、连续天数、徽章），同一项当天第 3 次失败时发一条失败通知，已通知的结果记在 UserDefaults `notifiedClaims`，首次运行只记录不通知。同一项每天最多试 3 次、失败后 1 小时再试，`ok` / `already` 后不再试。TRAE 的 9004 记作 `already`，但不计为已签到（可能是参数错误），以领取后重读的状态为准。
+节流：每个账户 30 分钟最多读一次状态（跨日立即读）。领取只在 `PUT /v1/preferences` 的 `auto_claim`（`trae_cn`、`workbuddy`、`qoder` 子集，默认空）开启、且北京时间已过 `claim_time`（`HH:MM`，默认 `00:05`；菜单栏默认 08:00）时进行；过了领取时间后的第一次采集不受 30 分钟节流，立即读状态并领取。每个账户的摘要带 `claim_time` 与 `next_claim_at`（自动领取关闭时为 null）。菜单栏在领取时间过 15 秒和再过 70 秒各强制刷新一次，不等常规轮询；每次领取成功发一条系统通知（积分、连续天数、徽章），同一项当天第 3 次失败时发一条失败通知，已通知的结果记在 UserDefaults `notifiedClaims`，首次运行只记录不通知。同一项每天最多试 3 次、失败后 1 小时再试，`ok` / `already` 后不再试。TRAE 的 9004 记作 `already`，但不计为已签到（可能是参数错误），以领取后重读的状态为准。
 
 接口：
 
 - `PUT /v1/preferences` body `{"disabled_sources": [...], "auto_claim": [...], "claim_time": "08:00"}`，`auto_claim`、`claim_time` 可省略。
 - `POST /v1/rewards/claim/<slot>`（无 body，`#` 编码为 `%23`）：对该账户立即读状态并领取，不受开关和节流限制，返回最新 `rewards`，同时更新缓存快照。
 
-上游接口与实测记录见[每日积分研究](research/checkin-automation-and-collection-2026-11-09.md)。
+上游接口与实测记录见[每日积分研究](research/checkin-automation-and-collection-2026-11-09.md)；Qoder 的活动与领取见[Qoder 活动复勘](research/qoder-campaigns-recon-2026-11-10.md)（凭据来自桌面客户端 `auth.v1.dat`，钥匙串条目 `Qoder CN App Safe Storage`，首次读取会弹一次授权框）。
 
 ## 卡册与奖章（snapshot.collection）
 

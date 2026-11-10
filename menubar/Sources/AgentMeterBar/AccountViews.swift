@@ -482,6 +482,19 @@ private struct RewardSection: View {
             if let auto { detail.append(auto) }
             rows.append(InfoRow(symbol: "gift", title: "每日签到", value: value, detail: detail.joined(separator: " · "),
                                 valueTint: signed ? .secondary : .orange))
+        } else if reward.provider == "qoder" {
+            // Qoder has no button and no streak: it hands out one campaign
+            // credit round per day through the desktop app.
+            let waiting = reward.claimable.count
+            let perItem = reward.claimable.first?["credits"].double ?? 0
+            var detail: [String] = []
+            if waiting > 0, perItem > 0 { detail.append("每份 \(Fmt.grouped(perItem)) 积分") }
+            if let refresh = today["daily_refresh"].string { detail.append("每日 \(refresh) 刷新") }
+            if let auto { detail.append(auto) }
+            rows.append(InfoRow(symbol: "gift", title: "每日积分活动",
+                                value: waiting > 0 ? "\(waiting) 个待领" : "暂无待领",
+                                detail: detail.isEmpty ? nil : detail.joined(separator: " · "),
+                                valueTint: waiting > 0 ? .orange : .secondary))
         } else {
             let days = Int(today["streak_days"].double ?? 0)
             var detail: [String] = []

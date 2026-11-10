@@ -450,7 +450,7 @@ final class UsageStore {
         var off: [String] = []
         if !claudeEnabled { off.append("claude") }
         if !forecastEnabled { off.append("reset_forecast") }
-        let autoClaim = autoClaimEnabled ? ["trae_cn", "workbuddy"] : []
+        let autoClaim = autoClaimEnabled ? ["trae_cn", "workbuddy", "qoder"] : []
         do { try await client.putPreferences(disabled: off, lowResource: lowResourceMode,
                                              skipLedgers: skipLedgersLowResource,
                                              autoClaim: autoClaim, claimTime: claimTime) }

@@ -13,6 +13,9 @@ docs/research/checkin-automation-and-collection-2026-11-09.md):
   website Cloud-IDE-JWT already used for the account card.
 - WorkBuddy: growth-center ``/activity/growth/streak``, ``/v2/activity/growth/tasks``
   and ``/activity/growth/tasks/{task_code}/claim`` with the website cookie.
+- Qoder CN: ``/sash/api/v1/me/campaigns`` and ``.../{campaign_id}/claim`` with
+  the desktop client's own token (not a website login), see
+  ``agent_meter/qoder_campaign.py``.
 
 The ledger ``<runtime>/rewards.json`` (0600) keeps one record per account and
 day (Asia/Shanghai, the providers' own day boundary): the last observed status
@@ -27,9 +30,14 @@ from pathlib import Path
 
 from .model import SourceError, number, timestamp
 from .transport import get_json, post_json
+from .qoder_campaign import qoder_campaigns_claim, qoder_campaigns_status
 from .web_sources import SAFARI_UA, WORKBUDDY_ORIGIN, as_account_lists, require
 
-PROVIDERS = ("trae_cn", "workbuddy")
+PROVIDERS = ("trae_cn", "workbuddy", "qoder")
+# Providers whose credentials come from a desktop app instead of a website
+# login. The collector passes the app path; the provider reads what it needs
+# from that pseudo-session, so it behaves like a single account.
+DESKTOP_PROVIDERS = {"qoder": "desktop_app"}
 LEDGER_NAME = "rewards.json"
 LEDGER_SCHEMA = 1
 CN = timezone(timedelta(hours=8))
@@ -192,7 +200,8 @@ def workbuddy_claim(session, item, timeout):
                                                timeout=timeout, headers=_workbuddy_headers(session)))
 
 
-ADAPTERS = {"trae_cn": (trae_status, trae_claim), "workbuddy": (workbuddy_status, workbuddy_claim)}
+ADAPTERS = {"trae_cn": (trae_status, trae_claim), "workbuddy": (workbuddy_status, workbuddy_claim),
+            "qoder": (qoder_campaigns_status, qoder_campaigns_claim)}
 
 
 # --- ledger ----------------------------------------------------------------
@@ -340,7 +349,7 @@ class RewardsService:
         return True
 
     def tick(self, web_sessions, now, auto_claim=(), disabled=(), timeout=15, only=None, local_only=False,
-             claim_time=DEFAULT_CLAIM_TIME):
+             claim_time=DEFAULT_CLAIM_TIME, desktop=None):
         """Reads due statuses, claims what is switched on and returns the summary.
 
         Automatic claims wait for the daily ``claim_time`` (HH:MM, Asia/Shanghai);
@@ -348,13 +357,22 @@ class RewardsService:
         for the status interval. ``only`` names one slot to read and claim right
         away (the user's "claim now" button), regardless of time, throttling
         and the auto switch.
+
+        ``desktop`` maps a desktop-backed provider to its app path; such a
+        provider has no website session but still counts as one account.
         """
         accounts = as_account_lists(web_sessions)
+        for provider, key in DESKTOP_PROVIDERS.items():
+            app = (desktop or {}).get(provider)
+            if app and not accounts.get(provider):
+                accounts[provider] = [{key: app}]
         today_at, next_at = claim_moments(now, claim_time)
         claim_open = now >= today_at
         changed = False
         summaries = []
         for provider in PROVIDERS:
+            if provider not in self.adapters:
+                continue
             for index, session in enumerate(accounts.get(provider, [])):
                 slot = provider if index == 0 else "%s#%d" % (provider, index + 1)
                 auto = provider in auto_claim

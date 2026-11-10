@@ -14,7 +14,7 @@ MAX_SESSION_BODY = 64 * 1024
 MAX_PET_BODY = 4 * 1024
 # Sources the app may switch off at runtime.
 # Providers whose daily rewards the app may claim (agent_meter/rewards.py).
-CLAIMABLE = {"trae_cn", "workbuddy"}
+CLAIMABLE = {"trae_cn", "workbuddy", "qoder"}
 TOGGLEABLE = {"claude", "codex", "kimi", "qoder", "minimax_code", "deepseek_api", "dreamina", "minimax_design", "workbuddy", "trae_cn", "reset_forecast"}
 
 

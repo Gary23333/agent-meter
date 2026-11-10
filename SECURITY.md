@@ -4,7 +4,7 @@
 
 AgentMeter 会按已启用来源读取本机账本，并可能使用用户已连接的账户向对应服务查询额度。只读查询不代表没有网络请求；本机日志、项目路径、价格配置和账户信息仍可能敏感。
 
-唯一的写操作是可选的「自动领取每日积分」（`agent_meter/rewards.py`）：默认关闭，开启后只领取 TRAE 每日签到和 WorkBuddy 已完成任务的奖励；面板上的「领取」按钮只对当前账户领一次。领取记录保存在 `.runtime/rewards.json`（0600），不含 Cookie、令牌或响应正文。
+唯一的写操作是可选的「自动领取每日积分」（`agent_meter/rewards.py`）：默认关闭，开启后只领取 TRAE 每日签到、WorkBuddy 已完成任务的奖励和 Qoder 每日活动积分；面板上的「领取」按钮只对当前账户领一次。领取记录保存在 `.runtime/rewards.json`（0600），不含 Cookie、令牌或响应正文。
 
 - HTTP API 只监听 `127.0.0.1`，校验 Host、拒绝浏览器 Origin，并要求本机 Bearer token。不要反向代理或暴露到局域网/公网。
 - `.runtime/api.token` 使用 0600 权限；不要复制 token、Cookie、钥匙串导出或真实会话到 Issue、PR、截图和测试夹具。

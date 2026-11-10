@@ -167,7 +167,7 @@ struct PanelView: View {
             Button("数据状态与省资源…") { DataStatusWindow.show() }
             Toggle("读取 Claude 额度", isOn: Binding(get: { store.claudeEnabled }, set: { store.claudeEnabled = $0 }))
             Toggle("全员重置预测（联网读第三方追踪站）", isOn: Binding(get: { store.forecastEnabled }, set: { store.forecastEnabled = $0 }))
-            Toggle("自动领取每日积分（TRAE 签到 · WorkBuddy 任务奖励）",
+            Toggle("自动领取每日积分（TRAE 签到 · WorkBuddy 任务奖励 · Qoder 每日积分）",
                    isOn: Binding(get: { store.autoClaimEnabled }, set: { store.autoClaimEnabled = $0 }))
             Picker("每日领取时间（北京时间）", selection: Binding(get: { store.claimTime }, set: { store.claimTime = $0 })) {
                 ForEach(UsageStore.claimTimeOptions, id: \.self) { Text($0).tag($0) }

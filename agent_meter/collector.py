@@ -540,7 +540,8 @@ class SnapshotService:
             return self.rewards.tick(config.get("web_sessions"),now,auto_claim=set(preferences.get("auto_claim") or []),
                                      disabled=disabled,timeout=config["timeout_seconds"],only=only,
                                      local_only=config["local_only"],
-                                     claim_time=preferences.get("claim_time") or "00:05")
+                                     claim_time=preferences.get("claim_time") or "00:05",
+                                     desktop={"qoder":config.get("qoder_app")})
         except Exception:
             return {"schema_version":1,"timezone":"Asia/Shanghai","accounts":[],"error":"rewards_failed"}
 

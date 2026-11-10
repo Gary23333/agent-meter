@@ -30,6 +30,11 @@ WB_STREAK = {"code": 0, "msg": "OK", "data": {
     "timezone": "Asia/Shanghai"}}
 
 
+QODER_OPEN = {"kind": "campaign", "enabled": True, "signed_in": None, "campaigns": [
+    {"campaign_id": "act-1", "title": "daily_100_credits", "credits": 100, "status": "CLAIMABLE", "active": True}],
+    "claimable": [{"item": "campaign:act-1", "title": "daily_100_credits", "credits": 100}]}
+
+
 def wb_tasks(*states):
     return {"code": 0, "msg": "OK", "data": {"tasks": [
         {"task_code": code, "title": "任务 " + code, "accept_status": state, "reward_credit": 100}
@@ -169,6 +174,38 @@ class ServiceTests(unittest.TestCase):
         self.trae.statuses = [trae_open(), trae_signed()]
         svc.tick({"trae_cn": {"token": "T"}}, NOW + 3600 + 600, auto_claim={"trae_cn"}, claim_time="17:00")
         self.assertEqual([c[0] for c in self.trae.calls[1:]], ["status", "claim", "status"])
+
+    def test_desktop_provider_is_one_account_without_a_web_session(self):
+        svc = self.service()
+        svc.adapters["qoder"] = (lambda session, timeout: QODER_OPEN,
+                                  lambda session, item, timeout: {"result": "ok", "credits": 100})
+        out = svc.tick({}, NOW, desktop={"qoder": "/Applications/Qoder CN.app"})
+        account = out["accounts"][0]
+        self.assertEqual(account["id"], "qoder")
+        self.assertEqual(account["status"], "available")
+        self.assertEqual(account["today"]["claimable"][0]["item"], "campaign:act-1")
+        self.assertEqual(account["streak_days"], None)
+
+    def test_desktop_provider_is_skipped_when_disabled(self):
+        svc = self.service()
+        svc.adapters["qoder"] = (lambda session, timeout: QODER_OPEN,
+                                  lambda session, item, timeout: {"result": "ok", "credits": 100})
+        out = svc.tick({}, NOW, disabled={"qoder"}, desktop={"qoder": "/Applications/Qoder CN.app"})
+        account = out["accounts"][0]
+        self.assertEqual((account["id"], account["status"], account["reason"]), ("qoder", "not_connected", "disabled_by_user"))
+
+    def test_desktop_provider_claims_when_switched_on(self):
+        svc = self.service()
+        calls = []
+
+        def claim(session, item, timeout):
+            calls.append(item)
+            return {"result": "ok", "credits": 100}
+
+        svc.adapters["qoder"] = (lambda session, timeout: QODER_OPEN, claim)
+        out = svc.tick({}, NOW, auto_claim={"qoder"}, desktop={"qoder": "/Applications/Qoder CN.app"})
+        self.assertEqual(calls, ["campaign:act-1"])
+        self.assertEqual(out["accounts"][0]["claimed_credits_today"], 100)
 
     def test_claim_moments(self):
         today, nxt = rewards.claim_moments(NOW, "15:30")
