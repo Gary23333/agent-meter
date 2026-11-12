@@ -464,7 +464,8 @@ def compute_reminders(snapshot, threshold, now):
         if cards and isinstance(cards["value"], dict):
             value = cards["value"]
             total = int(_num(value.get("available_count")) or 0)
-            expiries = [e for e in (_epoch((c or {}).get("expires_at")) for c in value.get("cards", []) if isinstance(c, dict)) if e is not None]
+            expiries = [expiry for card in _rows(value.get("cards"))
+                        if (expiry := _epoch(card.get("expires_at"))) is not None]
             if not expiries:
                 fallback = _epoch(value.get("next_known_expiry"))
                 expiries = [fallback] if fallback is not None else []

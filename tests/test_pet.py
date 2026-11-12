@@ -161,6 +161,13 @@ class ReminderParityTests(unittest.TestCase):
             {"expires_at": timestamp(NOW - 5)}, {"expires_at": timestamp(NOW + 4 * 86400)}]})
         self.assertEqual(pet.compute_reminders(snapshot([src]), 20, NOW), [])
 
+    def test_null_reset_card_details_keep_the_pet_frame_and_expiry_reminder(self):
+        expires = NOW + 3600
+        src = account("codex", reset_cards={"available_count": 1, "cards": None,
+                                           "next_known_expiry": timestamp(expires)})
+        frame = mind().frame(snapshot([src]), activity([]), NOW)
+        self.assertIn(f"card|codex|{expires}|1", [row["id"] for row in frame["reminders"]])
+
     def test_sources_without_account_data_never_alert(self):
         silent = source("qoder", "account", NOW, status="not_connected", reason="web_session_missing")
         history = source("imported_history", "local_imported_history", NOW)
