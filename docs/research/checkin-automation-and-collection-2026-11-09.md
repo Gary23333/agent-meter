@@ -160,3 +160,15 @@
 
 通知已确认送达系统通知中心（本机该 App 的提醒样式为“无”且静音，所以没有横幅）。
 
+## 2026-11-12 本机实测：补齐设备 ID 后 TRAE 领取成功
+
+2026-11-10 的结论修正一半：**缺的不是令牌，而是设备 ID**，且它不需要解密就能拿到。
+
+- 稳定明文来源：`~/Library/Application Support/Trae CN/User/globalStorage/storage.json` 的键名 `iCubeAuthInfo://icube-dc:<15 位十进制 id>`。只读键名，加密的值与登录态完全不碰。
+- 交叉验证：`logs/aha_log/aha_electron_<date>.log` 里客户端自己上报的 `device_id=` 与键名后缀一致；`telemetry.devDeviceId`（UUID）与 `machineid`（UUID）**不是**领取要的那个 ID，别用错。
+- 实测：网页 `Cloud-IDE-JWT` + `X-Device-Id: <设备 ID>` 调 `checkin_credits/claim` 返回 `code=0`，重读状态 `checked_in=true`、`claimable=[]`，即当日 300 积分到账。此前同一令牌不带设备 ID 两次均 9004。
+- 未验证项：开源脚本提到的 ECDSA P-256 设备证明（20405）只出现在*续期*路径，本次领取未触发；若日后领取开始要求证明，需要再读客户端设备密钥，属另一轮工作。
+- 规则提醒：一台真实设备每天只能给一个账户签到（9095）。本机客户端登录账户与网页会话账户若不同，二者共用设备 ID 时后签的那个会被拒。
+
+处理：`agent_meter/rewards.py` 的 `trae_device_id()` 只读上述键名，`tick` 在会话未显式带 `device_id` 时自动附上；读不到则退回纯网页凭据尝试。自动领取与「立即领取每日积分」按钮共用这条路径。
+

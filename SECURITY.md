@@ -4,10 +4,13 @@
 
 AgentMeter 会按已启用来源读取本机账本，并可能使用用户已连接的账户向对应服务查询额度。只读查询不代表没有网络请求；本机日志、项目路径、价格配置和账户信息仍可能敏感。
 
-唯一的写操作是可选的「自动领取每日积分」（`agent_meter/rewards.py`）：默认关闭，开启后只领取 TRAE 每日签到、WorkBuddy 已完成任务的奖励和 Qoder 每日活动积分；面板上的「领取」按钮只对当前账户领一次。领取记录保存在 `.runtime/rewards.json`（0600），不含 Cookie、令牌或响应正文。
+唯一的写操作是可选的「自动领取每日积分」（`agent_meter/rewards.py`）：默认关闭，开启后只领取 TRAE 每日签到、WorkBuddy 已完成任务的奖励和 Qoder 每日活动积分；面板上的「领取」按钮只对当前账户领一次。TRAE 的生日奖励/抽奖等 bonus 项只读查询、绝不自动领取；MiniMax Code 签到在契约实测前保持不可用。领取记录保存在 `.runtime/rewards.json`（0600），不含 Cookie、令牌或响应正文。
 
 - HTTP API 只监听 `127.0.0.1`，校验 Host、拒绝浏览器 Origin，并要求本机 Bearer token。不要反向代理或暴露到局域网/公网。
 - `.runtime/api.token` 使用 0600 权限；不要复制 token、Cookie、钥匙串导出或真实会话到 Issue、PR、截图和测试夹具。
+- Claude 额度可复用桌面 App 自身的登录态：经系统钥匙串授权读取 `Claude Safe Storage` 密钥，在内存解密 Cookies 后只读查询官方用量接口；密钥经 env/stdin 传递、Cookie 不落盘不进快照，首次使用会弹一次系统授权框。
+- 本地导出（`/v1/export/*` 与面板保存入口）只把原始用量/额度观测/卡册写为用户主动选择位置的文件，不含金额估算、凭据或对话正文；导出不会触发采集，也不会上传任何数据。
+- 重置预测的手动公告与落地观测存 `.runtime/reset-forecast-{manual,landings}.json`（0600），仅本机；手动录入只记公告时间事实，不产生概率或通知。
 - `.runtime/` 和真实核对材料保持本机私有。生成分享图前确认展示的项目、用量和金额适合公开。
 - CI 使用合成测试，不运行真实账户对账或执行付费请求。第三方运行时和数据源的边界见 `THIRD_PARTY_NOTICES.md`。
 

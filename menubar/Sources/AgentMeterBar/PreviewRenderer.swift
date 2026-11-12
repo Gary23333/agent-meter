@@ -30,7 +30,7 @@ enum PreviewRenderer {
     }
 
     /// The tab's page and the gallery thumbnails are drawn asynchronously; wait until both are in.
-    private static func waitForPet(theme: PanelTheme, scheme: String, deadline: Date = Date().addingTimeInterval(40), _ done: @escaping @MainActor () -> Void) {
+    private static func waitForPet(theme: PanelTheme, scheme: String, deadline: Date = Date().addingTimeInterval(90), _ done: @escaping @MainActor () -> Void) {
         let thumbnails = PetThumbnails.shared
         let complete = PetStageHost.shared.ready && thumbnails.isComplete(for: PetResources.allPacks(), theme: theme.rawValue, scheme: scheme)
         if complete, let state = argument("--pet-state"), !petStateApplied {
@@ -73,7 +73,17 @@ enum PreviewRenderer {
             }
             if view is PetWebView {
                 // The pet page draws on animation frames, which an off-screen window never gets: it paints itself on request.
-                PetStageHost.shared.capture { image in draw(image) }
+                // A first offscreen draw can come back empty (the content process recovers by reloading): ask again once.
+                func shoot(_ tries: Int) {
+                    PetStageHost.shared.capture { image in
+                        if image == nil, tries > 0 {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { shoot(tries - 1) } }
+                        } else {
+                            draw(image)
+                        }
+                    }
+                }
+                shoot(2)
             } else {
                 view.takeSnapshot(with: nil) { image, _ in MainActor.assumeIsolated { draw(image) } }
             }
@@ -254,8 +264,9 @@ enum PreviewRenderer {
         let onlyTab = argument("--tab"), onlyTheme = argument("--theme")
 
         let snap = Snapshot(json)
+        let shareReport = ReportData.build(snapshot: snap, period: .week, now: Date())
         // Both presets and a no-cost variant, in every theme.
-        if onlyTab == nil, let report = ReportData.build(snapshot: snap, period: .week, now: Date()) {
+        if onlyTab == nil, let report = shareReport {
             var hidden = ShareOptions.review
             hidden.costs = false
             for theme in PanelTheme.allCases {
@@ -420,9 +431,15 @@ enum PreviewRenderer {
                 MainActor.assumeIsolated {
                     @MainActor func capture() {
                         host.layoutSubtreeIfNeeded()
-                        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                        // Dismantle the finished job's host: a lingering PanelView keeps observing panelTab and
+                        // would attach/detach the shared pet stage under the next job's feet.
+                        @MainActor func finish() {
+                            window.contentView = nil
                             window.orderOut(nil)
                             next()
+                        }
+                        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                            finish()
                             return
                         }
                         host.cacheDisplay(in: host.bounds, to: rep)
@@ -430,8 +447,27 @@ enum PreviewRenderer {
                             let name = (theme == .aurora ? "" : theme.rawValue + "-") + "\(tab.rawValue)-\(appearance == .darkAqua ? "dark" : "light").png"
                             try? rep.representation(using: .png, properties: [:])?
                                 .write(to: URL(fileURLWithPath: outDir).appendingPathComponent(name))
-                            window.orderOut(nil)
-                            next()
+                            // The share card with the pet in it, photographed from the live stage (light only).
+                            if tab == .pet, appearance == .aqua, let report = shareReport {
+                                @MainActor func photograph(_ tries: Int) {
+                                    PetStageHost.shared.capture({ image in
+                                        if image == nil, tries > 0 {
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { MainActor.assumeIsolated { photograph(tries - 1) } }
+                                            return
+                                        }
+                                        let photo = image.flatMap { PetThumbnails.trimmed($0) ?? $0 }
+                                        var withPet = ShareOptions.compact
+                                        withPet.pet = true
+                                        if let png = ShareCardRenderer.pngData(data: report, theme: theme, options: withPet, petImage: photo, scale: 2) {
+                                            try? png.write(to: URL(fileURLWithPath: outDir).appendingPathComponent("share-with-pet-\(theme.rawValue).png"))
+                                        }
+                                        finish()
+                                    }, effects: false)
+                                }
+                                photograph(12)
+                            } else {
+                                finish()
+                            }
                         }
                     }
                     if tab == .pet { waitForPet(theme: theme, scheme: dark ? "dark" : "light", capture) } else { capture() }

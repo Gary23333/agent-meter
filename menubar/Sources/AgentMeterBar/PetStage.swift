@@ -277,9 +277,9 @@ final class PetStageHost: NSObject, WKNavigationDelegate {
 
     /// The stage as a picture, for screenshots in a window that is not on screen (see `PreviewRenderer`): the page
     /// plays a little animation by hand, since a hidden window gets no animation frames, and returns the pet.
-    func capture(_ completion: @escaping (NSImage?) -> Void) {
+    func capture(_ completion: @escaping (NSImage?) -> Void, effects: Bool = true) {
         guard ready, let storedWeb else { completion(nil); return }
-        storedWeb.evaluateJavaScript("window.__pet ? window.__pet.stage.capture({ settle: 0.8 }) : ''") { result, _ in
+        storedWeb.evaluateJavaScript("window.__pet ? window.__pet.stage.capture({ settle: 0.8, fx: \(effects ? "true" : "false") }) : ''") { result, _ in
             MainActor.assumeIsolated { completion(PetThumbnails.image(fromDataURL: result as? String ?? "")) }
         }
     }
@@ -303,6 +303,10 @@ final class PetStageHost: NSObject, WKNavigationDelegate {
             PetFeed.shared.refreshNow()
         case .action(.openPanel(let tab)):
             if let tab { UserDefaults.standard.set(tab, forKey: "panelTab") }
+        case .sessionClick(let app):
+            if let problem = AppLauncher.openApp(forApp: app, in: store.snapshot) {
+                send(["type": "say", "bubble": ["text": problem, "tone": "warn", "ttl": 10, "priority": 80] as [String: Any]])
+            }
         case .refreshRequest:
             store.refresh()
         case .error(let text):

@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from .exchange_rates import FX_FALLBACK, rate_from
 from .model import timestamp
 
 LEDGER_NAME = "collection.json"
@@ -125,8 +126,6 @@ CATEGORIES = {"day_peak": "单日巅峰", "lifetime": "累计里程", "streak": 
               "creative": "创作积分"}
 # Creative wallets whose balance drops count as credits spent (即梦, MiniMax Design).
 CREATIVE_UNITS = {"dreamina_credits", "minimax_design_media_credits"}
-# Matches prices.FX_FALLBACK; the menu bar shows every amount in CNY.
-USD_TO_CNY = 7.25
 
 
 def day_of(epoch):
@@ -467,7 +466,7 @@ def daily_tokens(sources):
     return totals, {d: len(v) for d, v in apps.items()}
 
 
-def daily_cost(sources):
+def daily_cost(sources, fx_rate=FX_FALLBACK):
     """CNY per day from each source's estimated cost (off-peak daily pricing)."""
     days = {}
     for src in sources:
@@ -476,7 +475,7 @@ def daily_cost(sources):
         if metric.get("status") not in {"available", "partial", "stale"} or not isinstance(value, dict) \
                 or value.get("basis") != "local_price_table":
             continue
-        rate = USD_TO_CNY if value.get("unit") == "USD" else 1.0
+        rate = float(fx_rate) if value.get("unit") == "USD" else 1.0
         for row in value.get("daily") or []:
             amount = _number(row.get("amount")) if isinstance(row, dict) else None
             if amount and isinstance(row.get("date"), str):
@@ -513,7 +512,7 @@ def free_credits(sources, rewards_summary):
     return total
 
 
-def medals(sources, rewards_summary, now, creative=None):
+def medals(sources, rewards_summary, now, creative=None, fx_rate=FX_FALLBACK):
     today = day_of(now)
     totals, apps = daily_tokens(sources)
     dates = sorted(totals)
@@ -528,7 +527,7 @@ def medals(sources, rewards_summary, now, creative=None):
                 records.append(date)
             best = totals[date]
     free = free_credits(sources, rewards_summary)
-    costs = daily_cost(sources)
+    costs = daily_cost(sources, fx_rate)
     cost_dates = sorted(costs)
     images = daily_images(sources)
     image_dates = sorted(images)
@@ -662,10 +661,10 @@ class CollectionService:
                 save_ledger(self.path, self.ledger)
             except OSError:
                 pass
-        return build(self.ledger, sources, rewards_ledger, snapshot.get("rewards"), now)
+        return build(self.ledger, sources, rewards_ledger, snapshot.get("rewards"), now, rate_from(snapshot))
 
 
-def build(ledger, sources, rewards_ledger, rewards_summary, now):
+def build(ledger, sources, rewards_ledger, rewards_summary, now, fx_rate=FX_FALLBACK):
     ledger_drops = [d for d in ledger["drops"] if d.get("card") in CARD_IDS]
     checkin = [d for d in checkin_drops(rewards_ledger) if d.get("card") in CARD_IDS]
     drops = sorted(ledger_drops + checkin, key=lambda d: d["at"])
@@ -687,7 +686,7 @@ def build(ledger, sources, rewards_ledger, rewards_summary, now):
                              "next_card": card, "next_threshold": threshold,
                              "granted": list(granted) if isinstance(granted, list) else []})
     open_windows.sort(key=lambda w: w["resets_at"]["epoch_seconds"])
-    medal_list, stats = medals(sources, rewards_summary, now, ledger.get("creative"))
+    medal_list, stats = medals(sources, rewards_summary, now, ledger.get("creative"), fx_rate)
     stats.update({"distinct_cards": len([c for c in cards if c != "rc_wasted"]),
                   "catalog_size": len([c for c in CARDS if c[3] != "faded"]),
                   "total_cards": sum(c["count"] for c in cards.values()),

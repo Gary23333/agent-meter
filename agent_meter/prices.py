@@ -5,7 +5,7 @@ same table. Prices are per 1M tokens: input (fresh), cache read, cache write,
 output. Defaults come from the pricing surveys
 (docs/pricing-survey-2026-10-09.md and its 2026-10-15 update), taking the
 official list price in whichever currency published one; the other currency
-falls back to an FX conversion at 7.25, flagged as converted (USD-only models
+uses an FX conversion, flagged as converted (USD-only models
 convert into CNY, domestic CNY-only models convert into USD). Every value is
 user-editable via PUT /v1/prices; user entries override defaults by pattern.
 Estimates are never bills: 订阅套餐内的调用不按 API 价计费.
@@ -17,10 +17,12 @@ list price stays unmatched (unknown ≠ zero) and is named in the estimate's
 unmatched_models so the user can add it in the price table.
 """
 import json
+import time
 import re
 from decimal import Decimal
 from pathlib import Path
 
+from .exchange_rates import FX_FALLBACK, exchange_rate, rate_from
 from .model import SourceError, metric
 from .model_catalog import load_catalog
 from .peak import WINDOW
@@ -55,11 +57,24 @@ DEFAULTS_USD = {
     "claude-haiku-5-5": (0.10, 0.01, 0.125, 0.50),
     "claude-opus-5": (5, 0.50, 6.25, 25),
     "claude-opus-4-8": (5, 0.50, 6.25, 25),
+    "claude-opus-4-7": (5, 0.50, 6.25, 25),
+    "claude-sonnet-4-6": (3, 0.30, 3.75, 15),
     "claude-fable-5": (10, 1.00, 12.50, 50),
     "claude-fable-5-1": (10, 0.25, 12.50, 50),
     "claude-mythos-5": (10, 1.00, 12.50, 50),
     "claude-mythos-5-1": (10, 0.25, 12.50, 50),
     "gpt-5.3-codex": (1.75, 0.175, 0, 14.00),
+    # 2026-11-12 survey round: official pricing page (2026-10-22 capture),
+    # short-context Standard rates; cache write = 30-minute tier where offered.
+    "gpt-5.6-sol": (4.00, 0.40, 5.00, 20.00),
+    "gpt-5.6-terra": (2.00, 0.20, 2.50, 12.00),
+    "gpt-5.6-luna": (0.20, 0.02, 0.25, 1.20),
+    "gpt-5.5": (5.00, 0.50, 0, 30.00),
+    "gpt-5.5-pro": (30, 0, 0, 180),
+    "gpt-5.4": (2.50, 0.25, 0, 15.00),
+    "gpt-5.4-mini": (0.75, 0.075, 0, 4.50),
+    "gpt-5.4-nano": (0.20, 0.02, 0, 1.25),
+    "gpt-5.4-pro": (30, 0, 0, 180),
     "glm-5.3-flashx": (0.37, 0.075, 0, 1.25),
     "minimax-m2.7": (0.30, 0.06, 0.375, 1.20),
     "mimo-v2.6-pro": (0.435, 0.0036, 0, 0.87),
@@ -73,16 +88,18 @@ DEFAULTS_USD = {
     "minimax-m3": (0.30, 0.06, 0, 1.20),
     "minimax-m3.1-flash": (0.15, 0.015, 0, 0.60),
 }
-# CN list prices where published; the rest are USD x 7.25 (flagged converted).
+# CN list prices where published; the rest are USD converted to CNY (flagged converted).
 # The 2026-10-15 additions are official CNY list prices with no official USD
 # rate (Hunyuan Hy4/Hy3, Step 5 Preview, MiMo v2.6-flash); USD tables get them
-# back at 1/7.25, flagged as converted.
+# back at the inverse rate, flagged as converted.
 DEFAULTS_CNY_PUBLISHED = {
     "glm-5.3-flash": (0.8, 0.23, 0, 2.8),
     "glm-5.3": (8, 2, 0, 28),
     "glm-5.3-flashx": (2, 0.57, 0, 7),
     "mimo-v2.5-pro": (3, 0.025, 0, 6),
     "hy4-preview": (6, 0.3, 0, 18),
+    # Hy4 GA (2026-11-04) keeps the preview list price (Tencent Cloud TokenHub).
+    "hy4": (6, 0.3, 0, 18),
     "hy3": (1, 0.25, 0, 4),
     "step-5-preview": (7, 0.7, 0, 20),
     "step-3.7-flash": (1.35, 0.27, 0, 8.1),
@@ -92,8 +109,11 @@ DEFAULTS_CNY_PUBLISHED = {
     "minimax-m3": (2.10, 0.42, 0, 8.40),
     "minimax-m2.7-highspeed": (4.2, 0.42, 2.625, 16.8),
     "minimax-m3.1-flash": (1, 0.1, 0, 4),
+    # 2026-11-12 round: Bailian list (cache write = explicit cache creation);
+    # LongCat-2.0 original list, the ¥2/¥0.04/¥8 intro discount is not the list.
+    "qwen3.8-flash": (0.8, 0.1, 1.25, 2.7),
+    "longcat-2.0": (5, 0.1, 0, 20),
 }
-FX_FALLBACK = Decimal("7.25")
 PRICE_KEYS = ("input", "cache_read", "cache_write", "output")
 CURRENCIES = {"USD", "CNY"}
 # DeepSeek's peak rate is 2x its list price during Beijing weekday
@@ -127,16 +147,16 @@ def default_peak_multipliers():
     return {pattern: PEAK_MULTIPLIER for pattern in PEAK_PATTERNS}
 
 
-def default_prices(currency):
+def default_prices(currency, fx_rate=FX_FALLBACK):
     if currency == "CNY":
-        converted = {p: tuple(round(Decimal(v) * FX_FALLBACK, 4) for v in prices)
+        converted = {p: tuple(round(Decimal(v) * fx_rate, 4) for v in prices)
                      for p, prices in DEFAULTS_USD.items() if p not in DEFAULTS_CNY_PUBLISHED}
         table = dict(DEFAULTS_CNY_PUBLISHED)
         table.update({p: tuple(float(v) for v in prices) for p, prices in converted.items()})
         return table
     # USD mirrors the CNY rule: a domestic model with only a CNY list price
     # converts back at 1/FX and is flagged, instead of staying unpriced.
-    converted = {p: tuple(float(round(Decimal(v) / FX_FALLBACK, 4)) for v in prices)
+    converted = {p: tuple(float(round(Decimal(v) / fx_rate, 4)) for v in prices)
                  for p, prices in DEFAULTS_CNY_PUBLISHED.items() if p not in DEFAULTS_USD}
     return {**{p: prices for p, prices in DEFAULTS_USD.items()}, **converted}
 
@@ -165,8 +185,9 @@ def _clean_peak_multipliers(value):
 
 class PriceTable:
     def __init__(self, currency, user_models, converted, aliases=None, runtime_dir=None,
-                 peak_multipliers=None):
+                 peak_multipliers=None, fx_rate=FX_FALLBACK):
         self.currency = currency
+        self.fx_rate = fx_rate
         self.user_models = dict(user_models or {})
         self.catalog = load_catalog(runtime_dir) if runtime_dir else {}
         # A live catalogue row is a USD price; converting it into CNY would
@@ -179,10 +200,10 @@ class PriceTable:
                 continue
             values = tuple((item.get("prices") or {}).get(key, 0) for key in PRICE_KEYS)
             if currency == "CNY":
-                values = tuple(float(round(Decimal(v) * FX_FALLBACK, 4)) for v in values)
+                values = tuple(float(round(Decimal(v) * self.fx_rate, 4)) for v in values)
             synced[model_id] = values
         self.synced_patterns = set(synced)
-        self.models = {**default_prices(currency), **synced, **(user_models or {})}
+        self.models = {**default_prices(currency, self.fx_rate), **synced, **(user_models or {})}
         self.aliases = dict(aliases or {})
         self.index = {}
         for pattern in self.models:
@@ -264,13 +285,15 @@ def _clean_aliases(value):
     return clean
 
 
-def load_prices(runtime_dir, currency=None):
+def load_prices(runtime_dir, currency=None, *, fx_rate=None):
     """Optional currency previews reprice defaults and convert user overrides.
 
     Reading a preview never changes the persisted selected currency or prices.
     """
     if currency is not None and currency not in CURRENCIES:
         raise SourceError("invalid_price_currency")
+    if fx_rate is None:
+        fx_rate = rate_from({"exchange_rate": exchange_rate(runtime_dir, time.time())})
     path = Path(runtime_dir) / "prices.json"
     try:
         data = json.loads(path.read_text())
@@ -290,14 +313,15 @@ def load_prices(runtime_dir, currency=None):
             models[pattern] = tuple(clean[k] for k in PRICE_KEYS)
         target = currency or data["currency"]
         if target != data["currency"]:
-            factor = FX_FALLBACK if target == "CNY" else 1 / FX_FALLBACK
+            factor = fx_rate if target == "CNY" else 1 / fx_rate
             models = {p: tuple(float(Decimal(str(v)) * factor) for v in prices)
                       for p, prices in models.items()}
         return PriceTable(target, models, set(data.get("converted", [])),
                           _clean_aliases(data.get("aliases", {})), runtime_dir,
-                          peak_multipliers=_clean_peak_multipliers(data.get("peak_multipliers", {})))
+                          peak_multipliers=_clean_peak_multipliers(data.get("peak_multipliers", {})),
+                          fx_rate=fx_rate)
     except (OSError, ValueError, json.JSONDecodeError):
-        return PriceTable(currency or "USD", {}, set(), runtime_dir=runtime_dir)
+        return PriceTable(currency or "USD", {}, set(), runtime_dir=runtime_dir, fx_rate=fx_rate)
 
 
 def save_prices(runtime_dir, currency, models, aliases=None, peak_multipliers=None):
@@ -466,6 +490,6 @@ def estimate_source_cost(tokens_metric, table):
     peaks = {pattern: multiplier for pattern, multiplier in table.peak_multipliers.items()
              if multiplier != 1}
     return metric({"unit": table.currency, "kind": "estimate", "basis": "local_price_table",
-                   "fx_note": "converted_at_7.25" if table.currency == "CNY" and table.converted else None,
+                   "fx_note": f"converted_at_{table.fx_rate}" if table.converted else None,
                    "bound_models": bound_all, "peak_window": WINDOW,
                    "peak_multipliers": peaks, "periods": out_periods}, status=status)

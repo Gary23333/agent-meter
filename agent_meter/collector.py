@@ -13,9 +13,11 @@ from .applications import application_usage, coverage_matrix
 from .agy_tokens import collect_antigravity_sessions
 from .agy_quota import collect_antigravity_quota
 from .claude_code import collect_claude, collect_claude_web
+from .claude_desktop import collect_claude_desktop
 from .cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
 from .codex import collect_codex
 from .codex_images import codex_image_metric
+from .design_credits import collect_design_media_credits
 from .design_tokens import collect_design_tokens
 from .discovery import discover
 from .kimi import collect_kimi
@@ -42,6 +44,7 @@ from .minimax_design import collect_design
 from .billing import refresh_countdowns
 from .pet import PetMind
 from .reset_forecast import CACHE_NAME, collect_reset_forecast, refresh_forecast_countdowns
+from .reset_landings import record_landing
 from .dreamina_web import merge_dreamina
 from .workbuddy_tokens import collect_workbuddy_tokens
 from .zcode_local import zcode_tokens_metric
@@ -81,6 +84,8 @@ def default_config():
             # data-home; its ledger overlaps the standalone db only through
             # copied sessions, which the collector excludes by session id.
             "design_opencode_db":str(home/"Library/Application Support/@hilo/desktop/ai-runtime/data-home/opencode/opencode.db"),
+            # Design media (image/video) task ledgers live inside each Hub project.
+            "design_media_ledger_dir":str(home/"Movies/Hub/Projects"),
             "codex_binary":shutil.which("codex"),"kimi_binary":shutil.which("kimi"),
             # Kimi.app's Agent runtime keeps its own ledger with the same schema.
             "kimi_desktop_sessions_dir":str(home/"Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions"),
@@ -111,6 +116,15 @@ def default_config():
 
 def _raise(error):
     raise error
+
+
+def collect_claude_route(config,web_session,now,timeout):
+    if web_session is not None:
+        return collect_claude_web(web_session,now,timeout)
+    try:
+        return collect_claude_desktop(config["home"],now,timeout,config["node_binary"])
+    except SourceError:
+        return collect_claude(config["home"],now,timeout)
 
 
 def safe_collect(source_id,scope,now,fn):
@@ -251,14 +265,16 @@ def collect(config=None,now=None):
     skip_ledgers=set(preferences.get("skip_ledgers_low_resource") or []) if low_resource else set()
     # Optional API-equivalent price table for every local token ledger.
     from .prices import estimate_daily_cost, estimate_source_cost, load_prices
-    table=load_prices(config["runtime_dir"])
+    from .exchange_rates import exchange_rate, rate_from
+    fx=exchange_rate(runtime,time.time(),online=not config["local_only"])
+    table=load_prices(runtime,fx_rate=rate_from({"exchange_rate":fx}))
     jobs={
       # Project-owned history written once by the legacy migration.
       "imported_history":("local_imported_history",lambda:collect_imported_history(history_store,now)),
       "codex":("account",lambda:collect_codex(config["codex_binary"],now,max(timeout,config.get("codex_timeout_seconds",45)),str(runtime))),
-      # claude.ai web login (shared with the desktop app) first, else Claude Code's Keychain login.
-      "claude":("account",lambda:collect_claude_web(web["claude"],now,timeout) if "claude" in web
-                else collect_claude(config["home"],now,timeout)),
+      # claude.ai web login first, then the desktop app's own session, then
+      # Claude Code's Keychain login.
+      "claude":("account",lambda:collect_claude_route(config,web.get("claude"),now,timeout)),
       "kimi":("account",lambda:collect_kimi(config["home"],config["kimi_binary"],now,timeout,
           url=config.get("kimi_url"),start_server=config["start_kimi_server"],cwd=str(runtime))),
       # A website login (if connected) replaces the Qoder SDK route.
@@ -291,7 +307,8 @@ def collect(config=None,now=None):
       # Global-reset forecasts: third-party wording, never an account clock.
       "reset_forecast":("external_forecast",lambda:collect_reset_forecast(
           now=now,cache_path=str(runtime/CACHE_NAME),
-          refresh_minutes=config["reset_forecast_refresh_minutes"])
+          refresh_minutes=config["reset_forecast_refresh_minutes"],
+          manual_store_path=str(runtime/"reset-forecast-manual.json"))
           if config.get("enable_reset_forecast") else _raise(SourceError("disabled_in_config"))),
     }
     web_collectors={"claude":collect_claude_web,"qoder":collect_qoder_web,"workbuddy":collect_workbuddy,"trae_cn":collect_trae,
@@ -352,13 +369,19 @@ def collect(config=None,now=None):
         if not switched_off("codex") and "codex" not in skip_ledgers:
             image_futures["codex"]=pool.submit(
                 lambda:codex_image_metric(config["codex_images_dir"],config["codex_history_db"],now,
-                                          currency=table.currency,
+                                          currency=table.currency,fx_rate=table.fx_rate,
                                           quality=config.get("codex_image_quality","high")))
         # Qoder CN's local credits ledger is account-page statistics, never a
         # tokens metric: it must not enter the local-consumption sum.
         credits_futures={}
         if not switched_off("qoder") and "qoder" not in skip_ledgers:
             credits_futures["qoder"]=pool.submit(lambda:collect_qoder_credits(config["qoder_projects_dir"],now))
+        # Design media credit estimate: local task ledgers + gateway price
+        # table, reference-only; gated by the same source switch.
+        media_futures={}
+        if not switched_off("minimax_design") and "minimax_design" not in skip_ledgers:
+            media_futures["minimax_design"]=pool.submit(lambda:collect_design_media_credits(
+                config["design_gateway_url"],config["design_media_ledger_dir"],now,timeout))
         for key in jobs:
             if key not in futures:
                 base=key.split("#",1)[0]
@@ -408,6 +431,14 @@ def collect(config=None,now=None):
             src["diagnostics"]["credits_ledger_error"]="local_credits_parse_failed"
         else:
             src["metrics"]["credits"]=merge_credits_metric(src["metrics"]["credits"],ledger)
+    # Design media estimate attaches like the local ledgers: its failure never
+    # touches the wallet rows, and it never enters the local-consumption sum.
+    for src in sources:
+        future=media_futures.get(src["id"])
+        if future is None:
+            continue
+        try:src["metrics"]["media_credits"]=future.result()
+        except Exception:src["metrics"]["media_credits"]=metric(status="error",reason="design_media_parse_failed")
     # Web-page observations (即梦 membership / credit split) from the app.
     if not config["local_only"] and not switched_off("dreamina"):
         sources=merge_dreamina(sources,config.get("observations"),now)
@@ -423,6 +454,13 @@ def collect(config=None,now=None):
             # Day-level amounts feed the collection's spending medals.
             estimated["value"]["daily"]=estimate_daily_cost(tokens,table)
             src["metrics"]["cost"]=estimated
+    # Freeze forecast-vs-landing observations; a broken store never breaks collection.
+    for src in sources:
+        if src["id"]!="reset_forecast":continue
+        forecast=src["metrics"]["reset_forecast"]
+        if forecast["status"] in {"available","partial","stale"} and forecast["value"] is not None:
+            try:record_landing(str(runtime/"reset-forecast-landings.json"),forecast["value"],now)
+            except Exception:pass
     apps=discover(config["app_roots"])
     dreamina_cli=config.get("dreamina_binary") or config.get("dreamina_canvas_binary")
     if config.get("enable_dreamina_cli") and dreamina_cli:
@@ -431,7 +469,7 @@ def collect(config=None,now=None):
     usage=application_usage(sources)
     coverage=coverage_matrix(apps,sources,usage)
     return {"schema_version":SCHEMA_VERSION,"collected_at":timestamp(now),"display_timezone":"Asia/Shanghai",
-            "sources":sources,"coverage":coverage,"application_usage":usage,
+            "sources":sources,"coverage":coverage,"application_usage":usage,"exchange_rate":fx,
             "coverage_summary":coverage_summary(coverage),
             "aggregation_policy":"No cross-account balance sums. Each local ledger is counted independently; account usage remains separate."}
 
@@ -497,8 +535,10 @@ class SnapshotService:
                         and current-self._activity_at<ttl:
                     return copy.deepcopy(self._activity)
                 config=self.config.copy()
+                snapshot=self.snapshot
             try:
-                table=load_prices(config["runtime_dir"],"USD")
+                from .exchange_rates import rate_from
+                table=load_prices(config["runtime_dir"],"USD",fx_rate=rate_from(snapshot) if snapshot else None)
             except Exception:
                 table=None
             payload=collect_activity(config,now=current,table=table)
@@ -529,7 +569,7 @@ class SnapshotService:
     def set_pet_preferences(self,values):
         return self.pet.set_preferences(values)
 
-    def _rewards_tick(self,config,now,only=None):
+    def _rewards_tick(self,config,now,only=None,claim_all=False):
         """Reward status and opt-in claims; a failure never breaks the snapshot."""
         from .rewards import RewardsService
         try:
@@ -541,7 +581,7 @@ class SnapshotService:
                                      disabled=disabled,timeout=config["timeout_seconds"],only=only,
                                      local_only=config["local_only"],
                                      claim_time=preferences.get("claim_time") or "00:05",
-                                     desktop={"qoder":config.get("qoder_app")})
+                                     desktop={"qoder":config.get("qoder_app")},claim_all=claim_all)
         except Exception:
             return {"schema_version":1,"timezone":"Asia/Shanghai","accounts":[],"error":"rewards_failed"}
 
@@ -554,12 +594,12 @@ class SnapshotService:
         except Exception:
             return {"schema_version":1,"error":"collection_failed"}
 
-    def claim_now(self,slot):
-        """The user's "claim now": reads and claims one account immediately."""
+    def claim_now(self,slot=None):
+        """The user's "claim now": one account, or every account when slot is None."""
         with self.collect_lock:
             with self.lock:
                 config,now=self.config.copy(),self.clock()
-            rewards=self._rewards_tick(config,now,only=slot)
+            rewards=self._rewards_tick(config,now,only=slot,claim_all=slot is None)
             with self.lock:
                 snapshot=self.snapshot
             if snapshot is not None:

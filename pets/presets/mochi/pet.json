@@ -1,0 +1,85 @@
+{
+ "format": "agentmeter-pet/1",
+ "id": "mochi",
+ "name": "麻薯",
+ "name_en": "mochi",
+ "version": "1.0.0",
+ "author": "you",
+ "license": "CC0-1.0",
+ "description": "麻薯",
+ "renderer": "sprite",
+ "stage": {
+  "width": 240,
+  "height": 260,
+  "ground": 0.93
+ },
+ "sprite": {
+  "frame": {
+   "width": 256,
+   "height": 256
+  },
+  "pivot": {
+   "x": 0.5,
+   "y": 1.0
+  },
+  "pixelated": false,
+  "motion": true,
+  "anchors": {
+   "head": {
+    "x": 0.5,
+    "y": 0.22
+   },
+   "body": {
+    "x": 0.5,
+    "y": 0.6
+   },
+   "prop": {
+    "x": 0.82,
+    "y": 0.62
+   }
+  },
+  "states": {
+   "alarm": {
+    "image": "sprites/alarm.png",
+    "frames": 4,
+    "fps": 8
+   },
+   "celebrate": {
+    "image": "sprites/celebrate.png",
+    "frames": 6,
+    "fps": 8
+   },
+   "idle": {
+    "image": "sprites/idle.png",
+    "frames": 4,
+    "fps": 4
+   },
+   "offline": {
+    "image": "sprites/offline.png",
+    "frames": 3,
+    "fps": 2
+   },
+   "sleeping": {
+    "image": "sprites/sleeping.png",
+    "frames": 3,
+    "fps": 2
+   },
+   "tired": {
+    "image": "sprites/tired.png",
+    "frames": 3,
+    "fps": 3
+   },
+   "waiting": {
+    "image": "sprites/waiting.png",
+    "frames": 4,
+    "fps": 4
+   },
+   "working": {
+    "image": "sprites/working.png",
+    "frames": 4,
+    "fps": 8
+   }
+  }
+ },
+ "voice": {}
+}

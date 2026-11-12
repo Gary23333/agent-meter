@@ -12,7 +12,6 @@ from decimal import Decimal
 
 from .applications import app_id
 from .model import DISPLAY_ZONE, SourceError, timestamp
-from .prices import FX_FALLBACK
 
 
 def calendar_bounds(now, kind, zone=DISPLAY_ZONE):
@@ -65,10 +64,10 @@ def _window(rows, start_date, end_date, table, app_default):
         else:
             unmatched.add(model)
     denominator = totals["fresh_input"] + totals["cache_read"] + totals["cache_write"]
-    cny = cost if table is not None and table.currency == "CNY" else cost * FX_FALLBACK
+    factor = table.fx_rate if table is not None and table.currency == "USD" else Decimal(1)
+    cny = cost * factor
     models_out = {m: {"tokens": v["tokens"], "requests": v["requests"],
-                      "amount_cny": format(v["amount"] if table is not None and table.currency == "CNY"
-                                           else v["amount"] * FX_FALLBACK, "f")}
+                      "amount_cny": format(v["amount"] * factor, "f")}
                   for m, v in sorted(by_model.items(), key=lambda x: -x[1]["tokens"])}
     return {"tokens": totals["tokens"], "requests": totals["requests"],
             "fields": {k: totals[k] for k in ("fresh_input", "output", "reasoning", "cache_read", "cache_write")},

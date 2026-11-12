@@ -16,9 +16,10 @@ import re
 import threading
 import time
 from collections import deque
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from .applications import app_id
+from .exchange_rates import FX_FALLBACK, rate_from
 from .model import DISPLAY_ZONE
 
 SCHEMA_VERSION = 1
@@ -234,9 +235,9 @@ def fmt_grouped(value, fraction=0):
     return text
 
 
-def fmt_amount(value, unit):
+def fmt_amount(value, unit, fx_rate=FX_FALLBACK):
     if unit in ("USD", "CNY"):
-        return "¥" + fmt_grouped(value * 7.25 if unit == "USD" else value, 2)
+        return "¥" + fmt_grouped(value * float(fx_rate) if unit == "USD" else value, 2)
     return fmt_grouped(value, 2)
 
 
@@ -506,7 +507,7 @@ def compute_reminders(snapshot, threshold, now):
                 if amount_entry and isinstance(amount_entry["value"], dict):
                     amount = _num(amount_entry["value"].get("amount"))
                     if amount is not None:
-                        body += "，金额 %s" % fmt_amount(amount, amount_entry["value"].get("currency"))
+                        body += "，金额 %s" % fmt_amount(amount, amount_entry["value"].get("currency"), rate_from(snapshot))
                 add("renew|%s|%s|%s" % (sid, renewal["value"].get("date") or "", "0" if days == 0 else "3"),
                     "renewal", "0" if days == 0 else "3", "%s 即将续费" % name, body + "。",
                     "warn", 65 if days == 0 else 45, sid)
@@ -553,6 +554,52 @@ def compute_reminders(snapshot, threshold, now):
 def short_text(reminder):
     """The one-line bubble wording derived from a Notifier-style title/body pair."""
     return reminder["title"] + "：" + reminder["body"].rstrip("。") if reminder.get("body") else reminder["title"]
+
+
+def daily_report(snapshot, now):
+    """Yesterday's local usage, projected from what the snapshot already carries.
+
+    Tokens come from each ledger's daily_models rows, the estimated cost from the
+    cost metric's daily amounts (base prices, CNY at the fixed estimate). Returns
+    None when yesterday has no recorded usage; an unknown cost stays None, never 0.
+    """
+    yesterday = (datetime.fromtimestamp(now, DISPLAY_ZONE) - timedelta(days=1)).date().isoformat()
+    by_app = {}
+    cost = 0.0
+    cost_known = False
+    fx_rate = float(rate_from(snapshot))
+    for src in (snapshot or {}).get("sources", []):
+        if not isinstance(src, dict):
+            continue
+        sid = src.get("id", "")
+        # Same convention as application_usage: account splits and CodexBar mirrors are not ledgers.
+        if "#" in sid or sid.startswith("codexbar:"):
+            continue
+        metrics = src.get("metrics") or {}
+        tokens = metrics.get("tokens") or {}
+        if tokens.get("status") in ("available", "partial", "stale"):
+            value = tokens.get("value") if isinstance(tokens.get("value"), dict) else {}
+            for row in _rows(value.get("daily_models")):
+                if row.get("date") != yesterday:
+                    continue
+                count = row.get("total_tokens")
+                if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                    app = app_id(row.get("app") or sid)
+                    by_app[app] = by_app.get(app, 0) + count
+        entry = metrics.get("cost") or {}
+        value = entry.get("value")
+        if isinstance(value, dict) and value.get("unit") in ("CNY", "USD"):
+            for day in _rows(value.get("daily")):
+                amount = _num(day.get("amount"))
+                if day.get("date") == yesterday and amount is not None:
+                    cost += amount * (fx_rate if value["unit"] == "USD" else 1.0)
+                    cost_known = True
+    total = sum(by_app.values())
+    if not total:
+        return None
+    top = max(by_app.items(), key=lambda item: item[1])
+    return {"date": yesterday, "tokens": total, "cost_cny": round(cost, 2) if cost_known else None,
+            "top_app": top[0], "top_tokens": top[1]}
 
 
 # --------------------------------------------------------------------------- brain
@@ -918,6 +965,16 @@ class PetMind:
                                       "%d 小时" % (busy_minutes // 60) if busy_minutes >= 120 else "%d 分钟" % busy_minutes),
                                   "tone": "info", "priority": 20, "source": None,
                                   "action": {"kind": "open_panel", "tab": "apps"}})
+            # Once per local day: the id is the date, and the host persists which bubbles it already said.
+            report = daily_report(snapshot, now) if (snapshot and prefs["alerts"]) else None
+            if report is not None:
+                body = "共 %s Token" % fmt_grouped(report["tokens"])
+                if report["cost_cny"] is not None:
+                    body += "，估算 ¥%s" % fmt_grouped(report["cost_cny"], 2)
+                body += "，%s 最高产。" % app_label(report["top_app"])
+                reminders.append({"id": "daily|" + report["date"], "kind": "daily_report", "level": "0",
+                                  "title": "昨日用量报告", "body": body, "tone": "info", "priority": 10,
+                                  "source": None, "action": {"kind": "open_panel", "tab": "usage"}})
             quiet = self._in_quiet_hours(prefs["quiet_hours"], now)
             if quiet:
                 reminders = [r for r in reminders if r["tone"] == "danger"]

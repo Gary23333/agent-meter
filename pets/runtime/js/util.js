@@ -87,3 +87,20 @@ export function fitStage({ W, H, w, h, hudH = 0, mode = 'window' }) {
   const room = mode === 'fill' ? H * 0.98 : mode === 'embed' ? H * 0.8 : H * 0.82 - hudH;
   return Math.max(0.05, Math.min(1, W / w, room / h));
 }
+
+/** Bounding box of several {x, y, w, h} rects; null when none has an area. */
+export function unionRects(rects) {
+  const rs = rects.filter((r) => r && r.w > 0 && r.h > 0);
+  if (!rs.length) return null;
+  const x = Math.min(...rs.map((r) => r.x)), y = Math.min(...rs.map((r) => r.y));
+  const right = Math.max(...rs.map((r) => r.x + r.w)), bottom = Math.max(...rs.map((r) => r.y + r.h));
+  return { x, y, w: right - x, h: bottom - y };
+}
+
+/** The app id of the session chip under a point, if any (chips without an app are not clickable). */
+export function chipUnder(chips, x, y) {
+  for (const c of chips) {
+    if (c.app && c.w > 0 && c.h > 0 && x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) return c.app;
+  }
+  return null;
+}

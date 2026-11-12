@@ -118,3 +118,50 @@ CNY 默认值规则：有国内刊例的用刊例；仅 USD 刊例的按 7.25 �
 **仍未定价 / 无法核实（不猜价）**：OpenAI gpt-6.x 四型号官方页无行（models.dev 与内置一致，仅旁证）；gemini-3.7-flash 官方已撤行；claude-haiku-5 官方无此型号（保留旧拼写兜底）；mimo-v2.5-pro 已于 2026-10-21 下线（保留历史价）；minimax-m3.1-flash 人民币侧无官方页；hy4-preview / hy3 / step-5-preview 无官方美元价。
 
 **日历提醒**：gemini-3.6-flash / 3.8-flash 将于 2027-01-01 起由 0.75 / 0.075 / 3.75 翻倍为 1.50 / 0.15 / 7.50；gemini-4-argon 2026-12-01 起翻倍；kimi-k2.6 / k2.7 系计划 2026-12 底退役。届时需再次更新默认表。
+
+## 第四轮复核（2026-11-12，v0.11.0 批次 C2）
+
+复核范围：从本机真实快照（2026-11-10 采集）的 `unmatched_models` 出发，按全部期 token 量排序，
+对可核实官方刊例的模型补价；内部路由代号与无官方价的模型一律不猜。models.dev 官方供应方行
+（openai/anthropic/alibaba）仅作交叉参考，不作官方价。
+
+新增 USD pattern（官方定价页 2026-10-22 抓取的镜像逐项核对，短上下文 Standard 价；缓存写取 30 分钟档，「–」记 0 沿用 codex 先例）：
+
+| Pattern | 官方价（输入 / 缓存读 / 缓存写 / 输出） | 备注 |
+|---|---|---|
+| gpt-5.6-sol | 4.00 / 0.40 / 5.00 / 20.00 | 官方标注引导价，至少持续到 2026-11-21，届时复核 |
+| gpt-5.6-terra | 2.00 / 0.20 / 2.50 / 12.00 | 2026-08 降价后价（原 2.50/15） |
+| gpt-5.6-luna | 0.20 / 0.02 / 0.25 / 1.20 | 2026-08 降价 80% 后价（原 1/6） |
+| gpt-5.5 | 5.00 / 0.50 / – / 30.00 | 10-14 退出 ChatGPT/Codex，API 不受影响 |
+| gpt-5.5-pro | 30 / – / – / 180 | 防子串误配 gpt-5.5 |
+| gpt-5.4 | 2.50 / 0.25 / – / 15.00 | |
+| gpt-5.4-mini | 0.75 / 0.075 / – / 4.50 | |
+| gpt-5.4-nano | 0.20 / 0.02 / – / 1.25 | 防子串误配 gpt-5.4 |
+| gpt-5.4-pro | 30 / – / – / 180 | 防子串误配 gpt-5.4 |
+| claude-opus-4-7 | 5 / 0.50 / 6.25 / 25 | 与 Opus 4.6/4.8 同价 |
+| claude-sonnet-4-6 | 3 / 0.30 / 3.75 / 15 | |
+
+新增 CNY published pattern（USD 侧按 1/7.25 折算并标「折算」）：
+
+| Pattern | 官方价（输入 / 缓存读 / 缓存写 / 输出） | 来源 |
+|---|---|---|
+| hy4 | ¥6 / ¥0.3 / – / ¥18 | 腾讯云 TokenHub 官方页；11-04 正式版延续 preview 定价 |
+| qwen3.8-flash | ¥0.8 / ¥0.1 / ¥1.25 / ¥2.7 | 百炼官方页；缓存写=显式缓存创建价。国际站另有 $0.15/$0.47，但缓存档未逐项核实，USD 侧暂折算 |
+| longcat-2.0 | ¥5 / ¥0.1 / – / ¥20 | 官方文档「模型与价格」原价；9 月限时折扣 ¥2/¥0.04/¥8 不采（刊例口径），11 月官方页 2.0 已按原价表展示 |
+
+来源：OpenAI 官方定价页镜像 https://www.w3cschool.cn/openai_api/openai-api-docs-pricing.html （2026-10-22 抓取，含 gpt-5.5/5.4 系与 5.6 系全行）；
+交叉 https://benchlm.ai/openai/api-pricing 、https://devtk.ai/zh/blog/gpt-5-6-api-pricing-guide-2026/ （引导价期限）、https://qcode.cc/gpt-5-5-codex-retirement （10-14 官方页抓取）；
+Anthropic 行与 models.dev anthropic 一致，另见 https://www.secondtalent.com/resources/every-claude-ai-model-explained-compared/ ；
+Hy4 https://cloud.tencent.com/act/pro/tokenplan 、https://cloud.tencent.com.cn/developer/article/2776227 ；
+qwen3.8-flash https://www.aliyun.com/product/bailian 、https://www.alibabacloud.com/help/zh/model-studio/model-pricing 、https://developer.aliyun.com/article/1769657/ ；
+LongCat-2.0 https://longcat.chat/platform/docs/zh/api-pay-as-you-go 、https://m.toutiao.com/article/7683767145829892650/ （原价/折扣对照）、OpenClaw 插件公开源码 USD 旁证 0.75/0.015/2.95（https://m.blog.csdn.net/gitblog_00286/article/details/165124185 ，与折算值 0.69/0.014/2.76 有分歧，不采）；
+MiMo 下线公告 https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go 。
+
+匹配说明：`hy4-free`（WorkBuddy 免费档）经子串匹配命中 `hy4`——API 等价估算口径，估算从来不是账单；
+`minimax/M3.1 Flash Preview`（ZCode 拼写带空格）归一化后仍不命中 `minimax-m3.1-flash`，用户可在「模型与计费」里手动绑定，不改全局归一化规则。
+
+**仍未定价 / 无法核实（不猜价）**：gpt-6.1-terra（仅 models.dev 有行，官方页无）；gpt-5.2-codex（官方页已撤行，BenchLM 缓存列口径不明）；
+mimo-v2-pro / mimo-v2.5（已下线，官方页不再列价，历史价未取到逐字来源）；mimo-x-pro-preview（邀测无刊例）；qwen3.8-27b（开源权重无 API 刊例）；
+内部路由代号 kimi-for-coding / ark-code-latest / space-bunny(-free) / big-pickle / daimon-kimi-code / k2d6-agent(-swarm) / codex-auto-review / gemini-default / x-preview-f-free / unknown 一律不猜。
+
+**日历提醒（新增）**：gpt-5.6-sol 引导价 2026-11-21 到期需复核；LongCat-2.0 限时折扣结束后官方页若改回原价表则无需动作（本轮已按原价）。

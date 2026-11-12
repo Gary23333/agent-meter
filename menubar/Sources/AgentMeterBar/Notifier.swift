@@ -116,6 +116,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                    body: names.prefix(4).joined(separator: "、") + (names.count > 4 ? " 等" : "") + "，打开面板查看。"))
     }
 
+    /// Acknowledges a manual "claim now" press that found nothing to claim.
+    /// Successful claims are announced by `rewardResults` instead.
+    func claimNothingToday(blocked: Bool) {
+        post(Alert(key: "claim-empty-\(Int(Date().timeIntervalSince1970))", title: "Agent 用量 · 每日积分",
+                   body: blocked ? "有账号读不到奖励，登录可能已失效：请在「连接网页账户 / API 密钥」里重新登录。"
+                                 : "今天暂无可领积分：奖励已领完，或还没到开放时间。"))
+    }
+
     private func post(_ alert: Alert) {
         let content = UNMutableNotificationContent()
         content.title = alert.title

@@ -16,8 +16,27 @@ struct ReportView: View {
     @State private var data: ReportData?
     /// 分享卡自然高度（未缩放），由预览自身量出；不建宿主视图，避免布局期重入。
     @State private var cardHeight: CGFloat = 0
+    /// 桌宠照片（裁边后），options.pet 打开时抓一次进预览；导出时再抓新的。
+    @State private var petPhoto: NSImage?
 
     private var period: Period { Period(rawValue: periodRaw) ?? .today }
+
+    /// 桌宠开着（悬浮窗或面板舞台）才有照片可拍。
+    private var petAvailable: Bool {
+        (PetPrefs.shared.enabled && PetController.shared.isActive) || PetStageHost.shared.ready
+    }
+
+    private func capturePet(_ completion: @escaping (NSImage?) -> Void) {
+        let finish: (NSImage?) -> Void = { image in completion(image.flatMap { PetThumbnails.trimmed($0) ?? $0 }) }
+        if PetController.shared.isActive { PetController.shared.capturePhoto(finish, effects: false) }
+        else if PetStageHost.shared.ready { PetStageHost.shared.capture(finish, effects: false) }
+        else { completion(nil) }
+    }
+
+    private func refreshPetPhoto() {
+        guard options.pet, petAvailable else { petPhoto = nil; return }
+        capturePet { image in petPhoto = image }
+    }
 
     private func rebuildReport() {
         data = store.snapshot.flatMap { ReportData.build(snapshot: $0, period: period, now: Date()) }
@@ -58,6 +77,9 @@ struct ReportView: View {
         .onChange(of: store.snapshot?.identity, initial: true) { rebuildReport() }
         .onChange(of: periodRaw) { rebuildReport() }
         .onChange(of: options) { options.save() }
+        .onChange(of: options.pet, initial: true) { refreshPetPhoto() }
+        .onChange(of: petAvailable) { refreshPetPhoto() }
+        .onChange(of: PetPrefs.shared.packID) { refreshPetPhoto() }
     }
 
     // MARK: 顶部控制
@@ -92,6 +114,9 @@ struct ReportView: View {
                 Toggle("DeepSeek 峰谷", isOn: $options.peak)
                 Toggle("Codex 生图", isOn: $options.images)
                 Toggle("项目二维码", isOn: $options.qrCode)
+                Toggle("带上桌宠", isOn: $options.pet)
+                    .disabled(!petAvailable)
+                    .help(petAvailable ? "把当前桌宠形象拍进分享卡页脚" : "先在桌面上显示桌宠，或打开面板的「桌宠」页")
             }.toggleStyle(.checkbox).font(.system(size: 11))
             HStack(alignment: .bottom, spacing: 14) {
                 control("分享卡风格") {
@@ -134,7 +159,7 @@ struct ReportView: View {
                     let availableH = max(1, geo.size.height - 28)
                     let height = cardHeight > 0 ? cardHeight : ShareCard.width * 11 / 10
                     let scale = max(0.1, min(availableW / ShareCard.width, availableH / height))
-                    ShareCard(data: data, theme: style, options: options)
+                    ShareCard(data: data, theme: style, options: options, petImage: petPhoto)
                         .background(GeometryReader { inner in
                             Color.clear.preference(key: CardHeightKey.self, value: inner.size.height)
                         })
@@ -299,23 +324,54 @@ struct ReportView: View {
                 Text(data.sourceNote).font(.system(size: 10)).themeForeground(.tertiary).lineLimit(1)
             }
             Spacer()
+            Button("导出历史…") { exportHistory() }
             Button("保存 PNG…") { save() }
+                .disabled(data == nil)
             Button("复制图片") { copy() }
                 .buttonStyle(.borderedProminent)
+                .disabled(data == nil)
         }
-        .disabled(data == nil)
+    }
+
+    /// 原始量导出（CSV/JSON），与分享卡无关：后端只投影缓存快照，不触发采集。
+    private func exportHistory() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json, .commaSeparatedText]
+        panel.canCreateDirectories = true
+        panel.title = "导出本机历史（原始量，不含金额与凭据）"
+        panel.nameFieldStringValue = "AgentMeter-历史-\(Self.fileDay.string(from: Date())).json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let csv = url.pathExtension.lowercased() == "csv"
+        Task { @MainActor in
+            guard let client = store.backendClient else { show("后端未连接"); return }
+            do {
+                let data = try await client.exportHistory(format: csv ? "csv" : "json")
+                try data.write(to: url)
+                show("已导出 \(url.lastPathComponent)")
+            } catch {
+                show("导出失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// 导出时现拍一张（状态可能已经变了）；没开桌宠就什么都没有。
+    private func exportPhoto(_ body: @escaping (NSImage?) -> Void) {
+        guard options.pet, petAvailable else { body(nil); return }
+        capturePet(body)
     }
 
     private func copy() {
         guard let data else { return }
-        guard let rendered = ShareCardRenderer.render(data: data, theme: style, options: options, scale: 2) else {
-            show("生成图片失败")
-            return
+        exportPhoto { photo in
+            guard let rendered = ShareCardRenderer.render(data: data, theme: style, options: options, petImage: photo, scale: 2) else {
+                show("生成图片失败")
+                return
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setData(rendered.png, forType: .png)
+            show("已复制 \(Int(rendered.pixels.width))×\(Int(rendered.pixels.height)) PNG")
         }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setData(rendered.png, forType: .png)
-        show("已复制 \(Int(rendered.pixels.width))×\(Int(rendered.pixels.height)) PNG")
     }
 
     private func save() {
@@ -326,15 +382,17 @@ struct ReportView: View {
         panel.title = "保存用量报告 PNG"
         panel.nameFieldStringValue = "AgentMeter-用量报告-\(data.period.label)-\(Self.fileDay.string(from: data.generatedAt)).png"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let rendered = ShareCardRenderer.render(data: data, theme: style, options: options, scale: 2) else {
-            show("生成图片失败")
-            return
-        }
-        do {
-            try rendered.png.write(to: url)
-            show("已保存 \(url.lastPathComponent)")
-        } catch {
-            show("保存失败：\(error.localizedDescription)")
+        exportPhoto { photo in
+            guard let rendered = ShareCardRenderer.render(data: data, theme: style, options: options, petImage: photo, scale: 2) else {
+                show("生成图片失败")
+                return
+            }
+            do {
+                try rendered.png.write(to: url)
+                show("已保存 \(url.lastPathComponent)")
+            } catch {
+                show("保存失败：\(error.localizedDescription)")
+            }
         }
     }
 

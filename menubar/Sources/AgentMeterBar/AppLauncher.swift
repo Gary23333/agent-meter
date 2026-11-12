@@ -39,6 +39,20 @@ enum AppLauncher {
         StatusBarController.shared.closePanel()
     }
 
+    /// Opens the app behind a running session (pet HUD chips, session board). Returns nil on success,
+    /// or words the caller can show when there is nothing to open — never a crash for an uninstalled app.
+    static func openApp(forApp app: String, in snapshot: Snapshot?) -> String? {
+        let source = Catalog.applicationID(app)
+        let known = Catalog.brand(source).name != source || websites[source] != nil
+        guard known else { return "不认识的应用「\(app)」。" }
+        let targets = targets(for: source, in: snapshot)
+        guard !targets.isEmpty else {
+            return "没有找到「\(Catalog.brand(source).name)」应用：可能未安装，或后端还没发现它。"
+        }
+        if targets.count == 1 { open(targets[0]) } else { AppMenu.show(targets) }
+        return nil
+    }
+
     private static var iconCache: [String: NSImage] = [:]
 
     /// The real app icon for a source, when one is installed.

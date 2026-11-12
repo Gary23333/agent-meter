@@ -528,6 +528,116 @@ class EventTests(unittest.TestCase):
                           if r["kind"] == "break"])
 
 
+class DailyReportTests(unittest.TestCase):
+    """A2: one bubble per local day about yesterday, from the snapshot's own daily rollups."""
+
+    YESTERDAY = "2025-10-08"          # NOW is 2025-10-09 16:53 Beijing
+    TODAY = "2025-10-09"
+
+    def ledger(self, sid, rows, cost=None, status="available", scope="local_session_history"):
+        src = source(sid, scope, NOW, status=status)
+        src["metrics"]["tokens"] = metric({"periods": {}, "daily_models": rows},
+                                          status=status if status != "available" else None)
+        if cost is not None:
+            src["metrics"]["cost"] = metric(cost)
+        return src
+
+    def day_row(self, day, tokens, app=None, model="m"):
+        row = {"date": day, "model": model, "total_tokens": tokens, "requests": 1,
+               "fresh_input": tokens, "output": 0, "reasoning": 0, "cache_read": 0, "cache_write": 0}
+        if app is not None:
+            row["app"] = app
+        return row
+
+    def test_totals_cost_and_top_app(self):
+        sources = [
+            self.ledger("claude", [self.day_row(self.YESTERDAY, 300_000), self.day_row(self.TODAY, 900_000)],
+                        cost={"unit": "USD", "daily": [{"date": self.YESTERDAY, "amount": "2.0000"}]}),
+            self.ledger("codex", [self.day_row(self.YESTERDAY, 100_000)],
+                        cost={"unit": "CNY", "daily": [{"date": self.YESTERDAY, "amount": "3.0000"}]}),
+        ]
+        report = pet.daily_report(snapshot(sources), NOW)
+        self.assertEqual(report["date"], self.YESTERDAY)
+        self.assertEqual(report["tokens"], 400_000)                    # today's 900k stays out
+        self.assertEqual(report["cost_cny"], 17.5)                     # 2 USD * 7.25 + 3 CNY
+        self.assertEqual((report["top_app"], report["top_tokens"]), ("claude", 300_000))
+
+    def test_bubble_wording_and_stable_daily_id(self):
+        sources = [self.ledger("claude", [self.day_row(self.YESTERDAY, 1_234_567), self.day_row(self.TODAY, 42)],
+                               cost={"unit": "CNY", "daily": [{"date": self.YESTERDAY, "amount": "12.3400"}]})]
+        m = mind()
+        frame = m.frame(snapshot(sources), activity([]), NOW)
+        reports = [r for r in frame["reminders"] if r["kind"] == "daily_report"]
+        self.assertEqual(len(reports), 1)
+        r = reports[0]
+        self.assertEqual(r["id"], "daily|" + self.YESTERDAY)
+        self.assertEqual(r["text"], "昨日用量报告：共 1,234,567 Token，估算 ¥12.34，Claude Code 最高产")
+        self.assertEqual(r["action"], {"kind": "open_panel", "tab": "usage"})
+        self.assertEqual(r["tone"], "info")
+        again = m.frame(snapshot(sources), activity([]), NOW + 60)
+        self.assertEqual([x["id"] for x in again["reminders"] if x["kind"] == "daily_report"], [r["id"]])
+        tomorrow = m.frame(snapshot(sources), activity([]), NOW + 86400)
+        self.assertEqual([x["id"] for x in tomorrow["reminders"] if x["kind"] == "daily_report"],
+                         ["daily|2025-10-09"])
+
+    def test_no_yesterday_data_is_silent(self):
+        self.assertIsNone(pet.daily_report(snapshot([self.ledger("claude", [self.day_row(self.TODAY, 5)])]), NOW))
+        self.assertIsNone(pet.daily_report(snapshot([self.ledger("claude", [])]), NOW))
+        self.assertIsNone(pet.daily_report(None, NOW))
+        self.assertIsNone(pet.daily_report(snapshot([]), NOW))
+        m = mind()
+        frame = m.frame(snapshot([self.ledger("claude", [self.day_row(self.TODAY, 5)])]), activity([]), NOW)
+        self.assertFalse([r for r in frame["reminders"] if r["kind"] == "daily_report"])
+
+    def test_unknown_cost_is_omitted_not_zero(self):
+        sources = [self.ledger("claude", [self.day_row(self.YESTERDAY, 10)])]
+        report = pet.daily_report(snapshot(sources), NOW)
+        self.assertIsNone(report["cost_cny"])
+        frame = mind().frame(snapshot(sources), activity([]), NOW)
+        r = [x for x in frame["reminders"] if x["kind"] == "daily_report"][0]
+        self.assertNotIn("¥", r["text"])
+        self.assertIn("共 10 Token", r["text"])
+
+    def test_account_splits_and_codexbar_mirrors_are_not_ledgers(self):
+        sources = [self.ledger("claude#2", [self.day_row(self.YESTERDAY, 10)]),
+                   self.ledger("codexbar:claude", [self.day_row(self.YESTERDAY, 10)])]
+        self.assertIsNone(pet.daily_report(snapshot(sources), NOW))
+
+    def test_imported_history_keeps_the_app_of_each_row(self):
+        rows = [self.day_row(self.YESTERDAY, 40, app="codex"), self.day_row(self.YESTERDAY, 60, app="claude"),
+                self.day_row(self.YESTERDAY, 5, app="mcode")]
+        sources = [self.ledger("imported_history", rows, scope="local_imported_history")]
+        report = pet.daily_report(snapshot(sources), NOW)
+        self.assertEqual(report["tokens"], 105)
+        self.assertEqual(report["top_app"], "claude")
+        frame = mind().frame(snapshot(sources), activity([]), NOW)
+        r = [x for x in frame["reminders"] if x["kind"] == "daily_report"][0]
+        self.assertIn("Claude Code 最高产", r["text"])
+
+    def test_stale_ledgers_still_report_history_but_unreadable_ones_do_not(self):
+        stale = self.ledger("claude", [self.day_row(self.YESTERDAY, 10)], status="stale")
+        self.assertEqual(pet.daily_report(snapshot([stale]), NOW)["tokens"], 10)
+        broken = self.ledger("claude", [self.day_row(self.YESTERDAY, 10)], status="error")
+        self.assertIsNone(pet.daily_report(snapshot([broken]), NOW))
+
+    def test_alerts_preference_and_quiet_hours_apply(self):
+        sources = [self.ledger("claude", [self.day_row(self.YESTERDAY, 10)])]
+        m = mind()
+        m.set_preferences({"alerts": False})
+        self.assertFalse([r for r in m.frame(snapshot(sources), activity([]), NOW)["reminders"]
+                          if r["kind"] == "daily_report"])
+        quiet = mind()
+        quiet.set_preferences({"quiet_hours": "00:00-23:59"})
+        self.assertFalse([r for r in quiet.frame(snapshot(sources), activity([]), NOW)["reminders"]
+                          if r["kind"] == "daily_report"])
+
+    def test_malformed_rows_are_ignored(self):
+        rows = [{"date": self.YESTERDAY, "total_tokens": True}, {"date": self.YESTERDAY, "total_tokens": "9"},
+                {"date": self.YESTERDAY}, "junk", self.day_row(self.YESTERDAY, 7)]
+        report = pet.daily_report(snapshot([self.ledger("claude", rows)]), NOW)
+        self.assertEqual(report["tokens"], 7)
+
+
 class PreferenceTests(unittest.TestCase):
     def test_valid_values_are_applied(self):
         m = mind()

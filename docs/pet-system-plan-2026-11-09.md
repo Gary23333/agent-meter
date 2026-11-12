@@ -194,7 +194,7 @@ flowchart LR
 | `bot` | 码码 | three | 小机器人，屏幕脸与滚动代码 |
 | `cat` | 缓存猫 | three | 抱着鱼（缓存命中）的小猫，吃 token |
 | `bit` | 比特 | sprite | 像素宠物，手绘 ASCII 帧 |
-| `mochi` | 麻薯 | sprite | （未做）插画风精灵图，应由生图 skill 在用户批准费用后产出 |
+| `mochi` | 麻薯 | sprite | 已完成（2026-11-12）：H3 Image 4k 生图 12 张（用户批准张数、Hub 预估 0 积分），抠底切片打包，strict 校验通过 |
 
 ## 9. 两套形象制作 skill
 
@@ -258,7 +258,7 @@ flowchart LR
 - 没有跑 `build-app.sh` 与 `smoke-release.py`（需要 PyInstaller 与签名环境）；CI 的 macOS 15 / Xcode 16 工具链也没有实际跑过（本机是 Xcode 27 / Swift 6.4，按 Swift 5 语言模式编译）。
 - 没有在真实账户上长时间运行：状态仲裁在合成数据下充分测试，真实数据下的「相关额度」手感需要使用后再调。
 - 没有调用任何付费生图：生图 skill 的 MiniMax 调用顺序来自 `MINIMAX_MCP.md`，未经端到端执行；`bit` 的帧由脚本绘制，不是模型生成。
-- 计划里的 `mochi`（插画风精灵图）未做：它应由生图 skill 在用户批准费用后产出。
+- ~~计划里的 `mochi`（插画风精灵图）未做~~ 已于 2026-11-12 完成：用户批准 12 张（4 参考候选 + 8 状态），H3 Image 4k，Hub 预估 0 积分；参考图选最贴设定的一张，auto 键色抠底（模型实际背景偏玫瑰红，非提示词纯品红），idle 第 2 帧右缘网格残线已清除。
 - 未做：拍照分享（宠物截图进分享卡）、日报气泡、漫游（窗口自己走动）、`.agentpet` 拖拽安装（命令行 `petpack.py install` 已可用）。
 - 所有改动均未提交，`VERSION` 未变。
 

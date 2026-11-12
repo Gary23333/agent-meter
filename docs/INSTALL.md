@@ -1,4 +1,4 @@
-# Agent 用量 0.10.4 安装说明
+# Agent 用量 0.11.0 安装说明
 
 适用系统：macOS 14 或以上，Apple Silicon（arm64）。
 

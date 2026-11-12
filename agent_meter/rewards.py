@@ -10,12 +10,23 @@ Endpoints come from each provider's public web bundle (2026-11-09 research,
 docs/research/checkin-automation-and-collection-2026-11-09.md):
 
 - TRAE CN: ``/trae/api/v2/ug/checkin_credits/status`` and ``/claim`` with the
-  website Cloud-IDE-JWT already used for the account card.
+  website Cloud-IDE-JWT already used for the account card. Claiming additionally
+  needs the client's registered device id as ``X-Device-Id`` (web-only calls are
+  refused with 9004); it is read from the TRAE client's ``storage.json`` key
+  name, see ``trae_device_id``. The same SDK exposes
+  ``ug/work_lottery/*`` and ``pay/query_birthday_bonus`` (research doc line 25);
+  their reward fields are undocumented, so they are surfaced as unknown bonus
+  items and never auto-claimed.
 - WorkBuddy: growth-center ``/activity/growth/streak``, ``/v2/activity/growth/tasks``
   and ``/activity/growth/tasks/{task_code}/claim`` with the website cookie.
 - Qoder CN: ``/sash/api/v1/me/campaigns`` and ``.../{campaign_id}/claim`` with
   the desktop client's own token (not a website login), see
   ``agent_meter/qoder_campaign.py``.
+- MiniMax Code: ``agent.minimax.cn/minimax-cloud/api/v1/signin/{status,claim}``.
+  The response contract is public (CreditDaddy src/minimaxClient.js), but both
+  documented auth routes need a bearer/token credential plus ``yy``/``x-signature``
+  headers that a website ``{"cookie"}`` session cannot supply, so the provider is
+  registered but reports ``minimax_code_not_supported`` until that gap is closed.
 
 The ledger ``<runtime>/rewards.json`` (0600) keeps one record per account and
 day (Asia/Shanghai, the providers' own day boundary): the last observed status
@@ -33,7 +44,7 @@ from .transport import get_json, post_json
 from .qoder_campaign import qoder_campaigns_claim, qoder_campaigns_status
 from .web_sources import SAFARI_UA, WORKBUDDY_ORIGIN, as_account_lists, require
 
-PROVIDERS = ("trae_cn", "workbuddy", "qoder")
+PROVIDERS = ("trae_cn", "workbuddy", "qoder", "minimax_code")
 # Providers whose credentials come from a desktop app instead of a website
 # login. The collector passes the app path; the provider reads what it needs
 # from that pseudo-session, so it behaves like a single account.
@@ -50,9 +61,13 @@ DEFAULT_CLAIM_TIME = "00:05"
 CLAIM_TIME = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
 
 TRAE_UG = "https://api.trae.cn/trae/api/v2/ug"
+TRAE_PAY = "https://api.trae.cn/trae/api/v2/pay"
 TASK_CODE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # TRAE answers these when today's credits were already taken.
 TRAE_ALREADY = {9004}
+# Research doc line 25 names these TRAE SDK items but no reward/claim contract.
+TRAE_BONUS = {"birthday_bonus", "work_lottery"}
+MINIMAX_CODE_SIGNIN = "https://agent.minimax.cn/minimax-cloud/api/v1/signin"
 
 
 def day_of(now):
@@ -92,6 +107,30 @@ def _trae_headers(session):
     return headers
 
 
+TRAE_DC_PREFIX = "iCubeAuthInfo://icube-dc:"
+
+
+def trae_device_id(home=None):
+    """The TRAE client's registered decimal device id, read from a key name.
+
+    The claim API refuses web-only calls (9004); the id travels as X-Device-Id.
+    Only the key name is read — the encrypted value and the login stay untouched.
+    """
+    path = Path(home or Path.home()) / "Library/Application Support/Trae CN/User/globalStorage/storage.json"
+    try:
+        keys = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(keys, dict):
+        return None
+    for key in keys:
+        if isinstance(key, str) and key.startswith(TRAE_DC_PREFIX):
+            device = key[len(TRAE_DC_PREFIX):]
+            if device.isdigit() and 12 <= len(device) <= 20:
+                return device
+    return None
+
+
 def normalize_trae_status(payload):
     data = _envelope(payload, "trae_checkin_api_error")
     if not isinstance(data.get("checked_in"), bool):
@@ -108,8 +147,32 @@ def normalize_trae_status(payload):
 
 
 def trae_status(session, timeout):
-    return normalize_trae_status(post_json(TRAE_UG + "/checkin_credits/status", {"req_source": 1},
-                                           timeout=timeout, headers=_trae_headers(session)))
+    headers = _trae_headers(session)
+    status = normalize_trae_status(post_json(TRAE_UG + "/checkin_credits/status", {"req_source": 1},
+                                           timeout=timeout, headers=headers))
+    status["bonus_items"] = trae_bonus_items(headers, timeout)
+    return status
+
+
+def normalize_trae_birthday(payload):
+    _envelope(payload, "trae_birthday_api_error")
+    # Reward fields are undocumented: keep the amount unknown, never offer it for claiming.
+    return {"item": "birthday_bonus", "title": "生日奖励", "credits": None,
+            "state": "unknown", "reason": "trae_birthday_contract_unknown"}
+
+
+def trae_bonus_items(headers, timeout):
+    """Read-only bonus queries alongside the check-in; failures stay local."""
+    try:
+        birthday = normalize_trae_birthday(post_json(TRAE_PAY + "/query_birthday_bonus", {},
+                                                     timeout=timeout, headers=headers))
+    except SourceError as e:
+        birthday = {"item": "birthday_bonus", "title": "生日奖励", "credits": None,
+                    "state": "error", "reason": e.code}
+    # ug/work_lottery/* is a wildcard in the research doc: no exact endpoint, so no request.
+    lottery = {"item": "work_lottery", "title": "Work 抽奖", "credits": None,
+               "state": "unknown", "reason": "trae_lottery_endpoint_unknown"}
+    return [birthday, lottery]
 
 
 def normalize_trae_claim(payload):
@@ -124,6 +187,8 @@ def normalize_trae_claim(payload):
 
 
 def trae_claim(session, item, timeout):
+    if item in TRAE_BONUS:
+        raise SourceError("trae_bonus_claim_not_supported")
     if item != "daily_checkin":
         raise SourceError("unknown_reward_item")
     return normalize_trae_claim(post_json(TRAE_UG + "/checkin_credits/claim", {"req_source": 1},
@@ -200,8 +265,74 @@ def workbuddy_claim(session, item, timeout):
                                                timeout=timeout, headers=_workbuddy_headers(session)))
 
 
+# --- MiniMax Code ----------------------------------------------------------
+# Response contract from the public CreditDaddy client (src/minimaxClient.js); see docstring.
+
+def _minimax_code_envelope(payload):
+    if not isinstance(payload, dict):
+        raise SourceError("unsupported_minimax_code_contract")
+    base = payload.get("base_resp")
+    if not isinstance(base, dict) or base.get("status_code") != 0:
+        raise SourceError("minimax_code_api_error")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise SourceError("unsupported_minimax_code_contract")
+    return data
+
+
+def normalize_minimax_code_status(payload):
+    data = _minimax_code_envelope(payload)
+    days = data.get("days")
+    if not isinstance(days, list):
+        raise SourceError("unsupported_minimax_code_contract")
+    today = next((d for d in days if isinstance(d, dict) and d.get("is_today") is True), None)
+    signed, streak, claimable = None, None, []
+    if today is not None:
+        state = today.get("status")
+        if isinstance(state, bool) or state not in (1, 3):
+            raise SourceError("unsupported_minimax_code_contract")
+        signed = state == 3
+        streak = number(today.get("day_no"), optional=True)
+        if state == 1:
+            points = number(today.get("points"), optional=True)
+            bonus = number(today.get("bonus_points"), optional=True)
+            # Unknown bonus must not be summed as zero.
+            credits = points + bonus if points is not None and bonus is not None else None
+            claimable.append({"item": "daily_checkin", "title": "每日签到", "credits": credits})
+    return {"kind": "daily_checkin", "enabled": True, "signed_in": signed,
+            "streak_days": streak, "claimable": claimable}
+
+
+def normalize_minimax_code_claim(payload):
+    data = _minimax_code_envelope(payload)
+    result = data.get("claim_result")
+    if isinstance(result, bool):
+        raise SourceError("unsupported_minimax_code_contract")
+    if result == 2:
+        return {"result": "already"}
+    if result != 1:
+        raise SourceError("unsupported_minimax_code_contract")
+    return {"result": "ok", "credits": number(data.get("points"), optional=True)}
+
+
+def minimax_code_status(session, timeout):
+    if not (session or {}).get("cookie"):
+        raise SourceError("minimax_code_not_authenticated")
+    # Documented auth needs token/Bearer + yy headers, not a bare cookie: no request is invented.
+    raise SourceError("minimax_code_not_supported")
+
+
+def minimax_code_claim(session, item, timeout):
+    if item != "daily_checkin":
+        raise SourceError("unknown_reward_item")
+    if not (session or {}).get("cookie"):
+        raise SourceError("minimax_code_not_authenticated")
+    raise SourceError("minimax_code_not_supported")
+
+
 ADAPTERS = {"trae_cn": (trae_status, trae_claim), "workbuddy": (workbuddy_status, workbuddy_claim),
-            "qoder": (qoder_campaigns_status, qoder_campaigns_claim)}
+            "qoder": (qoder_campaigns_status, qoder_campaigns_claim),
+            "minimax_code": (minimax_code_status, minimax_code_claim)}
 
 
 # --- ledger ----------------------------------------------------------------
@@ -349,22 +480,24 @@ class RewardsService:
         return True
 
     def tick(self, web_sessions, now, auto_claim=(), disabled=(), timeout=15, only=None, local_only=False,
-             claim_time=DEFAULT_CLAIM_TIME, desktop=None):
+             claim_time=DEFAULT_CLAIM_TIME, desktop=None, claim_all=False):
         """Reads due statuses, claims what is switched on and returns the summary.
 
         Automatic claims wait for the daily ``claim_time`` (HH:MM, Asia/Shanghai);
         the first read after that moment happens right away instead of waiting
         for the status interval. ``only`` names one slot to read and claim right
         away (the user's "claim now" button), regardless of time, throttling
-        and the auto switch.
+        and the auto switch. ``claim_all`` does the same for every account.
 
-        ``desktop`` maps a desktop-backed provider to its app path; such a
-        provider has no website session but still counts as one account.
+        ``desktop`` maps a desktop-backed provider to its app path. Such a
+        provider is always one account read through the desktop credential: a
+        website login for the same provider cannot claim its rewards, and an
+        expired one must not hide the desktop login that can.
         """
         accounts = as_account_lists(web_sessions)
         for provider, key in DESKTOP_PROVIDERS.items():
             app = (desktop or {}).get(provider)
-            if app and not accounts.get(provider):
+            if app:
                 accounts[provider] = [{key: app}]
         today_at, next_at = claim_moments(now, claim_time)
         claim_open = now >= today_at
@@ -377,20 +510,26 @@ class RewardsService:
                 slot = provider if index == 0 else "%s#%d" % (provider, index + 1)
                 auto = provider in auto_claim
                 label = session.get("label")
+                if provider == "trae_cn" and not session.get("device_id"):
+                    device = trae_device_id()
+                    if device:
+                        session = dict(session, device_id=device)
                 if local_only or provider in disabled:
                     summaries.append(summarize(slot, provider, self.ledger["accounts"].get(slot, {}), now, auto, label,
                                                "not_connected", "local_only_mode" if local_only else "disabled_by_user"))
                     continue
-                if only is None or only == slot:
+                if only is None or only == slot or claim_all:
                     checked = self.ledger["accounts"].get(slot, {}).get("checked_at") or 0
                     # Read again as soon as today's claim moment passes.
                     first_after_open = auto and claim_open and checked < today_at
+                    claim_now = only == slot or claim_all
                     changed |= self._run(slot, provider, session, now, timeout,
-                                         (auto and claim_open) or only == slot,
-                                         force=only == slot or first_after_open)
+                                         (auto and claim_open) or claim_now,
+                                         force=claim_now or first_after_open)
                 account = self.ledger["accounts"].get(slot, {})
                 error = self.errors.get(slot)
-                state = "available" if error is None else ("not_connected" if error in {"not_authenticated", "web_session_missing"}
+                state = "available" if error is None else ("not_connected" if error in {"not_authenticated", "web_session_missing",
+                                                                                       "minimax_code_not_authenticated"}
                                                            else "error")
                 summary = summarize(slot, provider, account, now, auto, label, state, error)
                 summary["claim_time"] = claim_time if CLAIM_TIME.match(claim_time or "") else DEFAULT_CLAIM_TIME

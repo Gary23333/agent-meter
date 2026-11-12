@@ -1,7 +1,7 @@
 <!-- WORKSPACE-STATUS-START -->
 ## 当前入口与目录约定
 
-2026-11-10 更新。当前版本 v0.10.4：额度卡改为「越档即掉落」，桌宠系统随 v0.10.1 交付，积分签到与集卡随 v0.10.2 交付。
+2026-11-12 更新。当前源码版本 v0.11.0，新增桌宠分享与漫游、Claude 桌面额度、本机历史导出及联网汇率。
 
 - 目录导览：[STRUCTURE.md](STRUCTURE.md)。
 - AI 接手先读 [AGENTS.md](AGENTS.md)，再按任务阅读相应模块文档；共享知识入口在 [docs/agent-knowledge/README.md](docs/agent-knowledge/README.md)。
@@ -37,7 +37,7 @@ python3.14 -m agent_meter verify                 # 本机账本独立重算对�
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v5-success" alt="Schema: v5" />
   <img src="https://img.shields.io/badge/Security-Read--Only%20by%20Default-red" alt="Security: Read-Only by Default" />
-  <img src="https://img.shields.io/badge/Release-v0.10.4-blue" alt="Release v0.10.4" />
+  <img src="https://img.shields.io/badge/Version-v0.11.0-blue" alt="Version v0.11.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -325,7 +325,7 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 从 [v0.10.4 发布页](https://github.com/Gary23333/agent-meter/releases/tag/v0.10.4) 下载 `AgentMeter-0.10.4-macos-arm64.dmg`。
+1. 打开本机打包生成的 `AgentMeter-0.11.0-macos-arm64.dmg`，或从 [GitHub Releases](https://github.com/Gary23333/agent-meter/releases) 下载已公开的版本。
 2. 打开 DMG，把「Agent 用量.app」拖进「应用程序」文件夹；
 3. 双击启动。菜单栏会立即出现行情条。
    - *App 自带独立 Python 后端，**无需安装 Python、Xcode 或项目源码**。各来源仍需对应的客户端或登录态。*
@@ -445,6 +445,11 @@ CI 运行 Python 3.9、3.12、3.14 离线回归、源码包 / wheel 版本校验
 ## 📝 更新日志
 
 完整说明见 [docs/](docs/) 下的 `release-v*.md`。
+
+### v0.11.0 · 2026-11-12
+
+- 桌宠新增麻薯、漫游、昨日用量气泡、拖入安装和分享图合成。
+- 支持复用 Claude 桌面登录态读取额度，报告可导出 JSON / CSV，消费估算采用联网 USD/CNY 行情。详见[版本说明](docs/release-v0.11.0.md)。
 
 ### v0.10.4 · 2026-11-10
 - **额度卡改为实时发卡 + 补发**：5 小时 / 7 天窗口用量每越过一档（50% / 80% / 90% / 用满）就立刻掉一张卡，峰值继续上涨再补下一档；掉卡时刻即真正越过该档的时刻。窗口结算退化为兜底，只补发漏掉的档。详见[发布说明](docs/release-v0.10.4.md)。

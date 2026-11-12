@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .model import period_bounds
 from .model import DISPLAY_ZONE, SourceError, metric
-from .prices import FX_FALLBACK
+from .exchange_rates import FX_FALLBACK
 
 # GPT Image 2.5 输出 token 官方单价（USD / 百万 token）。
 OUTPUT_PRICE_PER_MILLION = Decimal("30")
@@ -271,15 +271,15 @@ def history_threads(history_db, now=None):
     return threads
 
 
-def _money(usd, currency):
-    """USD 原样输出；CNY 按 FX_FALLBACK 折算（与价格表同一口径）。"""
+def _money(usd, currency, fx_rate):
+    """USD 原样输出；CNY 按当前快照汇率折算（与价格表同一口径）。"""
     if currency == "CNY":
-        return (usd * FX_FALLBACK).quantize(SIX, ROUND_HALF_UP)
+        return (usd * fx_rate).quantize(SIX, ROUND_HALF_UP)
     return usd.quantize(SIX, ROUND_HALF_UP)
 
 
 def codex_image_metric(images_dir, history_db, now, zone=DISPLAY_ZONE,
-                       currency="USD", quality=DEFAULT_QUALITY):
+                       currency="USD", quality=DEFAULT_QUALITY, *, fx_rate=FX_FALLBACK):
     """codex 来源的 image_generation 指标。"""
     root = Path(images_dir).expanduser()
     if not root.is_dir():
@@ -337,16 +337,16 @@ def codex_image_metric(images_dir, history_db, now, zone=DISPLAY_ZONE,
         "quality_assumption": quality_key,
         "currency": currency_key,
         "converted_from_usd": currency_key == "CNY",
-        "fx_note": "converted_at_7.25" if currency_key == "CNY" else None,
+        "fx_note": f"converted_at_{fx_rate}" if currency_key == "CNY" else None,
         "cost_scope": "output_tokens_only_excludes_reference_inputs",
         "call_counts_available": statuses is not None,
         "periods": {period: {"images": row["images"], "calls": row["calls"],
                              "failed_calls": row["failed_calls"],
                              "generating_calls": row["generating_calls"],
-                             "estimated_cost": format(_money(row["usd"], currency_key), "f")}
+                             "estimated_cost": format(_money(row["usd"], currency_key, fx_rate), "f")}
                     for period, row in period_rows.items()},
         "daily_buckets": [{"date": date, "images": bucket["images"],
-                           "estimated_cost": format(_money(bucket["usd"], currency_key), "f")}
+                           "estimated_cost": format(_money(bucket["usd"], currency_key, fx_rate), "f")}
                           for date, bucket in sorted(buckets.items())],
         "coverage": ("codex_generated_images_and_thread_history" if statuses is not None
                      else "codex_generated_images"),

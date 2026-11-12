@@ -195,6 +195,68 @@ def reference_design_tokens(conn,start,end,excluded,zone):
     return row
 
 
+def reference_design_media_tasks(root,start,end):
+    """Independently recount image/video tasks from the raw Hub project ledgers."""
+    root=Path(root).expanduser()
+    if root.is_dir():
+        paths=sorted({p for pattern in (".hilo/completed-results.json","*/.hilo/completed-results.json")
+                      for p in root.glob(pattern) if p.is_file()})
+    elif root.is_file():
+        paths=[root]
+    else:
+        return None
+    if not paths:
+        return None
+    seen=set()
+    counts={"image":0,"video":0}
+    for ledger in paths:
+        try:
+            payload=json.loads(ledger.read_text(encoding="utf-8"))
+        except (OSError,ValueError,UnicodeDecodeError):
+            return None
+        if not isinstance(payload,dict) or payload.get("schemaVersion")!=1 or not isinstance(payload.get("entries"),list):
+            return None
+        for entry in payload["entries"]:
+            if not isinstance(entry,dict):
+                continue
+            task_id=entry.get("cloudTaskId")
+            kind=entry.get("mediaType")
+            when=entry.get("recordedAt")
+            if not isinstance(task_id,str) or not task_id or task_id in seen:
+                continue
+            if not isinstance(kind,str) or kind.lower() not in counts:
+                continue
+            if isinstance(when,bool) or not isinstance(when,int) or when<=0:
+                continue
+            invalid=False
+            for field in ("result","summary"):
+                value=entry.get(field)
+                if value is None or isinstance(value,dict):
+                    continue
+                if isinstance(value,str):
+                    try:
+                        value=json.loads(value)
+                    except ValueError:
+                        invalid=True
+                if not isinstance(value,dict):
+                    invalid=True
+            if invalid:
+                continue
+            result=entry.get("result")
+            if isinstance(result,str):
+                try:
+                    result=json.loads(result)
+                except ValueError:
+                    result=None
+            if isinstance(result,dict) and result.get("ok") is False:
+                continue
+            seen.add(task_id)
+            if (start is not None and when<start*1000) or when>end*1000:
+                continue
+            counts[kind.lower()]+=1
+    return counts
+
+
 def reference_cli_period(records,start,end,zone):
     """Independent single-loop recomputation over cli_sessions record tuples."""
     out={"requests":0,"fresh_input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0}
@@ -320,7 +382,7 @@ def check_codex_images(checks,snapshot,config,source):
     if not images_dir:
         return
     from .codex_images import estimate_cost_usd,history_call_counts,resolve_history_db,scan_image_files
-    from .prices import FX_FALLBACK
+    from .exchange_rates import rate_from
     def check(name,ok,detail=None):
         checks.append({"name":name,"status":"pass" if ok else "fail","detail":detail})
     zone=ZoneInfo(value.get("timezone") or "Asia/Shanghai")
@@ -342,7 +404,7 @@ def check_codex_images(checks,snapshot,config,source):
             if width is not None and height is not None:
                 usd+=estimate_cost_usd(width,height,quality)
         if value.get("currency")=="CNY":
-            usd=usd*FX_FALLBACK
+            usd=usd*rate_from(snapshot)
         expected=usd.quantize(Decimal("0.000001"),ROUND_HALF_UP)
         backend=value["periods"].get(period) or {}
         check("codex.image_generation."+period+".images",backend.get("images")==images,
@@ -696,11 +758,68 @@ def verify_snapshot(snapshot,config,native_reference=None):
                     for field,value in reference.items():
                         check("minimax_design_local."+period+"."+field,actual[field]==value,
                               {"backend":actual[field],"reference":value})
+    # Design media credit estimate: independent task recount from the raw Hub
+    # ledgers plus arithmetic recomputation of every priced group. The estimate
+    # is reference-only; nothing here reconciles it against the wallet.
+    mc=next((s for s in snapshot["sources"] if s["id"]=="minimax_design"
+             and s["metrics"].get("media_credits",{}).get("status") in {"available","partial"}),None)
+    if mc and config.get("design_media_ledger_dir"):
+        media=mc["metrics"]["media_credits"]["value"]
+        for period in ("today","7d","30d","all"):
+            data=media["periods"][period]
+            totals=data["totals"]
+            start,end=period_bounds(now,period,zone)
+            reference=reference_design_media_tasks(config["design_media_ledger_dir"],start,end)
+            if reference is None:
+                check("design_media."+period+".reference_readable",False)
+            else:
+                check("design_media."+period+".tasks",totals["tasks"]==sum(reference.values()),
+                      {"backend":totals["tasks"],"reference":sum(reference.values())})
+                for row in data["media_types"]:
+                    check("design_media."+period+"."+row["media_type"]+".tasks",
+                          row["tasks"]==reference[row["media_type"]],
+                          {"backend":row["tasks"],"reference":reference[row["media_type"]]})
+            credits=Decimal(0)
+            priced=0
+            for index,group in enumerate(data["groups"]):
+                unit=Decimal(group["unit_price"])
+                seconds=Decimal(group["seconds"] or 0)
+                if group["price_unit"]=="per_second":
+                    amount=unit*seconds
+                elif group["price_unit"]=="per_block":
+                    blocks,remainder=divmod(seconds,Decimal(group["block_seconds"]))
+                    amount=unit*(blocks+(1 if remainder else 0))
+                else:
+                    amount=unit*group["tasks"]
+                tolerance=Decimal("0.000001")*max(1,group["tasks"])
+                check("design_media."+period+".group"+str(index)+".credits",
+                      abs(Decimal(group["credits"])-amount)<=tolerance,
+                      {"backend":group["credits"],"reference":str(amount)})
+                credits+=Decimal(group["credits"])
+                priced+=group["tasks"]
+            check("design_media."+period+".credits_sum",credits==Decimal(totals["credits"]),
+                  {"backend":totals["credits"],"reference":str(credits)})
+            check("design_media."+period+".priced_tasks",priced==totals["priced_tasks"],
+                  {"backend":totals["priced_tasks"],"reference":priced})
+            check("design_media."+period+".task_split",
+                  totals["priced_tasks"]+totals["unpriced_tasks"]==totals["tasks"])
+    # Landing observation store: readable and consistent with its scorecard.
+    landings_path=Path(config.get("runtime_dir") or ".")/"reset-forecast-landings.json"
+    if landings_path.exists():
+        from .reset_landings import landing_scorecard
+        try:
+            scorecard=landing_scorecard(str(landings_path))
+            check("reset_landings.store_readable",True)
+            check("reset_landings.record_count",scorecard["n_records"]==len(scorecard["records"]),
+                  {"n_records":scorecard["n_records"],"records":len(scorecard["records"])})
+        except Exception as error:
+            check("reset_landings.store_readable",False,{"reason":type(error).__name__})
     # Local price-table estimates: recompute every cost metric from its own
     # token groups with an independent match + arithmetic loop ("input" is the
     # group's fresh_input, the other three keep their names).
     from .prices import load_prices as load_price_table, normalize_model
-    price_table=load_price_table(config.get("runtime_dir") or ".")
+    from .exchange_rates import rate_from
+    price_table=load_price_table(config.get("runtime_dir") or ".",fx_rate=rate_from(snapshot))
     for src in snapshot["sources"]:
         cost=src["metrics"]["cost"]
         value=cost["value"] if isinstance(cost["value"],dict) else None

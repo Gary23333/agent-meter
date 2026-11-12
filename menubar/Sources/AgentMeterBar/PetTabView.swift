@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The 桌宠 tab: the pet living in the panel (the same page and the same frames as the desktop one), a gallery of
 /// forms, every state to try, what the pet is wired to, and its settings. Nothing here changes data: trying a
@@ -10,6 +11,7 @@ struct PetTabView: View {
     @Environment(\.colorScheme) private var scheme
     @AppStorage("petTabSettingsOpen") private var settingsOpen = false
     @State private var packs: [PetResources.Pack] = []
+    @State private var dropTargeted = false
 
     private let prefs = PetPrefs.shared
     private let feed = PetFeed.shared
@@ -181,6 +183,23 @@ struct PetTabView: View {
             if let pack = packs.first(where: { $0.id == prefs.packID }) {
                 Text(packCaption(pack)).font(theme.font(10.5)).themeForeground(.tertiary)
             }
+            Text("把 .agentpet 形象包拖到这里即可安装（会先校验）。")
+                .font(theme.font(10)).themeForeground(.tertiary)
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: theme == .neon ? 6 : 12, style: .continuous)
+                    .strokeBorder(theme == .minimal ? Color.primary : theme.accent[0], style: StrokeStyle(lineWidth: 1.6, dash: [5, 4]))
+            }
+        }
+        .onDrop(of: [UTType.fileURL], isTargeted: $dropTargeted) { providers in
+            guard !providers.isEmpty else { return false }
+            Task { @MainActor in
+                let urls = await PetInstaller.urls(from: providers)
+                guard !urls.isEmpty else { return }
+                PetController.shared.installDropped(urls) { packs = PetResources.allPacks() }
+            }
+            return true
         }
     }
 
@@ -512,6 +531,10 @@ struct PetTabView: View {
                 }
                 Toggle("眼睛跟随光标", isOn: Binding(get: { prefs.followCursor }, set: { prefs.followCursor = $0 }))
                     .font(theme.font(12)).toggleStyle(.switch).controlSize(.small)
+                Toggle("漫游（在屏幕里慢慢走动）", isOn: Binding(get: { prefs.roam }, set: { prefs.roam = $0 }))
+                    .font(theme.font(12)).toggleStyle(.switch).controlSize(.small)
+                    .disabled(!prefs.enabled)
+                    .help(prefs.enabled ? "拖动、点击或免打扰时它会停下来" : "先在桌面上显示桌宠")
                 Toggle("安静模式（少说话、不乱动）", isOn: Binding(get: { prefs.calm }, set: { prefs.calm = $0 }))
                     .font(theme.font(12)).toggleStyle(.switch).controlSize(.small)
                 HStack(spacing: 8) {

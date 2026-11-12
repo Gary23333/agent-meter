@@ -142,13 +142,17 @@ struct BackendClient {
         return json
     }
 
-    /// Claims one account's daily rewards now ("trae_cn", "workbuddy#2"...).
-    /// The path component percent-encodes "#".
-    func claimReward(_ slot: String) async throws {
-        let r = try request("v1/rewards/claim/" + slot, method: "POST", timeout: 60)
-        let (_, resp) = try await Self.session.data(for: r)
+    /// Claims daily rewards now: one account ("trae_cn", "workbuddy#2"...), or
+    /// every account when `slot` is nil. The path component percent-encodes "#".
+    @discardableResult
+    func claimReward(_ slot: String? = nil) async throws -> JSON {
+        let path = slot.map { "v1/rewards/claim/" + $0 } ?? "v1/rewards/claim"
+        let r = try request(path, method: "POST", timeout: 60)
+        let (data, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
         guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
+        guard let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return json
     }
 
     /// Local price table (GET/PUT /v1/prices).
@@ -205,6 +209,41 @@ struct BackendClient {
         let body: [String: Any] = ["daily_cny": (daily as Any?) ?? NSNull(),
                                    "weekly_cny": (weekly as Any?) ?? NSNull(),
                                    "anomaly_multiplier": multiplier]
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+        guard let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return json
+    }
+
+    /// Local history export: raw quantities only, projected from the cached
+    /// snapshot; the backend never collects for it.
+    func exportHistory(format: String) async throws -> Data {
+        let r = try request("v1/export/" + format, timeout: 30)
+        let (data, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
+        return data
+    }
+
+    /// Forecast landing scorecard over the local observation store.
+    func forecastLandings() async throws -> JSON {
+        let r = try request("v1/forecast/landings", timeout: 15)
+        let (data, resp) = try await Self.session.data(for: r)
+        guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return json
+    }
+
+    /// Manual announcement time: a fact only; the backend adds no probability.
+    func postForecastAnnouncement(announcedAt: Double, note: String?) async throws -> JSON {
+        var r = try request("v1/forecast/announcement", method: "POST", timeout: 10)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["announced_at": announcedAt]
+        if let note, !note.isEmpty { body["note"] = note }
         r.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }

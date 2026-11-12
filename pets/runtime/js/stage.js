@@ -137,7 +137,9 @@ export class Stage {
           const b = this.bubble.click(now);
           this.host.post({ type: 'bubble-click', id: b && b.id, action: b && b.action });
         } else if (hit === 'hud') {
-          this.host.post({ type: 'hud-click' });
+          const app = this.hud.chipAt(m.x, m.y);
+          if (app) this.host.post({ type: 'session-click', app });
+          else this.host.post({ type: 'hud-click' });
         } else if (hit === 'pet') {
           this.director.poke(now);
           this.host.post({ type: 'pet-click' });
@@ -203,7 +205,7 @@ export class Stage {
    * The pet and its particles as a PNG data URL, for screenshots of a window that is not on screen (and so gets
    * no animation frames). `settle` seconds of animation are played first so a state change has finished blending.
    */
-  capture({ settle = 0.8 } = {}) {
+  capture({ settle = 0.8, fx = true } = {}) {
     // A hidden page never hears "resize": measure again, so the picture matches the stage as it is now.
     this.layout();
     const steps = Math.max(1, Math.round(settle * 30));
@@ -215,7 +217,8 @@ export class Stage {
     const g = out.getContext('2d');
     const r = this.petRect;
     g.drawImage(this.renderer.canvas, r.x * dpr, r.y * dpr, r.w * dpr, r.h * dpr);
-    g.drawImage(this.fx.canvas, 0, 0, out.width, out.height);
+    // Share photos skip the particles: they would widen the trimmed picture and shrink the pet.
+    if (fx) g.drawImage(this.fx.canvas, 0, 0, out.width, out.height);
     return out.toDataURL('image/png');
   }
 

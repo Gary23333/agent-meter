@@ -99,6 +99,29 @@ final class PetThumbnails: NSObject {
         return NSImage(data: data)
     }
 
+    /// Cuts the transparent margins off a stage capture so the pet itself fills the picture (share card).
+    static func trimmed(_ image: NSImage) -> NSImage? {
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+              rep.pixelsWide > 0, rep.pixelsHigh > 0, let samples = rep.bitmapData else { return nil }
+        let w = rep.pixelsWide, h = rep.pixelsHigh, row = rep.bytesPerRow, spp = rep.samplesPerPixel
+        guard spp >= 4, rep.bitsPerPixel == 8 * spp, !rep.isPlanar else { return nil }
+        let alpha = rep.bitmapFormat.contains(.alphaFirst) ? 0 : 3
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            for x in 0..<w where samples[y * row + x * spp + alpha] > 8 {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        let crop = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+        guard let cg = rep.cgImage?.cropping(to: crop) else { return nil }
+        let out = NSImage(cgImage: cg, size: NSSize(width: crop.width, height: crop.height))
+        return out
+    }
+
     private func fail(_ pack: PetResources.Pack) {
         failed.insert(pack.id)
         next()

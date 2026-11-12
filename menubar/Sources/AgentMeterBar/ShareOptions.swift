@@ -16,13 +16,15 @@ struct ShareOptions: Codable, Equatable {
     var images = true
     /// Project QR code in the footer.
     var qrCode = true
+    /// The desktop pet as a picture in the footer; off unless the user asks for it.
+    var pet = false
 
     static let compact = ShareOptions()
     static let review = ShareOptions(mode: .review, peak: true)
     init(mode: ShareMode = .compact, costs: Bool = true, efficiency: Bool = true, apps: Bool = true,
-         models: Bool = true, peak: Bool = false, images: Bool = true, qrCode: Bool = true) {
+         models: Bool = true, peak: Bool = false, images: Bool = true, qrCode: Bool = true, pet: Bool = false) {
         self.mode = mode; self.costs = costs; self.efficiency = efficiency; self.apps = apps
-        self.models = models; self.peak = peak; self.images = images; self.qrCode = qrCode
+        self.models = models; self.peak = peak; self.images = images; self.qrCode = qrCode; self.pet = pet
     }
 
     /// Older saved options have no qrCode key; keep their choices and default it on.
@@ -36,6 +38,7 @@ struct ShareOptions: Codable, Equatable {
         peak = try c.decodeIfPresent(Bool.self, forKey: .peak) ?? false
         images = try c.decodeIfPresent(Bool.self, forKey: .images) ?? true
         qrCode = try c.decodeIfPresent(Bool.self, forKey: .qrCode) ?? true
+        pet = try c.decodeIfPresent(Bool.self, forKey: .pet) ?? false
     }
 
     var appLimit: Int { mode == .compact ? 3 : 5 }

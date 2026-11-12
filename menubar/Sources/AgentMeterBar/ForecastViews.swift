@@ -702,3 +702,84 @@ private struct UnavailableCard: View {
         }
     }
 }
+
+// MARK: - 落地校验与手动公告
+
+/// 落地观测只存本机；手动录入只记公告时间事实，不产生概率、不触发通知。
+private struct LandingCard: View {
+    let now: Date
+    @Environment(UsageStore.self) private var store
+    @State private var scorecard: JSON?
+    @State private var announcedAt = Date()
+    @State private var note = ""
+    @State private var message: String?
+    @State private var busy = false
+
+    var body: some View {
+        Card {
+            QSectionTitle(symbol: "checkmark.seal", text: "落地校验与手动公告")
+            if let s = scorecard {
+                let n = Int(s["n_records"].double ?? 0)
+                if n == 0 {
+                    Text("还没有落地观测：重置真正发生后，会自动与当时的预测对照记录。")
+                        .font(.system(size: 11)).themeForeground(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    let hits = Int(s["window_hits"].double ?? 0)
+                    let withWindow = Int(s["n_with_window"].double ?? 0)
+                    InfoRow(symbol: "target", title: "落地记录", value: "\(n) 条",
+                            detail: withWindow > 0 ? "官方窗口命中 \(hits)/\(withWindow)" : "暂无官方窗口可对照")
+                    InfoRow(symbol: "clock.arrow.2.circlepath", title: "公告到落地 中位",
+                            value: Self.hours(s["announcement_to_landing_seconds"]["median"].double),
+                            detail: "偏差中位 " + Self.hours(s["deviation_seconds"]["median"].double), nested: true)
+                }
+            } else {
+                Text("落地校验读取中…").font(.system(size: 11)).themeForeground(.tertiary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("手动录入公告时间（只记事实，不生成概率）")
+                    .font(.system(size: 10)).themeForeground(.tertiary)
+                HStack(spacing: 8) {
+                    DatePicker("", selection: $announcedAt, displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden().datePickerStyle(.compact)
+                    TextField("备注（可选）", text: $note)
+                        .textFieldStyle(.roundedBorder).font(.system(size: 11))
+                    Button(busy ? "记录中…" : "记录公告") { submit() }
+                        .controlSize(.small).disabled(busy)
+                }
+                if let message {
+                    Text(message).font(.system(size: 10)).themeForeground(.secondary)
+                }
+            }
+            .padding(.top, 4)
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        guard let client = store.backendClient else { return }
+        scorecard = try? await client.forecastLandings()
+    }
+
+    private func submit() {
+        guard let client = store.backendClient else { message = "后端未连接"; return }
+        busy = true
+        let stamp = announcedAt.timeIntervalSince1970
+        let text = note
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                _ = try await client.postForecastAnnouncement(announcedAt: stamp, note: text)
+                message = "已记录：手动公告只补时间事实，进入历史时标 origin=manual。"
+                note = ""
+            } catch {
+                message = "记录失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private static func hours(_ seconds: Double?) -> String {
+        guard let seconds else { return "—" }
+        return String(format: "%.1f 小时", seconds / 3600)
+    }
+}

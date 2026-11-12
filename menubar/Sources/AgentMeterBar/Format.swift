@@ -133,10 +133,44 @@ enum Fmt {
         return json.double ?? 0
     }
 
-    /// Display amounts in CNY using the same fixed estimate as prices.py.
-    /// This is an estimate conversion, not a live exchange rate.
-    static let usdToCNY = 7.25
-    static let currencyNote = "金额统一人民币 · USD 按固定汇率 1:7.25 折算"
+    // The app presents a single backend snapshot at a time. Updating this
+    // before publishing the snapshot keeps all its currency displays aligned.
+    private struct ExchangeRate {
+        var value = 7.25
+        var status = "fallback"
+        var quotedAt: Date?
+        var fetchedAt: Date?
+    }
+
+    private static let exchangeRateLock = NSLock()
+    private static var exchangeRate = ExchangeRate()
+
+    static func useExchangeRate(_ json: JSON) {
+        var next = ExchangeRate()
+        if let value = json["usd_cny"].double, value.isFinite, value > 0, value < 100 {
+            next.value = value
+            next.status = json["status"].string ?? "fallback"
+            next.quotedAt = json["quoted_at"].double.map(Date.init(timeIntervalSince1970:))
+            next.fetchedAt = json["fetched_at"].double.map(Date.init(timeIntervalSince1970:))
+        }
+        exchangeRateLock.withLock { exchangeRate = next }
+    }
+
+    static var usdToCNY: Double { exchangeRateLock.withLock { exchangeRate.value } }
+
+    static var currencyNote: String {
+        let rate = exchangeRateLock.withLock { exchangeRate }
+        let basis: String
+        if let quotedAt = rate.quotedAt {
+            let now = Date()
+            let recent = rate.status == "live" && now.timeIntervalSince(quotedAt) < 900
+                && rate.fetchedAt.map { now.timeIntervalSince($0) < 300 } == true
+            basis = (recent ? "行情" : "缓存行情") + " " + monthDayTime.string(from: quotedAt)
+        } else {
+            basis = "离线参考汇率"
+        }
+        return "1 USD ≈ ¥" + grouped(rate.value, fraction: 6) + " · " + basis
+    }
 
     static func cny(_ n: Double, unit: String) -> Double {
         unit == "USD" ? n * usdToCNY : n

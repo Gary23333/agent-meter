@@ -6,12 +6,13 @@ from datetime import datetime, time as datetime_time, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-SCHEMA_VERSION = 5
-METRICS = ("quota", "reset_time", "reset_cards", "credits", "tokens", "cost", "renewal_time", "renewal_countdown", "renewal_amount", "credit_refresh_time", "credit_refresh_countdown", "reset_forecast", "known_reset_countdown", "image_generation")
+SCHEMA_VERSION = 6
+METRICS = ("quota", "reset_time", "reset_cards", "credits", "tokens", "cost", "renewal_time", "renewal_countdown", "renewal_amount", "credit_refresh_time", "credit_refresh_countdown", "reset_forecast", "known_reset_countdown", "image_generation", "media_credits")
 # Reset forecasting is a standalone feature, not something each application is
 # expected to provide, so it stays out of the per-application coverage axes.
-# Codex's built-in image generation is likewise a Codex-only measurement.
-COVERAGE_METRICS = tuple(name for name in METRICS if name not in {"reset_forecast", "known_reset_countdown", "image_generation"})
+# Codex's built-in image generation is likewise a Codex-only measurement, and
+# Design's media credit estimate is a Design-only reference value.
+COVERAGE_METRICS = tuple(name for name in METRICS if name not in {"reset_forecast", "known_reset_countdown", "image_generation", "media_credits"})
 STATUSES = {"available", "partial", "not_provided", "not_connected", "not_supported", "error", "stale"}
 DISPLAY_ZONE = ZoneInfo("Asia/Shanghai")
 

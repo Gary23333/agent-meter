@@ -54,6 +54,8 @@ final class PetPrefs {
     var quietHours: String? { didSet { defaults.set(quietHours, forKey: "petQuietHours") } }
     /// "auto" follows the sources in use; otherwise a source id such as "codex".
     var energySource: String { didSet { defaults.set(energySource, forKey: "petEnergySource") } }
+    /// Wander slowly around the screen; pauses for drag, interaction and quiet hours.
+    var roam: Bool { didSet { defaults.set(roam, forKey: "petRoam") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -67,6 +69,7 @@ final class PetPrefs {
         breakMinutes = defaults.object(forKey: "petBreakMinutes") as? Int ?? 120
         quietHours = defaults.string(forKey: "petQuietHours")
         energySource = defaults.string(forKey: "petEnergySource") ?? "auto"
+        roam = defaults.object(forKey: "petRoam") as? Bool ?? false
     }
 
     /// Saved window position (bottom-left in screen coordinates), if any.

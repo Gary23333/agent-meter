@@ -14,7 +14,7 @@ a record stay missing (unknown ≠ 0) and the weekly section says so.
 Alert dedup: events carry stable ids keyed by the calendar day (or the week's
 Monday), so a collection recovery that back-fills tokens later never produces
 a second event for the same day/week. Amounts are Decimal fixed-point strings;
-USD cost metrics convert at the project's fixed FX_FALLBACK (7.25), any other
+USD cost metrics convert at the snapshot exchange rate. Any other
 unit is left unknown instead of mixed in.
 """
 import copy
@@ -25,7 +25,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .model import DISPLAY_ZONE, timestamp
-from .prices import FX_FALLBACK
+from .exchange_rates import rate_from
 
 SCHEMA = 1
 CONFIG_NAME = "budget.json"
@@ -148,13 +148,13 @@ def _period_amount(period):
     return (peak or Decimal(0)) + (off or Decimal(0))
 
 
-def _to_cny(amount, unit):
+def _to_cny(amount, unit, fx_rate):
     if amount is None:
         return None
     if unit == "CNY":
         return amount
     if unit == "USD":
-        return amount * FX_FALLBACK
+        return amount * fx_rate
     return None   # any other unit stays unknown; currencies are never mixed
 
 
@@ -170,6 +170,7 @@ def _collect_period(snapshot, period_key):
     measured zero yields 0. Sources with local token usage but no priced
     amount make the sum a flagged lower bound, never a silent zero.
     """
+    fx_rate = rate_from(snapshot)
     total = None
     apps, models = {}, {}
     unknown = []
@@ -195,13 +196,13 @@ def _collect_period(snapshot, period_key):
         if cost.get("status") in _USABLE and isinstance(cval, dict) \
                 and cval.get("basis") == "local_price_table":
             cp = (cval.get("periods") or {}).get(period_key)
-            amount = _to_cny(_period_amount(cp), cval.get("unit"))
+            amount = _to_cny(_period_amount(cp), cval.get("unit"), fx_rate)
             if amount is not None:
                 total = (total or Decimal(0)) + amount
                 contributed = True
                 if cost.get("status") != "available" or (isinstance(cp, dict) and cp.get("unmatched_models")):
                     partial = True
-                factor = FX_FALLBACK if cval.get("unit") == "USD" else Decimal(1)
+                factor = fx_rate if cval.get("unit") == "USD" else Decimal(1)
                 per_app = cp.get("app_models") if isinstance(cp, dict) else None
                 pairs = []
                 if isinstance(per_app, dict) and per_app:
@@ -353,7 +354,7 @@ def compute_budget(snapshot, config, now, history=None):
 
     payload = {"status": "ok", "schema": SCHEMA, "config": dict(config),
                "basis": "local_api_equivalent_estimate", "currency": "CNY",
-               "fx_rate": format(FX_FALLBACK, "f"), "timezone": str(DISPLAY_ZONE),
+               "fx_rate": format(rate_from(snapshot), "f"), "timezone": str(DISPLAY_ZONE),
                "generated_at": timestamp(now), "date": today_key, "week_start": week_key,
                "daily": daily, "weekly": weekly, "anomaly": anomaly, "events": events}
     return payload, entry

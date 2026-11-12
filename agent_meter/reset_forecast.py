@@ -574,7 +574,8 @@ def read_cache(path):
     return data
 
 
-def collect_reset_forecast(now=None, fetchers=None, cache_path=None, refresh_minutes=REFRESH_MINUTES):
+def collect_reset_forecast(now=None, fetchers=None, cache_path=None, refresh_minutes=REFRESH_MINUTES,
+                           manual_store_path=None):
     now = time.time() if now is None else now
     out = source("reset_forecast", "external_forecast", now)
     cache = read_cache(cache_path) if cache_path else None
@@ -595,10 +596,21 @@ def collect_reset_forecast(now=None, fetchers=None, cache_path=None, refresh_min
             raise SourceError("reset_forecast_sources_unavailable")
     usable = [row for row in rows if row.get("status") in ("available", "stale")]
     pooled = combine(usable, now)
+    manual_events, manual_state = [], None
+    if manual_store_path:
+        from .reset_landings import load_manual_announcements
+        try:
+            manual_events = load_manual_announcements(manual_store_path)
+        except SourceError:
+            manual_state = "manual_store_corrupt"
+    history_source = dict(per_source)
+    if manual_events:
+        history_source["manual"] = manual_events
     value = {"basis": "third_party_forecast", "disclaimer": DISCLAIMER, "cache_state": cache_state,
              "refresh_minutes": refresh_minutes, "ensemble": pooled, "sources": rows,
-             "promises": promises(usable), "history_events": merge_history(per_source) if per_source else [],
-             "history_sources": sorted(per_source)}
+             "promises": promises(usable),
+             "history_events": merge_history(history_source) if history_source else [],
+             "history_sources": sorted(history_source)}
     out["metrics"]["reset_forecast"] = metric(
         value if usable else None,
         status="stale" if cache_state == "stale" else ("available" if pooled["status"] == "available" else "error"),
@@ -611,6 +623,10 @@ def collect_reset_forecast(now=None, fetchers=None, cache_path=None, refresh_min
     out["diagnostics"] = {"reason": None, "cache_state": cache_state,
                           "sources_available": sum(row.get("status") == "available" for row in rows),
                           "sources_total": len(rows)}
+    if manual_store_path:
+        out["diagnostics"]["manual_announcements"] = len(manual_events)
+        if manual_state:
+            out["diagnostics"]["manual_store_state"] = manual_state
     out["status"] = "partial" if any(row.get("status") == "error" for row in rows) or cache_state == "stale" else "available"
     return out
 

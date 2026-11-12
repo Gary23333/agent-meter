@@ -14,7 +14,7 @@ MAX_SESSION_BODY = 64 * 1024
 MAX_PET_BODY = 4 * 1024
 # Sources the app may switch off at runtime.
 # Providers whose daily rewards the app may claim (agent_meter/rewards.py).
-CLAIMABLE = {"trae_cn", "workbuddy", "qoder"}
+CLAIMABLE = {"trae_cn", "workbuddy", "qoder", "minimax_code"}
 TOGGLEABLE = {"claude", "codex", "kimi", "qoder", "minimax_code", "deepseek_api", "dreamina", "minimax_design", "workbuddy", "trae_cn", "reset_forecast"}
 
 
@@ -116,10 +116,34 @@ def make_server(service,token,port=8769):
                     else:
                         from .report_periods import compute_period_report
                         from .prices import load_prices
-                        table=load_prices(service.config["runtime_dir"],"CNY")
+                        from .exchange_rates import rate_from
+                        table=load_prices(service.config["runtime_dir"],"CNY",fx_rate=rate_from(data))
                         self.send_json(200,compute_period_report(data,table,now,route.path.rsplit("/",1)[-1]))
                 except Exception:
                     self.send_json(500,{"error":"projection_failed"})
+                return
+            if route.path=="/v1/forecast/landings":
+                # Landing scorecard over the local observation store; no collection.
+                from .reset_landings import landing_scorecard
+                try:self.send_json(200,landing_scorecard(str(Path(service.config["runtime_dir"])/"reset-forecast-landings.json")))
+                except Exception:self.send_json(500,{"error":"landings_failed"})
+                return
+            if route.path in {"/v1/export/json","/v1/export/csv"}:
+                # Local export projects the cached snapshot; never collects.
+                import time as _time
+                from .export_data import export_payload, export_csv
+                data=service.peek() or {}
+                if route.path=="/v1/export/json":
+                    self.send_json(200,export_payload(data,_time.time()))
+                else:
+                    body=export_csv(data).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type","text/csv; charset=utf-8")
+                    self.send_header("Content-Length",str(len(body)))
+                    self.send_header("Cache-Control","no-store")
+                    self.send_header("X-Content-Type-Options","nosniff")
+                    self.end_headers()
+                    self.wfile.write(body)
                 return
             if route.path not in {"/v1/snapshot","/v1/coverage","/v1/sources"}:
                 self.send_json(404,{"error":"not_found"});return
@@ -145,6 +169,19 @@ def make_server(service,token,port=8769):
 
         def do_POST(self):
             if not self.authorized():return
+            if self.path=="/v1/forecast/announcement":
+                # Manual announcement time: a fact only, never a probability or a clock.
+                body=self.read_json(MAX_SESSION_BODY)
+                if body is None:return
+                from .model import SourceError
+                from .reset_landings import add_manual_announcement
+                try:
+                    event=add_manual_announcement(str(Path(service.config["runtime_dir"])/"reset-forecast-manual.json"),
+                                                  body.get("announced_at"),body.get("note"))
+                except SourceError as e:
+                    self.send_json(400 if e.code=="manual_announcement_invalid" else 500,
+                                   {"error":e.code});return
+                self.send_json(200,event);return
             if self.path=="/v1/pet/events":
                 # Hook events (agent finished / waiting ...): in-memory only, kinds are whitelisted.
                 body=self.read_json(MAX_PET_BODY)
@@ -154,7 +191,11 @@ def make_server(service,token,port=8769):
                     self.send_json(400,{"error":"invalid_event"});return
                 self.send_json(200,{"id":event["id"],"kind":event["kind"]});return
             claim_slot=None
-            if self.path.startswith("/v1/rewards/claim/"):
+            claim_all=False
+            if self.path=="/v1/rewards/claim":
+                # The panel's "claim everything now" button: no slot, no body.
+                claim_all=True
+            elif self.path.startswith("/v1/rewards/claim/"):
                 # "#" travels percent-encoded ("trae_cn%232").
                 claim_slot=unquote(self.path[len("/v1/rewards/claim/"):])
                 provider,_,number=claim_slot.partition("#")
@@ -163,7 +204,7 @@ def make_server(service,token,port=8769):
             elif self.path not in {"/v1/refresh","/v1/prices/sync"}:self.send_json(404,{"error":"not_found"});return
             if self.headers.get("Content-Length","0")!="0" or self.headers.get("Transfer-Encoding"):
                 self.send_json(400,{"error":"body_not_allowed"});self.close_connection=True;return
-            if claim_slot is not None:
+            if claim_all or claim_slot is not None:
                 try:self.send_json(200,service.claim_now(claim_slot))
                 except Exception:self.send_json(500,{"error":"claim_failed"})
                 return

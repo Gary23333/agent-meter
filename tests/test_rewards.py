@@ -207,6 +207,58 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(calls, ["campaign:act-1"])
         self.assertEqual(out["accounts"][0]["claimed_credits_today"], 100)
 
+    def test_desktop_credential_survives_an_expired_website_login(self):
+        # A Qoder website login cannot claim campaigns. When it expires it must
+        # not hide the desktop credential that can.
+        svc = self.service()
+        seen = []
+
+        def status(session, timeout):
+            seen.append(session)
+            if not session.get("desktop_app"):
+                raise SourceError("qoder_desktop_not_installed")
+            return QODER_OPEN
+
+        svc.adapters["qoder"] = (status, lambda session, item, timeout: {"result": "ok", "credits": 100})
+        out = svc.tick({"qoder": {"cookie": "EXPIRED"}}, NOW, auto_claim={"qoder"},
+                       desktop={"qoder": "/Applications/Qoder CN.app"})
+        account = out["accounts"][0]
+        self.assertEqual((account["id"], account["status"], account["reason"]), ("qoder", "available", None))
+        self.assertEqual(account["claimed_credits_today"], 100)
+        self.assertEqual(seen[0], {"desktop_app": "/Applications/Qoder CN.app"})
+
+    def test_trae_device_id_comes_from_the_client_key_name(self):
+        home = Path(self.tmp.name)
+        storage = home / "Library/Application Support/Trae CN/User/globalStorage/storage.json"
+        storage.parent.mkdir(parents=True)
+        storage.write_text(json.dumps({"iCubeAuthInfo://icube-dc:631551464320604": "encrypted",
+                                       "iCubeAuthInfo://icube-dc:not-a-number": "x",
+                                       "telemetry.machineId": "ab"}))
+        self.assertEqual(rewards.trae_device_id(home), "631551464320604")
+        storage.write_text("{not json")
+        self.assertIsNone(rewards.trae_device_id(home))
+        self.assertIsNone(rewards.trae_device_id(home / "missing"))
+
+    def test_tick_attaches_the_client_device_id_to_trae_claims(self):
+        seen = []
+
+        def status(session, timeout):
+            seen.append(session)
+            return trae_open()
+
+        def claim(session, item, timeout):
+            seen.append(session)
+            return {"result": "ok", "credits": 300}
+
+        svc = RewardsService(self.tmp.name, {"trae_cn": (status, claim)})
+        with mock.patch.object(rewards, "trae_device_id", return_value="631551464320604"):
+            svc.tick({"trae_cn": {"token": "T"}}, NOW, auto_claim={"trae_cn"})
+        self.assertEqual([s.get("device_id") for s in seen], ["631551464320604"] * 3)
+        seen.clear()
+        with mock.patch.object(rewards, "trae_device_id", return_value="631551464320604"):
+            svc.tick({"trae_cn": {"token": "T", "device_id": "123456789012345"}}, NOW + DAY, auto_claim={"trae_cn"})
+        self.assertEqual({s.get("device_id") for s in seen}, {"123456789012345"})
+
     def test_claim_moments(self):
         today, nxt = rewards.claim_moments(NOW, "15:30")
         self.assertEqual((today, nxt), (NOW - 1800, NOW - 1800 + DAY))
@@ -269,6 +321,25 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.trae.calls[-3:], [("status", "B"), ("claim", "daily_checkin"), ("status", "B")])
         self.assertEqual([a["id"] for a in out["accounts"]], ["trae_cn", "trae_cn#2"])
         self.assertEqual(out["accounts"][1]["account_label"], "小号")
+
+    def test_claim_all_overrides_switch_and_throttle_for_every_account(self):
+        svc = self.service(trae=Fake([trae_open(), trae_open(), trae_signed()]),
+                           workbuddy=Fake([rewards.normalize_workbuddy_status(WB_STREAK, wb_tasks(("skill_1", "completed")))],
+                                          [{"result": "ok", "credits": 100}]))
+        sessions = {"trae_cn": {"token": "T"}, "workbuddy": {"cookie": "C"}}
+        # Auto-claim off and before the daily moment: a plain read claims nothing.
+        svc.tick(sessions, NOW, claim_time="17:00")
+        self.assertEqual([c[0] for c in self.trae.calls], ["status"])
+        out = svc.tick(sessions, NOW + 10, claim_time="17:00", claim_all=True)
+        self.assertEqual([c[0] for c in self.trae.calls[1:]], ["status", "claim", "status"])
+        self.assertEqual([c[0] for c in self.wb.calls], ["status", "status", "claim", "status"])
+        self.assertEqual([a["claimed_credits_today"] for a in out["accounts"]], [300, 100])
+
+    def test_claim_all_skips_disabled_accounts(self):
+        svc = self.service(trae=Fake([trae_open()]))
+        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, disabled={"trae_cn"}, claim_all=True)
+        self.assertEqual(out["accounts"][0]["reason"], "disabled_by_user")
+        self.assertEqual(self.trae.calls, [])
 
     def test_errors_disabled_and_local_only(self):
         svc = self.service(trae=Fake([SourceError("not_authenticated")]))
@@ -334,6 +405,13 @@ class HTTPTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 self.open(bad, "POST")
             self.assertEqual(ctx.exception.code, 404)
+
+    def test_claim_all_endpoint(self):
+        # No slot and no auto-claim preference: the button still claims now.
+        with self.open("/v1/rewards/claim", "POST") as r:
+            data = json.load(r)
+        self.assertEqual(data["accounts"][0]["claimed_credits_today"], 300)
+        self.assertIn(("claim", "daily_checkin"), self.fake.calls)
 
 
 if __name__ == "__main__":

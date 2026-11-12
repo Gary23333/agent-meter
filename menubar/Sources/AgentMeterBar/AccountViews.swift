@@ -401,6 +401,20 @@ struct AccountCard: View {
                                 value: Fmt.grouped(Fmt.credits(month["credits"])),
                                 detail: "全部 " + Fmt.grouped(Fmt.credits(all["credits"])) + " · 本机记录，不计入本机消耗"))
         }
+        // Design media (image/video) credit estimate: reference-only, never
+        // reconciled against the wallet; unpriced tasks stay visible.
+        if let media = source.metric("media_credits") {
+            let periods = media.value["periods"]
+            let today = periods["today"]["totals"], month = periods["30d"]["totals"], all = periods["all"]["totals"]
+            let unpriced = Int(all["unpriced_tasks"].double ?? 0)
+            rows.append(InfoRow(symbol: "film.stack", title: "媒体积分 今日（估）",
+                                value: Fmt.grouped(Fmt.credits(today["credits"])),
+                                detail: "\(Int(today["tasks"].double ?? 0)) 个任务 · 计价 \(Int(today["priced_tasks"].double ?? 0)) 个 · 仅参考"))
+            rows.append(InfoRow(symbol: "calendar.badge.clock", title: "媒体积分 近 30 天 / 全部（估）",
+                                value: Fmt.grouped(Fmt.credits(month["credits"])),
+                                detail: "全部 " + Fmt.grouped(Fmt.credits(all["credits"]))
+                                    + (unpriced > 0 ? " · \(unpriced) 个任务无定价未计" : "") + " · 不与钱包对冲"))
+        }
         return rows
     }
 
@@ -511,11 +525,20 @@ private struct RewardSection: View {
                                     .compactMap { $0 }.joined(separator: " · ").nilIfEmpty,
                                 valueTint: waiting > 0 ? .orange : .secondary))
         }
+        if reward.provider == "trae_cn" {
+            for bonus in reward.today["bonus_items"].array {
+                let state = bonus["state"].string ?? "unknown"
+                rows.append(InfoRow(symbol: "sparkles", title: bonus["title"].string ?? "附加奖励",
+                                    value: state == "error" ? "查询失败" : "契约未确认",
+                                    detail: "只读展示 · 不参与自动领取", valueTint: .secondary, nested: true))
+            }
+        }
         if reward.claimedToday > 0 {
             let badges = reward.claimsToday.compactMap { $0["badge"].string }
             rows.append(InfoRow(symbol: "checkmark.seal", title: "今日已领", value: "+\(Fmt.grouped(reward.claimedToday)) 积分",
                                 detail: badges.isEmpty ? nil : "徽章 " + badges.joined(separator: "、"), valueTint: tint, nested: true))
-        } else if let failed = reward.claimsToday.last(where: { ["error", "rejected"].contains($0["result"].string ?? "") }) {
+        } else if let failed = reward.claimsToday.last(where: { ["error", "rejected"].contains($0["result"].string ?? "") }),
+                  reward.today["signed_in"].bool != true {
             rows.append(InfoRow(symbol: "exclamationmark.triangle", title: failed["final"].bool == true ? "未能自动领取" : "领取失败",
                                 value: failed["final"].bool == true ? "请在客户端签到" : (failed["code"].double.map { "代码 \(Int($0))" } ?? "稍后重试"),
                                 detail: failed["title"].string, valueTint: .orange, nested: true))

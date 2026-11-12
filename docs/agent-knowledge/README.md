@@ -1,5 +1,7 @@
 # Agent 用量菜单栏应用共享知识
 
+2026-11-12 v0.11.0：桌宠体验补完与麻薯预设、Claude 桌面登录态复用、TRAE 设备 ID、MiniMax Design 媒体积分估算、重置预测落地校验、本机 JSON/CSV 导出及联网 USD/CNY。快照 schema 升至 6，报价随完整联网采集更新并缓存。Python 834、Swift 90、Node 28 项通过，真机本机账本对账 3,301 项通过。见[版本说明](../release-v0.11.0.md)和[批次验收](../local-upgrade-batch-plan-2026-11-12.md)。
+
 2026-11-10 发布 v0.10.4：额度卡改为**实时发卡 + 补发**。`agent_meter/collection.py` 里 5 小时 / 7 天窗口的用量每越过一档（50% / 80% / 90% / ≥99.5%）就立刻掉一张卡，同一窗口同一档只掉一张，峰值继续上涨再补下一档；掉卡时间戳记为该档位被观测到的时刻。窗口结算退化为兜底，只补发漏掉的档，升级前就存在的窗口会一次补齐所有越过的档。配套：账本新增每张卡的**张数台账** `cards`，掉落日志裁剪到 3000 条不再让老卡「×N」缩水（旧账本首次读取自动从日志回填）；`open_windows` 新增 `granted` 数组；面板文案「已锁定」→「已获得」。README 按当前代码彻底重写、演示截图全部重生成。回归 Python 666 / Swift 74 全过。**本版 DMG 与内嵌 App 均已通过 Apple 公证并装订票据**（Developer ID，Team WTTNX5S72B）。
 
 2026-11-10 发布 v0.10.3：Qoder 每日积分接入完成，`agent_meter/qoder_campaign.py` + `helpers/qoder_auth.mjs`（桌面 `auth.v1.dat` 的 Chromium v10 信封，用 Qoder 自己的 Electron 运行时在内存解密），端点 `openapi.qoder.com.cn` 的 `/sash/api/v1/me/campaigns` 与 `.../claim`；**必须带 `Cosy-ClientType: 10` 否则活动列表为空**，领取响应是扁平结构、成功看 HTTP 状态。每日 10:00（北京时间）发布活动、领取后 30 天有效。macOS 读钥匙串会弹一次授权框（`Qoder CN App Safe Storage`）。见[复勘记录](../research/qoder-campaigns-recon-2026-11-10.md)。

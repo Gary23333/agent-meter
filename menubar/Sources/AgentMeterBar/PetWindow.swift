@@ -27,6 +27,7 @@ enum PetMessage: Equatable {
     case bubbleShown(id: String)
     case action(PetAction)
     case hudClick
+    case sessionClick(app: String)
     case refreshRequest
     case petClick
     case error(String)
@@ -54,6 +55,9 @@ enum PetMessage: Equatable {
         case "bubble-click", "action":
             return PetAction.parse(m["action"]).map { .action($0) }
         case "hud-click": return .hudClick
+        case "session-click":
+            guard let app = m["app"] as? String, !app.isEmpty, app.count <= 64 else { return nil }
+            return .sessionClick(app: app)
         case "refresh-request": return .refreshRequest
         case "pet-click": return .petClick
         case "error": return .error(String((m["message"] as? String ?? "unknown").prefix(300)))
@@ -123,6 +127,8 @@ final class PetInputView: NSView {
     var onContext: ((NSEvent) -> Void)?
     var onDragBegan: (() -> Void)?
     var onDragEnded: (() -> Void)?
+    /// `.agentpet` files dragged onto the window (installation is the controller's job).
+    var onDropFiles: (([URL]) -> Void)?
     /// Interactive regions reported by the page; empty means "everything" until the first report.
     var hitRects: [CGRect] = []
 
@@ -181,4 +187,25 @@ final class PetInputView: NSView {
     }
 
     override func rightMouseDown(with event: NSEvent) { onContext?(event) }
+
+    // MARK: File drops (.agentpet)
+
+    private static func droppedURLs(_ sender: NSDraggingInfo) -> [URL] {
+        (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        PetInstaller.accepts(Self.droppedURLs(sender)) ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        PetInstaller.accepts(Self.droppedURLs(sender)) ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = Self.droppedURLs(sender)
+        guard PetInstaller.accepts(urls) else { return false }
+        onDropFiles?(urls)
+        return true
+    }
 }

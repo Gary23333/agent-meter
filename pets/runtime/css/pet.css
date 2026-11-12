@@ -49,3 +49,5 @@ body { font: 500 12.5px/1.45 var(--b-font, system-ui, -apple-system, "PingFang S
 .hud .chips:empty { display: none; }
 .hud .chip { padding: 2px 8px; border-radius: 999px; background: var(--b-bg); color: var(--b-fg); border: var(--b-border-w) solid var(--b-border); font-size: 10.5px; white-space: nowrap; }
 .hud .chip { overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+.hud .chip.app { cursor: pointer; }
+.hud .chip.app:hover { border-color: var(--accent1); }

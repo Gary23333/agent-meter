@@ -128,6 +128,8 @@ final class UsageStore {
     @ObservationIgnored private var claimTask: Task<Void, Never>?
     /// Accounts with a "claim now" request in flight.
     var claimingSlots: Set<String> = []
+    /// A "claim every account now" request is in flight.
+    var claimingAll = false
     /// Trophies waiting for their celebration, and how many were shown in this run.
     var pendingUnlocks: [Unlock] = []
     var shownUnlocks = 0
@@ -333,6 +335,7 @@ final class UsageStore {
                     await pushSessions()
                     result = try await client.snapshot(force: force)
                 }
+                Fmt.useExchangeRate(result.raw["exchange_rate"])
                 snapshot = result
                 updateTickerDeltas(result)
                 lastFetched = Date()
@@ -437,6 +440,7 @@ final class UsageStore {
 
     /// Shows a fixed snapshot without a backend (used by `--preview`).
     func preview(_ snapshot: Snapshot) {
+        Fmt.useExchangeRate(snapshot.raw["exchange_rate"])
         self.snapshot = snapshot
         lastFetched = Date()
         now = Date()
@@ -483,6 +487,25 @@ final class UsageStore {
         defer { claimingSlots.remove(slot) }
         do { try await client.claimReward(slot) }
         catch { NSLog("AgentMeterBar claim %@: %@", slot, String(describing: error)) }
+        await fetch(force: false)
+    }
+
+    /// The panel's "立即领取" button: every account at once, independent of the
+    /// daily schedule and of the auto-claim switch.
+    func claimAllRewards() async {
+        guard let client, !claimingAll else { return }
+        claimingAll = true
+        defer { claimingAll = false }
+        do {
+            let accounts = try await client.claimReward()["accounts"].array
+            let claimed = accounts.reduce(0.0) { $0 + ($1["claimed_credits_today"].double ?? 0) }
+            let succeeded = accounts.contains { account in
+                account["claims_today"].array.contains { $0["result"].string == "ok" }
+            }
+            if claimed == 0 && !succeeded && notificationsEnabled {
+                Notifier.shared.claimNothingToday(blocked: accounts.contains { $0["status"].string != "available" })
+            }
+        } catch { NSLog("AgentMeterBar claim all: %@", String(describing: error)) }
         await fetch(force: false)
     }
 

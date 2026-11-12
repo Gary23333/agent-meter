@@ -10,7 +10,7 @@ from pathlib import Path
 
 from agent_meter.applications import application_usage
 from agent_meter.collector import SnapshotService, coverage_matrix, safe_collect
-from agent_meter.model import COVERAGE_METRICS, METRICS, SourceError, failed_source, metric, source, timestamp
+from agent_meter.model import COVERAGE_METRICS, METRICS, SCHEMA_VERSION, SourceError, failed_source, metric, source, timestamp
 from agent_meter.server import load_or_create_token, make_server
 
 
@@ -18,7 +18,7 @@ def sample(now=1000):
     s=source('codex','account',now)
     s['metrics']['quota']=metric([{'used_percent':10,'remaining_percent':90}])
     app={'name':'Codex','provider':'codex','installed':True}
-    return {'schema_version':5,'collected_at':timestamp(now),'sources':[s],
+    return {'schema_version':SCHEMA_VERSION,'collected_at':timestamp(now),'sources':[s],
             'coverage':coverage_matrix([app],[s]),'coverage_summary':{'applications':1}}
 
 
@@ -57,7 +57,7 @@ class ServiceTests(unittest.TestCase):
         s.set_web_sessions({'claude':[{'cookie':'x'}]})
         elapsed=time.monotonic()-started
         release.set();reader.join(10)
-        self.assertEqual(done[0]['schema_version'],5)
+        self.assertEqual(done[0]['schema_version'],SCHEMA_VERSION)
         self.assertLess(elapsed,2)
 
     def test_invalidation_survives_an_in_flight_collection(self):
@@ -111,7 +111,7 @@ class ServiceTests(unittest.TestCase):
         self.service().get()
         p=Path(self.tmp.name)/'snapshot.json'
         self.assertEqual(p.stat().st_mode&0o777,0o600)
-        self.assertEqual(json.loads(p.read_text())['schema_version'],5)
+        self.assertEqual(json.loads(p.read_text())['schema_version'],SCHEMA_VERSION)
 
     def test_source_error_isolated_and_private_message_not_exposed(self):
         def fn():raise RuntimeError('Authorization: secret-value private URL')
@@ -189,13 +189,13 @@ class HTTPTests(unittest.TestCase):
 
     def test_authenticated_snapshot(self):
         with self.request('/v1/snapshot') as r:
-            self.assertEqual(r.status,200);self.assertEqual(json.load(r)['schema_version'],5)
+            self.assertEqual(r.status,200);self.assertEqual(json.load(r)['schema_version'],6)
 
     def test_health_schema_version_matches_snapshot(self):
         with self.request('/v1/health') as r:health=json.load(r)
         with self.request('/v1/snapshot') as r:snapshot=json.load(r)
         self.assertEqual(health['schema_version'],snapshot['schema_version'])
-        self.assertEqual(health['schema_version'],5)
+        self.assertEqual(health['schema_version'],6)
 
     def test_no_auth_denied(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:self.request('/v1/snapshot',False)
@@ -213,3 +213,53 @@ class HTTPTests(unittest.TestCase):
     def test_token_not_printed_or_in_snapshot(self):
         with self.request('/v1/snapshot') as r:self.assertNotIn(self.token,r.read().decode())
         self.assertEqual((Path(self.tmp.name)/'api.token').stat().st_mode&0o777,0o600)
+
+    def test_export_json_and_csv_project_the_cached_snapshot(self):
+        from agent_meter.export_data import CSV_COLUMNS
+        with self.request('/v1/snapshot'):pass
+        with self.request('/v1/export/json') as r:
+            self.assertEqual(r.status,200)
+            payload=json.load(r)
+        self.assertEqual(payload['schema'],1)
+        self.assertEqual(payload['timezone'],'Asia/Shanghai')
+        self.assertIsInstance(payload['usage_daily'],list)
+        with self.request('/v1/export/csv') as r:
+            self.assertEqual(r.status,200)
+            self.assertEqual(r.headers['Content-Type'],'text/csv; charset=utf-8')
+            header=r.readline().decode().strip()
+        self.assertEqual(header,','.join(CSV_COLUMNS))
+
+    def test_export_never_triggers_collection(self):
+        def boom(config,now):raise AssertionError('export must not collect')
+        server=make_server(SnapshotService({'runtime_dir':self.tmp.name},boom),self.token,0)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        url='http://127.0.0.1:'+str(server.server_address[1])
+        try:
+            req=urllib.request.Request(url+'/v1/export/json',headers={'Authorization':'Bearer '+self.token})
+            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(req,timeout=3) as r:payload=json.load(r)
+            self.assertEqual(payload['usage_daily'],[])
+        finally:
+            server.shutdown();server.server_close();thread.join()
+
+    def test_forecast_announcement_and_landings_endpoints(self):
+        body=json.dumps({'announced_at':1794272349,'note':'manual test'}).encode()
+        req=urllib.request.Request(self.url+'/v1/forecast/announcement',data=body,
+                                   headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json'})
+        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req,timeout=3) as r:
+            self.assertEqual(r.status,200)
+            event=json.load(r)
+        self.assertEqual(event['origin'],'manual')
+        with opener.open(req,timeout=3) as r:
+            again=json.load(r)
+        self.assertEqual(again['post_id'],event['post_id'])
+        bad=json.dumps({'announced_at':'not-a-time'}).encode()
+        req=urllib.request.Request(self.url+'/v1/forecast/announcement',data=bad,
+                                   headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json'})
+        with self.assertRaises(urllib.error.HTTPError) as ctx:opener.open(req,timeout=3)
+        self.assertEqual(ctx.exception.code,400)
+        with self.request('/v1/forecast/landings') as r:
+            self.assertEqual(r.status,200)
+            scorecard=json.load(r)
+        self.assertEqual(scorecard['n_records'],0)

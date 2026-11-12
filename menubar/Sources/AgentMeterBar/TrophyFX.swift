@@ -750,7 +750,7 @@ private struct ShareFooter: View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("数据来自本机账本 · 不含对话内容").font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.45))
-                Text("金额为 API 等价估算 · USD 按 1:7.25 折算").font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.45))
+                Text("金额为 API 等价估算 · " + Fmt.currencyNote).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.45))
             }
             Spacer()
             if showsQR { QRBadge(size: 64) }

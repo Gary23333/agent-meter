@@ -6,7 +6,7 @@ import { Blender, evaluate, mirrorChannel, mirrorPose } from '../js/anim.js';
 import { ANTICS, RECIPES, applyOverride } from '../js/recipes.js';
 import { PackModel } from '../js/pack-model.js';
 import { Director } from '../js/director.js';
-import { fitStage } from '../js/util.js';
+import { fitStage, unionRects, chipUnder } from '../js/util.js';
 
 const threePack = (extra = {}) => new PackModel({ id: 't', name: 'T', renderer: 'three', ...extra },
   { face: { expressions: { neutral: {}, happy: {}, sad: {}, worried: {} } } });
@@ -300,4 +300,34 @@ test('the pet is only ever shrunk to fit its stage, and each stage mode keeps it
   // Room never makes it bigger than life, and a degenerate stage never yields zero.
   assert.equal(fitStage({ W: 3000, H: 3000, w: 240, h: 260, mode: 'embed' }), 1);
   assert.ok(fitStage({ W: 0, H: 0, w: 240, h: 260, mode: 'embed' }) > 0);
+});
+
+test('session chips carry their app id so a click can open the right app', () => {
+  const d = new Director(threePack(), { seed: 1 });
+  d.setFrame(frame({ activity: { running: 2, apps: [
+    { app: 'codex', label: 'Codex', count: 1, project: 'proj' },
+    { app: 'claude', label: 'Claude Code', count: 1 },
+  ] } }), 0);
+  const { chips } = d.hud(0);
+  assert.deepEqual(chips.map((c) => c.app), ['codex', 'claude']);
+  d.setFrame(frame({ focus: { active: true, ends_at: 1600 } }), 1);
+  assert.equal(d.hud(1).chips[0].app, undefined, 'the focus chip is not an app and stays unclickable');
+});
+
+test('the HUD hit area is the union of pill and chips, and chips hit-test by app', () => {
+  const pill = { x: 100, y: 300, w: 90, h: 24 };
+  const chips = { x: 80, y: 270, w: 130, h: 22 };
+  assert.deepEqual(unionRects([pill, chips]), { x: 80, y: 270, w: 130, h: 54 });
+  assert.deepEqual(unionRects([pill, null]), pill);
+  assert.equal(unionRects([null, { x: 0, y: 0, w: 0, h: 0 }]), null);
+  const rects = [
+    { app: 'codex', x: 80, y: 270, w: 60, h: 22 },
+    { app: null, x: 144, y: 270, w: 66, h: 22 },
+    { app: 'claude', x: 80, y: 296, w: 70, h: 22 },
+  ];
+  assert.equal(chipUnder(rects, 90, 280), 'codex');
+  assert.equal(chipUnder(rects, 150, 280), null, 'a chip without an app is not clickable');
+  assert.equal(chipUnder(rects, 90, 300), 'claude');
+  assert.equal(chipUnder(rects, 10, 10), null);
+  assert.equal(chipUnder([], 90, 280), null);
 });

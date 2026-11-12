@@ -19,7 +19,7 @@ SAFARI_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.
 SESSION_FIELDS = {
     # API keys entered in the app use the same in-memory channel.
     "deepseek_api": {"api_key", "user_token"},
-    "minimax_code": {"api_key"},
+    "minimax_code": {"api_key", "cookie", "user_agent"},
     "zcode": {"api_key", "token", "origin", "user_agent"},
     "volcengine": {"access_key_id", "secret_access_key", "cookie", "csrf_token", "usage_url", "user_agent"},
     "mimo": {"cookie", "user_agent"},

@@ -130,6 +130,9 @@ final class PetMessageTests: XCTestCase {
         XCTAssertEqual(PetMessage.parse(["type": "ready", "pack": "gauge"]), .ready(pack: "gauge", problem: nil))
         XCTAssertEqual(PetMessage.parse(["type": "bubble-shown", "id": "low|codex|primary|1|20"]), .bubbleShown(id: "low|codex|primary|1|20"))
         XCTAssertEqual(PetMessage.parse(["type": "hud-click"]), .hudClick)
+        XCTAssertEqual(PetMessage.parse(["type": "session-click", "app": "codex"]), .sessionClick(app: "codex"))
+        XCTAssertNil(PetMessage.parse(["type": "session-click", "app": ""]))
+        XCTAssertNil(PetMessage.parse(["type": "session-click"]))
         XCTAssertEqual(PetMessage.parse(["type": "refresh-request"]), .refreshRequest)
         XCTAssertEqual(PetMessage.parse(["type": "pet-click"]), .petClick)
         XCTAssertEqual(PetMessage.parse(["type": "error", "message": "boom"]), .error("boom"))
@@ -196,6 +199,7 @@ final class PetPrefsTests: XCTestCase {
         XCTAssertEqual(prefs.breakMinutes, 120)
         XCTAssertNil(prefs.quietHours)
         XCTAssertEqual(prefs.energySource, "auto")
+        XCTAssertFalse(prefs.roam)                          // wandering is opt-in too
         XCTAssertNil(prefs.origin)
     }
 

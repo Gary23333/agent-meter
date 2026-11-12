@@ -6,6 +6,8 @@ struct ShareCard: View {
     let data: ReportData
     let theme: PanelTheme
     var options: ShareOptions = .compact
+    /// 桌宠照片（已裁掉透明边）；仅在 options.pet 打开时合成进页脚。
+    var petImage: NSImage? = nil
 
     /// 竖版固定宽度，高度随内容自适应。
     static let width: CGFloat = 540
@@ -74,23 +76,31 @@ struct ShareCard: View {
     }
 
     @ViewBuilder private var footerRow: some View {
-        if options.qrCode {
+        if options.qrCode || (options.pet && petImage != nil) {
             HStack(alignment: .bottom, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("数据来自本机账本 · 只读聚合 · 不含对话内容")
-                    if options.costs { Text("API 等价估算 · USD 按 1:7.25 转人民币") }
+                    if options.costs { Text("API 等价估算 · " + Fmt.currencyNote) }
                 }
                 .font(.system(size: 9))
                 .foregroundStyle(faint)
+                .layoutPriority(1)
                 Spacer(minLength: 6)
-                QRBadge(size: 60, ink: ink, muted: muted)
+                if options.pet, let petImage {
+                    Image(nsImage: petImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 72, height: 84)
+                }
+                if options.qrCode { QRBadge(size: 60, ink: ink, muted: muted) }
             }
             .padding(.top, 4)
         } else {
             HStack(spacing: 8) {
                 Text("数据来自本机账本 · 只读聚合 · 不含对话内容")
                 Spacer(minLength: 6)
-                if options.costs { Text("API 等价估算 · USD 按 1:7.25 转人民币") }
+                if options.costs { Text("API 等价估算 · " + Fmt.currencyNote) }
             }
             .font(.system(size: 9))
             .foregroundStyle(faint)
@@ -688,15 +698,15 @@ enum ShareCardRenderer {
 
     /// 卡片实际逻辑尺寸：只在导出时用（菜单动作，不在 SwiftUI 更新周期内），
     /// 供 1x 兜底路线定框；正常路径由 ImageRenderer 自己量高。
-    private static func hostingSize(data: ReportData, theme: PanelTheme, options: ShareOptions) -> CGSize {
-        let host = NSHostingView(rootView: ShareCard(data: data, theme: theme, options: options))
+    private static func hostingSize(data: ReportData, theme: PanelTheme, options: ShareOptions, petImage: NSImage?) -> CGSize {
+        let host = NSHostingView(rootView: ShareCard(data: data, theme: theme, options: options, petImage: petImage))
         host.layoutSubtreeIfNeeded()
         return host.fittingSize
     }
 
-    static func render(data: ReportData, theme: PanelTheme, options: ShareOptions = .compact, scale: CGFloat = 2) -> Rendered? {
+    static func render(data: ReportData, theme: PanelTheme, options: ShareOptions = .compact, petImage: NSImage? = nil, scale: CGFloat = 2) -> Rendered? {
         return autoreleasepool {
-        let card = ShareCard(data: data, theme: theme, options: options)
+        let card = ShareCard(data: data, theme: theme, options: options, petImage: petImage)
         let renderer = ImageRenderer(content: card)
         renderer.scale = scale
         renderer.isOpaque = true
@@ -710,7 +720,7 @@ enum ShareCardRenderer {
             }
         }
         // 1x 兜底：与 PreviewRenderer 使用的宿主视图路线一致。
-        let size = hostingSize(data: data, theme: theme, options: options)
+        let size = hostingSize(data: data, theme: theme, options: options, petImage: petImage)
         guard size.width > 0, size.height > 0 else { return nil }
         let host = NSHostingView(rootView: card)
         host.frame = NSRect(origin: .zero, size: size)
@@ -722,7 +732,7 @@ enum ShareCardRenderer {
         }
     }
 
-    static func pngData(data: ReportData, theme: PanelTheme, options: ShareOptions = .compact, scale: CGFloat = 2) -> Data? {
-        render(data: data, theme: theme, options: options, scale: scale)?.png
+    static func pngData(data: ReportData, theme: PanelTheme, options: ShareOptions = .compact, petImage: NSImage? = nil, scale: CGFloat = 2) -> Data? {
+        render(data: data, theme: theme, options: options, petImage: petImage, scale: scale)?.png
     }
 }

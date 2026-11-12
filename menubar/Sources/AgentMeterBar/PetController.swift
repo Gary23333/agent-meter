@@ -42,6 +42,12 @@ final class PetController: NSObject, WKNavigationDelegate {
     private var shown: [String: Double]
     private var lastState = ""
     private var demo: (state: String, out: String)?
+    private var roamTimer: Timer?
+    private var roamTarget: CGPoint?
+    private var roamPauseUntil = Date.distantPast
+    private var lastInteraction = Date.distantPast
+    /// Development aid: `AGENT_METER_ROAM_TRACE=1` logs each finished walking leg.
+    private let roamTrace = ProcessInfo.processInfo.environment["AGENT_METER_ROAM_TRACE"] == "1"
 
     /// True while the pet is on screen and its page has loaded; Notifier uses it for "pet takes over alerts".
     private(set) var isActive = false
@@ -82,7 +88,7 @@ final class PetController: NSObject, WKNavigationDelegate {
     private func reconcile() {
         let enabled = prefs.enabled || demo != nil
         let packID = prefs.packID, size = prefs.size
-        _ = (prefs.hud, prefs.followCursor, prefs.calm, prefs.breakMinutes, prefs.quietHours, prefs.energySource, prefs.takeoverAlerts)
+        _ = (prefs.hud, prefs.followCursor, prefs.calm, prefs.breakMinutes, prefs.quietHours, prefs.energySource, prefs.takeoverAlerts, prefs.roam)
         _ = (store.theme, store.lowQuotaThreshold)
         guard enabled else { teardown(); return }
         packs = PetResources.allPacks()
@@ -96,12 +102,14 @@ final class PetController: NSObject, WKNavigationDelegate {
             pushPrefs()
             pushTheme()
         }
+        updateRoaming()
         if demo == nil { subscribeToFeed() }
     }
 
     private func teardown() {
         PetFeed.shared.unsubscribe(Self.feedID)
         removeMonitors()
+        stopRoaming()
         panel?.orderOut(nil)
         web?.configuration.userContentController.removeScriptMessageHandler(forName: "pet")
         panel = nil
@@ -141,20 +149,24 @@ final class PetController: NSObject, WKNavigationDelegate {
         input.autoresizingMask = [.width, .height]
         input.onMove = { [weak self] p in self?.sendPointer("move", p) }
         input.onLeave = { [weak self] in self?.sendPointer("leave", nil) }
-        input.onClick = { [weak self] p in self?.sendPointer("click", p) }
-        input.onDoubleClick = { [weak self] p in self?.sendPointer("dblclick", p) }
-        input.onContext = { [weak self] event in self?.showMenu(event) }
+        input.onClick = { [weak self] p in self?.lastInteraction = Date(); self?.sendPointer("click", p) }
+        input.onDoubleClick = { [weak self] p in self?.lastInteraction = Date(); self?.sendPointer("dblclick", p) }
+        input.onContext = { [weak self] event in self?.lastInteraction = Date(); self?.showMenu(event) }
         input.onDragBegan = { [weak self] in
             self?.dragging = true
+            self?.lastInteraction = Date()
             self?.panel?.ignoresMouseEvents = false
             self?.send(["type": "drag", "phase": "start"])
         }
         input.onDragEnded = { [weak self] in
             self?.dragging = false
+            self?.lastInteraction = Date()
             self?.send(["type": "drag", "phase": "end"])
             self?.keepOnScreen()
             if let origin = self?.panel?.frame.origin { self?.prefs.origin = origin }
         }
+        input.onDropFiles = { [weak self] urls in self?.installDropped(urls) }
+        input.registerForDraggedTypes([.fileURL])
 
         let container = NSView(frame: NSRect(origin: .zero, size: size))
         container.addSubview(web)
@@ -182,13 +194,61 @@ final class PetController: NSObject, WKNavigationDelegate {
     /// Keeps the window reachable after a display change or a drag past the edge.
     private func keepOnScreen() {
         guard let panel else { return }
+        roamTarget = nil
         let frame = panel.frame
-        let screens = NSScreen.screens.map(\.visibleFrame)
-        guard let target = screens.max(by: { $0.intersection(frame).area < $1.intersection(frame).area }) ?? NSScreen.main?.visibleFrame else { return }
+        let target = activeScreen(for: frame)
         var origin = frame.origin
         origin.x = min(max(origin.x, target.minX - frame.width * 0.3), target.maxX - frame.width * 0.7)
         origin.y = min(max(origin.y, target.minY - 20), target.maxY - 60)
         if origin != frame.origin { panel.setFrameOrigin(origin) }
+    }
+
+    /// The visible frame of the screen the window mostly lives on.
+    private func activeScreen(for frame: NSRect) -> CGRect {
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        return screens.max(by: { $0.intersection(frame).area < $1.intersection(frame).area })
+            ?? NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+    }
+
+    // MARK: Roaming
+
+    private func updateRoaming() {
+        guard prefs.roam, panel != nil else { stopRoaming(); return }
+        guard roamTimer == nil else { return }
+        roamTarget = nil
+        roamPauseUntil = Date().addingTimeInterval(Double.random(in: 2...5))
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.roamTick() }
+        }
+        timer.tolerance = 0.05
+        RunLoop.main.add(timer, forMode: .common)
+        roamTimer = timer
+    }
+
+    private func stopRoaming() {
+        roamTimer?.invalidate()
+        roamTimer = nil
+        roamTarget = nil
+    }
+
+    private func roamTick() {
+        guard let panel, prefs.roam, visible, !dragging, !prefs.calm, !reduceMotion else { return }
+        // A sleeping or disconnected pet stays put; quiet hours reach it as the brain's sleeping state.
+        if lastState == "sleeping" || lastState == "offline" { roamTarget = nil; return }
+        let now = Date()
+        if now.timeIntervalSince(lastInteraction) < PetRoam.interactionPause { roamTarget = nil; return }
+        if now < roamPauseUntil { return }
+        let frame = panel.frame
+        let target = roamTarget ?? PetRoam.target(from: frame.origin, size: frame.size, screen: activeScreen(for: frame)) { CGFloat.random(in: 0...1) }
+        roamTarget = target
+        let (origin, arrived) = PetRoam.step(from: frame.origin, to: target, dt: 0.1)
+        if origin != frame.origin { panel.setFrameOrigin(origin) }
+        if arrived {
+            roamTarget = nil
+            roamPauseUntil = now.addingTimeInterval(Double.random(in: PetRoam.pauseRange))
+            prefs.origin = origin          // the same position memory a drag uses
+            if roamTrace { NSLog("pet roam leg done -> %.0f,%.0f", origin.x, origin.y) }
+        }
     }
 
     private func resizeWindow() {
@@ -320,12 +380,69 @@ final class PetController: NSObject, WKNavigationDelegate {
             run(action)
         case .hudClick:
             openPanel(tab: "accounts")
+        case .sessionClick(let app):
+            lastInteraction = Date()
+            if let problem = AppLauncher.openApp(forApp: app, in: store.snapshot) { say(problem, tone: "warn") }
         case .refreshRequest:
             store.refresh()
         case .petClick:
-            break
+            lastInteraction = Date()
         case .error(let text):
             NSLog("AgentMeterBar pet page error: %@", text)
+        }
+    }
+
+    // MARK: Photo (share card)
+
+    /// The pet as a PNG for the share card, drawn by the page itself; nil when it cannot draw.
+    func capturePhoto(_ completion: @escaping (NSImage?) -> Void, effects: Bool = true) {
+        guard ready, let web else { completion(nil); return }
+        web.evaluateJavaScript("window.__pet ? window.__pet.stage.capture({ settle: 0.4, fx: \(effects ? "true" : "false") }) : ''") { result, _ in
+            MainActor.assumeIsolated { completion(PetThumbnails.image(fromDataURL: result as? String ?? "")) }
+        }
+    }
+
+    // MARK: Drag-to-install (.agentpet)
+
+    func installDropped(_ urls: [URL], completion: (() -> Void)? = nil) {
+        lastInteraction = Date()
+        var pending = urls[...]
+        var installed: [String] = []
+        var failures: [String] = []
+        func next() {
+            guard let file = pending.first else {
+                if !installed.isEmpty {
+                    packs = PetResources.allPacks()
+                    say("新形象「\(installed.joined(separator: "、"))」已安装，在形象菜单里切换。", tone: "good")
+                }
+                for failure in failures {
+                    say("形象安装失败：\(failure)", tone: "danger")
+                    NSLog("AgentMeterBar pet install: %@", failure)
+                }
+                completion?()
+                return
+            }
+            pending = pending.dropFirst()
+            PetInstaller.install(file) { result in
+                switch result {
+                case .success(let name): installed.append(name)
+                case .failure(let error): failures.append(error.localizedDescription)
+                }
+                next()
+            }
+        }
+        next()
+    }
+
+    /// A bubble when the page is up; a plain alert when it is not, so a failure is never silent.
+    private func say(_ text: String, tone: String) {
+        if ready {
+            send(["type": "say", "bubble": ["text": text, "tone": tone, "ttl": 14, "priority": 80] as [String: Any]])
+        } else {
+            let alert = NSAlert()
+            alert.messageText = text
+            alert.alertStyle = tone == "danger" ? .warning : .informational
+            alert.runModal()
         }
     }
 
@@ -505,6 +622,7 @@ final class PetController: NSObject, WKNavigationDelegate {
         hudItem.submenu = hudMenu
         menu.addItem(hudItem)
 
+        menu.addItem(ClosureMenuItem("漫游（慢慢走动）", checked: prefs.roam) { [weak self] in self?.prefs.roam.toggle() })
         menu.addItem(ClosureMenuItem("安静模式", checked: prefs.calm) { [weak self] in self?.prefs.calm.toggle() })
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem("隐藏桌宠") { [weak self] in self?.prefs.enabled = false })

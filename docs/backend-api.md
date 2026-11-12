@@ -212,13 +212,13 @@ collector 路由：网页会话优先读额度，桌面登录补卡（`diagnosti
 
 ## 本地价格表与 API 等价估算
 
-`GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}, peak_multipliers, aliases}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（含 2026-10-15 与 2026-10-28 增补）：取有官方刊例的一侧币种，另一侧按 7.25 汇率折算并在 GET 的 `converted_patterns` 中列出（双向：仅 USD 刊例的折成 CNY，仅 CNY 刊例的国产模型折成 USD）；用户编辑过的条目移出该列表。CNY 表中，官方人民币刊例的模型优先于 `models.dev` 目录的美元折算值（目录按美元下发，折算可能覆盖国内价），目录只在没有官方人民币价时参与折算。匹配规则（2026-10-15 起先归一化再匹配）：两侧都取最后一个 `/` 之后的模型 id、转小写并把 `.` 统一成 `-`（`account:bigmodel-coding-plan/GLM-5.3-Flash`、`glm-5-3-flash`、`GLM-5.3.Flash` 都命中 `glm-5.3-flash`），归一化后精确命中优先、否则取最长子串 pattern；快照里的 `model` 字段保留原始拼写。
+`GET/PUT /v1/prices` 管理一份本地价格表（`prices.json`，0600，位于 runtime 目录）：`{currency: USD|CNY, models: {pattern: {input, cache_read, cache_write, output}}, peak_multipliers, aliases}`，单价按每百万 tokens。默认值来自[定价摸排](pricing-survey-2026-10-09.md)（含 2026-10-15 与 2026-10-28 增补）：取有官方刊例的一侧币种，另一侧按当前 USD/CNY 汇率折算并在 GET 的 `converted_patterns` 中列出（双向：仅 USD 刊例的折成 CNY，仅 CNY 刊例的国产模型折成 USD）；用户编辑过的条目移出该列表。CNY 表中，官方人民币刊例的模型优先于 `models.dev` 目录的美元折算值（目录按美元下发，折算可能覆盖国内价），目录只在没有官方人民币价时参与折算。匹配规则（2026-10-15 起先归一化再匹配）：两侧都取最后一个 `/` 之后的模型 id、转小写并把 `.` 统一成 `-`（`account:bigmodel-coding-plan/GLM-5.3-Flash`、`glm-5-3-flash`、`GLM-5.3.Flash` 都命中 `glm-5.3-flash`），归一化后精确命中优先、否则取最长子串 pattern；快照里的 `model` 字段保留原始拼写。
 
 带按模型分项的本地 token 来源（`imported_history`、ZCode/OpenCode/Gemini/Antigravity/Codex/Claude/MiniMax Code 直读、Kimi Code、Kimi 桌面端、WorkBuddy、DeepSeek Harness）会得到 `cost` 指标：`{unit: 币种, kind: estimate, basis: local_price_table, peak_window, peak_multipliers, periods: {period: {amount, peak_amount, offpeak_amount, peak_models, offpeak_models, models, app_models, unmatched_models, unsplit_models}}}`；有未匹配模型时 status=partial（未匹配部分不计零价）。仅 CodexBar 保留自己的估价口径；DeepSeek 的 provider 账单 cost（见下）不会被覆盖。订阅套餐内的调用不按 API 价计费，估算仅作量级比较。
 
 **峰谷计价（2026-10-28）**：DeepSeek 官方峰时为北京时间工作日 09:00–12:00、14:00–18:00（UTC 周一至周五 01:00–04:00、06:00–10:00），峰时价为谷时刊例的 2 倍；周末全天谷时，法定节假日未内置日历（按工作日处理）。价格表的四项单价始终是谷时基准，`peak_multipliers` 单独保存用户覆盖（默认 DeepSeek 系 2.0）；`GET/PUT /v1/prices` 的每个模型带 `peak_multiplier`，顶层带 `peak_window` 与已保存的 `peak_multipliers`。带逐请求时间戳的账本在 tokens 指标的每个 period `totals` 与每个 model `group` 内写 `peak`/`offpeak` 两个分项（字段镜像该来源自身 token 字段，并各带 `total_tokens`），指标顶层标 `peak_split: request_timestamp`；`imported_history` 同时含逐请求 `detail` 与日汇总 `daily`，标 `peak_split: request_timestamp_and_daily_rollups`，`daily` 行按谷价并计入 `unsplit_models`。估算时峰时部分按倍率、谷时部分按基准价，无拆分或没有时间戳的整组按谷价并记入该 period 的 `unsplit_models`；每个 period 另按原始模型名给出 `peak_models` / `offpeak_models` 峰/谷金额（只列非零），账户额度页的 DeepSeek 卡据此只汇总 DeepSeek 系模型的峰谷数据。
 
-菜单栏「本机消耗」页对全部本机账本（含 `imported_history`）使用同一份本地价格表估算：按应用行与模型排行显示各自金额，无定价模型按 token 量排序列出前几个。账户页金额统一人民币（USD 按固定汇率 1:7.25 折算后汇总，原始账本币种保留用于审计）。全零估算显示「—」，不把未知价格当零。
+菜单栏「本机消耗」页对全部本机账本（含 `imported_history`）使用同一份本地价格表估算：按应用行与模型排行显示各自金额，无定价模型按 token 量排序列出前几个。账户页金额统一人民币（USD 按快照汇率折算后汇总，原始账本币种保留用于审计）。全零估算显示「—」，不把未知价格当零。
 
 ## DeepSeek 网页用量（仅展示）
 
@@ -256,12 +256,15 @@ collector 路由：网页会话优先读额度，桌面登录补卡（`diagnosti
 - `today`：TRAE 为 `{kind: daily_checkin, enabled, signed_in, daily_credits, extra_credits, claimable}`；WorkBuddy 为 `{kind: growth_tasks, signed_in: null, streak_days, next_tier, next_tier_remaining, makeup_cards, makeup_cards_max, tiers, open_tasks, claimable}`；Qoder 为 `{kind: campaign, enabled, signed_in: null, campaigns, claimable, daily_refresh}`，`campaigns` 每项 `{campaign_id, title, credits, status, active, start_at, end_at}`，`daily_refresh` 是当日活动发布的北京时间（`HH:MM`，实测 10:00）。`claimable` 每项 `{item, title, credits}`，item 为 `daily_checkin`、`task:<task_code>` 或 `campaign:<campaign_id>`。
 - `claims_today`：`{item, title, at, result: ok|already|rejected|error, credits?, code?, reason?, badge?}`；`claimed_credits_today` / `claimed_credits_total`；`streak_days`（仅 TRAE：按北京时间连续已签到的天数，今天未签时截至昨天）；`history`：近 35 天 `{date, signed_in, claimed_credits}`。
 
-节流：每个账户 30 分钟最多读一次状态（跨日立即读）。领取只在 `PUT /v1/preferences` 的 `auto_claim`（`trae_cn`、`workbuddy`、`qoder` 子集，默认空）开启、且北京时间已过 `claim_time`（`HH:MM`，默认 `00:05`；菜单栏默认 08:00）时进行；过了领取时间后的第一次采集不受 30 分钟节流，立即读状态并领取。每个账户的摘要带 `claim_time` 与 `next_claim_at`（自动领取关闭时为 null）。菜单栏在领取时间过 15 秒和再过 70 秒各强制刷新一次，不等常规轮询；每次领取成功发一条系统通知（积分、连续天数、徽章），同一项当天第 3 次失败时发一条失败通知，已通知的结果记在 UserDefaults `notifiedClaims`，首次运行只记录不通知。同一项每天最多试 3 次、失败后 1 小时再试，`ok` / `already` 后不再试。TRAE 的 9004 记作 `already`，但不计为已签到（可能是参数错误），以领取后重读的状态为准。
+节流：每个账户 30 分钟最多读一次状态（跨日立即读）。领取只在 `PUT /v1/preferences` 的 `auto_claim`（`trae_cn`、`workbuddy`、`qoder` 子集，默认空）开启、且北京时间已过 `claim_time`（`HH:MM`，默认 `00:05`；菜单栏默认 08:00）时进行；过了领取时间后的第一次采集不受 30 分钟节流，立即读状态并领取。每个账户的摘要带 `claim_time` 与 `next_claim_at`（自动领取关闭时为 null）。菜单栏在领取时间过 15 秒和再过 70 秒各强制刷新一次，不等常规轮询；每次领取成功发一条系统通知（积分、连续天数、徽章），同一项当天第 3 次失败时发一条失败通知，已通知的结果记在 UserDefaults `notifiedClaims`，首次运行只记录不通知。同一项每天最多试 3 次、失败后 1 小时再试，`ok` / `already` 后不再试。TRAE 的领取还需要客户端注册过的设备 ID（`X-Device-Id`）：后端只读 TRAE 客户端 `storage.json` 里 `iCubeAuthInfo://icube-dc:<id>` 的键名取得它（2026-11-12 实测带上后领取成功），会话里显式填写的 `device_id` 优先；读不到时仍按网页凭据尝试，9004 记作 `already`，但不计为已签到，以领取后重读的状态为准。
 
 接口：
 
 - `PUT /v1/preferences` body `{"disabled_sources": [...], "auto_claim": [...], "claim_time": "08:00"}`，`auto_claim`、`claim_time` 可省略。
 - `POST /v1/rewards/claim/<slot>`（无 body，`#` 编码为 `%23`）：对该账户立即读状态并领取，不受开关和节流限制，返回最新 `rewards`，同时更新缓存快照。
+- `POST /v1/rewards/claim`（无 body、无 slot）：对全部账户立即读状态并领取，限制与单账户版相同。菜单栏设置菜单里的「立即领取每日积分」按钮走这条，与定时领取并存，自动领取开关关掉时也能用；今天无可领时发一条说明通知。
+
+Qoder 的活动只能用桌面客户端凭据领取，网页 cookie 领不了。所以桌面型 provider（`DESKTOP_PROVIDERS`）在奖励里始终算一个账户、始终走桌面 `auth.v1.dat`：即使连了 Qoder 网页登录、或那份登录已失效，也不会把桌面凭据挤掉。
 
 上游接口与实测记录见[每日积分研究](research/checkin-automation-and-collection-2026-11-09.md)；Qoder 的活动与领取见[Qoder 活动复勘](research/qoder-campaigns-recon-2026-11-10.md)（凭据来自桌面客户端 `auth.v1.dat`，钥匙串条目 `Qoder CN App Safe Storage`，首次读取会弹一次授权框）。
 
@@ -285,7 +288,7 @@ collector 路由：网页会话优先读额度，桌面登录补卡（`diagnosti
 奖章每次按本机全部历史重算，旧历史首次即可解锁（共 46 枚，分铜 / 银 / 金 / 铂金）：
 
 - Token：单日（1 / 5 / 10 / 50 亿）、累计（10 / 100 / 1000 / 10000 亿）、连续活跃天数（7 / 30 / 100 / 365）、单日使用的应用数（3 / 5 / 8，不含 `imported_history`）、刷新个人最佳单日次数（1 / 10）。每日 Token 为各账本 `daily_buckets` 按日期相加。
-- 估算金额（人民币，USD 按 7.25 折算）：单日（¥100 / 500 / 1000 / 5000）、单个自然月（¥3000 / 1 万 / 3 万 / 10 万）、累计（¥1 万 / 5 万 / 10 万 / 100 万）。来源为各来源 `cost.value.daily`（`basis=local_price_table`），由 `prices.estimate_daily_cost` 按 `tokens.daily_models` 逐日计价；逐日行没有峰谷拆分，一律按谷价（基础价）计，所以逐日合计可能略低于期间总额。网页账单（`platform_web_usage`）不计入。
+- 估算金额（人民币，USD 按快照汇率折算）：单日（¥100 / 500 / 1000 / 5000）、单个自然月（¥3000 / 1 万 / 3 万 / 10 万）、累计（¥1 万 / 5 万 / 10 万 / 100 万）。来源为各来源 `cost.value.daily`（`basis=local_price_table`），由 `prices.estimate_daily_cost` 按 `tokens.daily_models` 逐日计价；逐日行没有峰谷拆分，一律按谷价（基础价）计，所以逐日合计可能略低于期间总额。网页账单（`platform_web_usage`）不计入。
 - 生图：Codex 内置生图 `image_generation.value.daily_buckets` 的张数，单日（10 / 50 / 100 / 300）、累计（100 / 1000 / 5000 / 2 万）、连续出图天数（3 / 7 / 30）。
 - 创作积分：即梦、MiniMax Design 钱包余额每次下降的差额累加（充值、月度刷新只移动基线，开始记录之前的消耗无法得知），1000 / 1 万 / 10 万。
 - 免费积分：Qoder 非计费积分 + 已领取的每日积分，1000 / 1 万 / 10 万。
@@ -351,6 +354,44 @@ Design 读取 `next_credit_refresh_time`；原 `reset_time` 中的 membership_cr
 
 ## 2026年10月30日 价格预览与人民币展示
 
-新增认证只读端点 `GET /v1/prices/USD` 与 `GET /v1/prices/CNY`，响应形状同 `GET /v1/prices`，额外返回 `user_patterns` 标记已保存的自定义价格。预览按请求币种读取内置/同步价，自定义覆盖按固定 7.25 汇率换算；不修改磁盘配置或快照。默认 `GET /v1/prices` 仍返回已保存币种，`PUT` 仍负责保存。
+新增认证只读端点 `GET /v1/prices/USD` 与 `GET /v1/prices/CNY`，响应形状同 `GET /v1/prices`，额外返回 `user_patterns` 标记已保存的自定义价格。预览按请求币种读取内置/同步价，自定义覆盖按当前汇率换算；不修改磁盘配置或快照。默认 `GET /v1/prices` 仍返回已保存币种，`PUT` 仍负责保存。
 
-应用所有 USD/CNY 金额统一展示人民币，USD 先乘 7.25 再汇总（固定估算汇率，非实时汇率）。此规则取代前端旧的双币种分列；原始 API 金额保留原币种以便独立核对。Token 费用、生图费用和账户余额各自独立，不因统一币种而混成一个总数。
+应用所有 USD/CNY 金额统一展示人民币。快照的 `exchange_rate` 包含 USD/CNY 报价、报价时间与状态（`live` / `cached` / `fallback`）。完整联网采集每 5 分钟最多刷新一次 Yahoo Finance USD/CNY 报价。行情较旧或网络失败时使用缓存，没有缓存时使用 7.25 离线参考值，界面标记来源。此规则取代前端旧的双币种分列；原始 API 金额保留原币种以便独立核对。Token 费用、生图费用和账户余额各自独立，不因统一币种而混成一个总数。
+
+## 2026-11-12 本机升级批次（schema 6）
+
+契约冻结件见 [local-upgrade-batch-plan-2026-11-12.md](local-upgrade-batch-plan-2026-11-12.md)。
+
+### Design 媒体积分估算（minimax_design.media_credits）
+
+- 数据：各 Hub 项目 `.hilo/completed-results.json`（配置 `design_media_ledger_dir`，默认 `~/Movies/Hub/Projects`，按 cloudTaskId 跨项目去重）+ 网关 `GET /api/v1/billing/pricing`（loopback 白名单守卫）。
+- `basis=local_price_table`、`unit=minimax_credits`、`reference_only=true`、`wallet_reconciliation=never`：**仅参考估算，绝不与钱包余额对冲**；只计刊例基础价，参考图/视频附加费、免费额度、促销不计（`price_scope` 声明）。
+- periods today/7d/30d/all：totals{tasks,priced_tasks,unpriced_tasks,credits}、media_types（image/video）、groups（model/resolution/price_rule/price_unit/unit_price/block_seconds/tasks/credits/seconds）、unpriced{by_reason,by_model}。Decimal 定点字符串；分项和==总量。
+- 无模型元数据/分辨率/时长的任务记 unpriced，**不猜价、未知≠零**；真机 311 任务中 41 计价（partial，reason `design_media_tasks_unpriced`）。
+- 错误码：`design_media_invalid_endpoint` / `gateway_unreachable` / `pricing_unavailable` / `ledger_not_found`（not_connected）；`ledger_read_failed` / `unsupported_ledger_schema` / `ledger_entries_invalid`（error）。
+- 排除在 COVERAGE_METRICS 外（Design 专属参考值，同 image_generation 先例）；受 minimax_design 来源开关约束。
+- verify：独立重数各周期任务 + 逐组金额算术复核（`design_media.*`，30 项含 landings）。
+
+### Claude 桌面会话复用（claude 来源凭据链）
+
+- 链：claude.ai 网页会话 → **桌面 App 自身会话**（`agent_meter/claude_desktop.py` + `agent_meter/helpers/claude_auth.mjs`）→ Claude Code 钥匙串。桌面路径 `diagnostics.credential_route="desktop_session"`。
+- 解密：钥匙串 `Claude Safe Storage`/`Claude Key` → PBKDF2-HMAC-SHA1(值,"saltysalt",1003,16) → AES-128-CBC(key, IV=16 空格, blob[3:])，sha256(host_key) 前缀校验；完整 cookie 罐 + 真实 UA 调 `/api/organizations/{uuid}/usage`。密钥经 env/stdin、cookie 纯内存。
+- 偏差备案：Claude.app 的 RunAsNode fuse 禁用，故用普通 node 解密（zcode_desktop 先例），UA 从 bundle 静态组装。
+- 错误码前缀 `claude_desktop_`（not_installed/cookies_missing/not_logged_in/keychain_denied/session_expired 等）；受同一 claude 开关约束，本机 token 账本独立性不变。
+
+### 重置预测增强（落地校验 + 手动公告）
+
+- `POST /v1/forecast/announcement` body `{announced_at: epoch秒, note?}` → 事件（`origin="manual"`，post_id=`manual:<sha256(秒+归一note)[:16]>`，同时间同 note 去重）；存 `.runtime/reset-forecast-manual.json`（0600），采集时并入 history_events。只补公告事实，不生成概率、不触发通知。非法时间 400 `manual_announcement_invalid`。
+- `GET /v1/forecast/landings` → scorecard{n_records,window_hits,n_with_window,window_hit_rate,deviation_seconds,announcement_to_landing_seconds,weighted_median_24h/48h,records}。
+- 落地记录：采集后 `record_landing` 写 `.runtime/reset-forecast-landings.json`（0600），按 event_id 首次观测胜出；落地判定镜像 pet.recent_landing 口径；观测时间优先 effective_at、回退 announced_at 并标 observed_basis；「命中」=落在官方窗口内。损坏存储拒写（`landing_store_corrupt`/`manual_store_corrupt`），不中断采集。
+
+### 本地导出（免费本机功能）
+
+- `GET /v1/export/json` / `GET /v1/export/csv`：只投影缓存快照（`peek()`，**绝不触发采集**；无快照=空导出）。
+- JSON：{schema:1, generated_at, timezone, usage_daily[], quota_observations[], cards|null}。usage_daily 行带 ledger 署名（date/ledger/app/model/requests/fresh_input/output/reasoning/cache_read/cache_write/unclassified/total_tokens），各账本独立不合并；codex 官方账户用量在 account_tokens 天然排除。CSV 同字段平铺、CRLF、RFC4180、按 (date,ledger,app,model) 排序、缺失为空单元格。
+- **金额不导出**（价格表是估算口径，只给原始量）。
+
+### 签到扩展（snapshot.rewards）
+
+- TRAE `today.bonus_items[]`：birthday_bonus（随签到常开只读查询）、work_lottery（端点不明标 unknown、不发请求）；{item,title,credits=None,state,reason}。**均不进 claimable、绝不自动领**；领取拒绝码 `trae_bonus_claim_not_supported`。研究文档的 `ug/work_lottery/*`、`pay/query_birthday_bonus` 实属 TRAE 同一 SDK，非 WorkBuddy（备案偏差）。
+- minimax_code provider：会话 `{"cookie",...}`；公开契约需 token/Bearer+`yy` 头，cookie 不足 → `minimax_code_not_supported`，未实测不进可用矩阵；无 cookie → `minimax_code_not_authenticated`。CLAIMABLE 已含 minimax_code（框架占位，领取当前被拒）。

@@ -1,7 +1,7 @@
 // HUD under the pet: a capsule with the tightest relevant quota, an expandable list of every window
 // (never summed), and chips for running sessions. Modes: off | pill | full.
 
-import { formatCountdown } from './util.js';
+import { formatCountdown, unionRects, chipUnder } from './util.js';
 
 const TONE_VAR = { ok: '--ok', low: '--low', critical: '--crit', empty: '--crit', unknown: '--unknown' };
 
@@ -59,13 +59,28 @@ export class HudUI {
         `<span class="val">${Math.round(m.remaining)}%</span><span class="when">${esc(when)}</span></div>`;
     }).join('');
     const shown = this.mode === 'full' ? chips : [];
-    this.chips.innerHTML = shown.slice(0, 3).map((c) => `<span class="chip">${esc(c.label)}${c.count > 1 ? ` ×${c.count}` : ''}${c.project ? ` · ${esc(c.project)}` : ''}</span>`).join('');
+    this.chips.innerHTML = shown.slice(0, 3).map((c) => {
+      const app = c.app ? ` class="chip app" data-app="${esc(c.app)}" title="点击打开应用"` : ' class="chip"';
+      return `<span${app}>${esc(c.label)}${c.count > 1 ? ` ×${c.count}` : ''}${c.project ? ` · ${esc(c.project)}` : ''}</span>`;
+    }).join('');
+  }
+
+  chipRects() {
+    return Array.from(this.chips.querySelectorAll('.chip')).map((el) => {
+      const b = el.getBoundingClientRect();
+      return { app: el.dataset.app || null, x: b.left, y: b.top, w: b.width, h: b.height };
+    });
+  }
+
+  chipAt(x, y) {
+    return chipUnder(this.chipRects(), x, y);
   }
 
   rect() {
     if (this.mode === 'off' || this.el.hidden) return null;
-    const target = this.expanded ? this.el : this.pill.hidden ? this.el : this.pill;
-    const box = target.getBoundingClientRect();
-    return { x: box.left, y: box.top, w: box.width, h: box.height };
+    const box = (el) => { const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; };
+    if (this.expanded) return box(this.el);
+    // The chips are clickable too, so the native overlay must not let clicks on them fall through.
+    return unionRects([this.pill.hidden ? null : box(this.pill), this.chips.childElementCount ? box(this.chips) : null]);
   }
 }

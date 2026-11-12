@@ -173,6 +173,10 @@ struct PanelView: View {
                 ForEach(UsageStore.claimTimeOptions, id: \.self) { Text($0).tag($0) }
             }
             .disabled(!store.autoClaimEnabled)
+            Button(store.claimingAll ? "领取中…" : "立即领取每日积分") {
+                Task { await store.claimAllRewards() }
+            }
+            .disabled(store.claimingAll)
             Divider()
             Toggle("额度与到期提醒", isOn: Binding(get: { store.notificationsEnabled }, set: { store.notificationsEnabled = $0 }))
             Picker("额度不足阈值", selection: Binding(get: { store.lowQuotaThreshold }, set: { store.lowQuotaThreshold = $0 })) {
