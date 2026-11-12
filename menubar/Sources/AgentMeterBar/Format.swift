@@ -29,7 +29,10 @@ enum Fmt {
     static func timeSeconds(_ d: Date) -> String { clockSeconds.string(from: d) }
 
     /// "10月15日 11:21", with the year only when it differs from now.
-    static func moment(_ d: Date, now: Date = Date()) -> String {
+    static func moment(_ instant: Date, now: Date = Date(), roundedToMinute: Bool = false) -> String {
+        let d = roundedToMinute
+            ? Date(timeIntervalSince1970: (instant.timeIntervalSince1970 / 60).rounded() * 60)
+            : instant
         let sameYear = calendar.component(.year, from: d) == calendar.component(.year, from: now)
         return sameYear ? monthDayTime.string(from: d) : fullDay.string(from: d) + " " + clock.string(from: d)
     }

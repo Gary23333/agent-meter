@@ -6,6 +6,15 @@ final class EFeaturesTests: XCTestCase {
         try! JSONDecoder().decode(JSON.self, from: Data(text.utf8))
     }
 
+    func testClaudeQuotaDisplayRoundsAcrossTheHourAndMidnight() {
+        let current = Date(timeIntervalSince1970: 1_794_474_599.785239)
+        let weekly = Date(timeIntervalSince1970: 1_794_844_799.785268)
+
+        XCTAssertEqual(Fmt.moment(current, now: current, roundedToMinute: true), "11月12日 17:10")
+        XCTAssertEqual(Fmt.moment(weekly, now: current, roundedToMinute: true), "11月17日 00:00")
+        XCTAssertEqual(Fmt.moment(weekly, now: current), "11月16日 23:59")
+    }
+
     func testProjectsFeedDecoding() {
         let feed = ProjectsFeed(json("""
         {"projects":[{"project_path":"/a/b","tokens":100,"requests":2,

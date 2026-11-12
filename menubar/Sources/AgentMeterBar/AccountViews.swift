@@ -66,13 +66,20 @@ struct AccountCard: View {
     /// Brand colour as the current theme shows it.
     private var tint: Color { theme.tint(brand.tint) }
     private var quotas: [JSON] { Catalog.sortedQuotas(source.metric("quota")?.value.rows.filter { $0["remaining_percent"].double != nil } ?? []) }
+    private var isClaude: Bool { source.id == "claude" || source.id.hasPrefix("claude#") }
 
     var body: some View {
         Card(tint: brand.tint) {
             // Same section order for every provider: quota windows, balances,
             // credit refresh, reset cards, renewal, tokens.
             header
-            if !quotas.isEmpty { VStack(spacing: 9) { ForEach(quotas.indices, id: \.self) { QuotaBar(quota: quotas[$0], now: now) } } }
+            if !quotas.isEmpty {
+                VStack(spacing: 9) {
+                    ForEach(quotas.indices, id: \.self) {
+                        QuotaBar(quota: quotas[$0], now: now, isClaude: isClaude)
+                    }
+                }
+            }
             details
             if let reward = snapshot.reward(for: source.id) { RewardSection(reward: reward, now: now, tint: tint) }
             webUsage
@@ -744,6 +751,7 @@ private struct WebUsageTile: View {
 struct QuotaBar: View {
     let quota: JSON
     let now: Date
+    let isClaude: Bool
     @Environment(\.panelTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -757,13 +765,20 @@ struct QuotaBar: View {
                     Text("\(fmt(used))/\(fmt(limit))").font(theme.font(10.5)).themeForeground(.tertiary).monospacedDigit()
                 }
                 Spacer(minLength: 8)
+                if isClaude, let used = quota["used_percent"].double {
+                    Text("已用 \(Fmt.percent(used.rounded()))")
+                        .font(theme.font(10.5)).themeForeground(.secondary).monospacedDigit()
+                }
                 Text("剩余 \(Fmt.percent(remaining.rounded()))")
                     .font(.system(size: 12, weight: .semibold, design: theme.numberDesign)).monospacedDigit()
                     .foregroundStyle(theme.healthText(remaining, scheme: scheme))
             }
             Meter(fraction: remaining / 100, tint: theme.health(remaining), accent: theme.healthAccent(remaining))
             if let reset = quota["resets_at"].date {
-                Text("\(reset > now ? Fmt.countdown(to: reset, now: now) + " 重置" : "已重置，待刷新") · \(Fmt.moment(reset, now: now))")
+                let resetStatus = reset > now ? Fmt.countdown(to: reset, now: now) + " 重置" : "已重置，待刷新"
+                // Claude reports boundaries just before the minute shown on its usage page.
+                let moment = Fmt.moment(reset, now: now, roundedToMinute: isClaude)
+                Text("\(resetStatus) · \(moment)")
                     .font(theme.font(10.5)).themeForeground(.secondary).monospacedDigit()
             }
         }
