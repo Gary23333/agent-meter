@@ -10,6 +10,7 @@ if (!directory.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison
 
 try
 {
+    AccountPresentationTests.Run(directory);
     var clock = DateTimeOffset.FromUnixTimeSeconds(1800000000);
     if (QuotaResetClock.Short(1800003660, clock) != "1 小时 1 分后" ||
         QuotaResetClock.Short(1800000000, clock) != "已到时间 · 待刷新" ||

@@ -10,6 +10,18 @@ internal static class Program
     static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Length == 1 && args[0] == "--tray-indicator-smoke")
+        {
+            using var context = new MeterContext(demo: true, windowed: false);
+            using var check = new System.Windows.Forms.Timer { Interval = 100 };
+            check.Tick += (_, _) => {
+                check.Stop();
+                try { context.SyntheticTrayIndicatorSmoke(); }
+                catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
+                finally { context.ExitThread(); }
+            };
+            check.Start(); Application.Run(context); return;
+        }
         if (args.Length == 1 && args[0] == "--webview-smoke")
         {
             RunWebViewSmoke();
@@ -38,7 +50,7 @@ internal static class Program
                 using var preview = new MeterWindow(demo: true, windowed: false);
                 preview.RenderDemoImages(args[1]);
             }
-            catch (Exception) { Environment.ExitCode = 1; }
+            catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
             return;
         }
         bool demo = args.Contains("--demo");
@@ -75,7 +87,7 @@ internal static class Program
     }
 }
 
-internal sealed class MeterContext : ApplicationContext
+internal sealed partial class MeterContext : ApplicationContext
 {
     readonly NotifyIcon tray;
     readonly Icon icon;
@@ -168,6 +180,7 @@ internal sealed class MeterContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
+        InitializeTrayIndicator(menu, demo);
         menu.Opening += (_, _) => { TrayMenuStyle.Apply(menu, VisualThemes.Find(window.ThemeId)); window.PopupMenuVisible = true; };
         menu.Closed += (_, _) => window.PopupMenuVisible = false;
         window.MenuRequested += point => menu.Show(window, point);
@@ -249,7 +262,9 @@ internal sealed class MeterContext : ApplicationContext
     void ShowPanel(bool atCursor = false) { window.PlaceAtTray(atCursor); window.Show(); window.Activate(); }
     protected override void ExitThreadCore()
     {
-        quitting = true; pet?.Dispose(); pet = null; tray.Visible = false; tray.Dispose(); if (!window.IsDisposed) { window.Close(); window.Dispose(); } icon.Dispose();
+        quitting = true; indicatorTimer.Dispose(); pet?.Dispose(); pet = null; tray.Visible = false; tray.Dispose();
+        indicatorIcon?.Dispose(); indicatorIcon = null;
+        if (!window.IsDisposed) { window.Close(); window.Dispose(); } icon.Dispose();
         base.ExitThreadCore();
     }
 }
@@ -383,6 +398,7 @@ internal sealed partial class MeterWindow : Form
         Location = new Point(-32000, -32000);
         Show();
         RefreshData().GetAwaiter().GetResult();
+        using (var icons = TrayIndicatorIcon.Preview()) icons.Save(Path.Combine(directory, "tray-indicators.png"), System.Drawing.Imaging.ImageFormat.Png);
         void SavePreview(string name)
         {
             Application.DoEvents();
@@ -470,6 +486,7 @@ internal sealed partial class MeterWindow : Form
             ?? throw new InvalidOperationException("card_collapse_missing");
         collapse.PerformClick(); Application.DoEvents();
         if (showAllQuotaCards || HasCard("八分饱")) throw new InvalidOperationException("card_collapse_failed");
+        RenderAccountDetailsPreviews(SavePreview);
         // 多账户需要横向滚动；额外预览用于检查滚动条是否挤压仪表。
         var many = JsonNode.Parse(lastSnapshot!)!.AsObject();
         var accounts = new JsonArray();
@@ -679,6 +696,8 @@ internal sealed partial class MeterWindow : Form
                 sample["history"]!["Codex"]!["value"]!["daily_trend"] = new JsonObject { ["days"] = daily, ["incomplete"] = false };
                 sample["other_accounts"]!["DeepSeek API"] = JsonNode.Parse("""{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}""");
                 sample["forecast"] = ForecastDemo();
+                sample["observed_at"] = ForecastDemoNow.ToUnixTimeSeconds();
+                AddDemoAccountDetails(sample);
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
                 sample["quota_cards"] = JsonNode.Parse("""{"status":"available","distinct":1,"cards":[{"id":"q5_50","name":"热身完毕","series":"five_hour","rarity":"common","description":"5 小时窗口用量达到 50% 即掉落","count":2},{"id":"q5_80","name":"八分饱","series":"five_hour","rarity":"rare","description":"5 小时窗口用量达到 80% 即掉落","count":0}]}""");
                 using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
@@ -719,7 +738,8 @@ internal sealed partial class MeterWindow : Form
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                 {
                     partialFailure = true;
-                    combined = new JsonObject { ["account"] = new JsonObject { ["status"] = "error", ["reason"] = "account_read_failed" } };
+                    combined = new JsonObject { ["observed_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                        ["account"] = new JsonObject { ["status"] = "error", ["reason"] = "account_read_failed" } };
                 }
                 if (profilesInvalid)
                 {
@@ -932,13 +952,13 @@ internal sealed partial class MeterWindow : Form
         SnapshotUpdated?.Invoke(lastSnapshot);
         if (view == View.Accounts) UpdateGauges(root);
         content.SuspendLayout();
-        forecastClocks.Clear(); quotaResetLabels.Clear();
+        forecastClocks.Clear(); quotaResetLabels.Clear(); accountClockUpdates.Clear();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();
         if (view == View.Accounts)
         {
         // 托盘面板直接进入账户卡片，避免重复标题占据首屏。
         var localHistories = GetValue(root, "history");
-        var account = GetValue(root, "account"); var quotas = GetValue(GetValue(account, "quota"), "value");
+        var account = GetValue(root, "account"); var codexDetails = AccountDetails.Read("Codex", account); var quotas = GetValue(GetValue(account, "quota"), "value");
         if (quotas.ValueKind == JsonValueKind.Array && quotas.GetArrayLength() > 0)
         {
             var rows = new List<QuotaRow>();
@@ -951,30 +971,11 @@ internal sealed partial class MeterWindow : Form
                 string prefix = bucket.Equals("codex", StringComparison.OrdinalIgnoreCase) ? "" : bucket.ToUpperInvariant() + " · ";
                 rows.Add(new QuotaRow(prefix + period, remaining, QuotaResetClock.Read(q)));
             }
-            AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"));
+            AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"), codexDetails);
         }
+        else if (codexDetails.HasContent) AddQuotaGroup("CODEX", [], GetValue(localHistories, "Codex"), codexDetails);
         else if (GetString(account, "status", "") == "disabled") AddCard("CODEX", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else AddCard("CODEX", "暂时无法获取额度", Reason(account), null);
-        var credits = GetValue(GetValue(account, "credits"), "value");
-        if (credits.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var credit in credits.EnumerateArray())
-            {
-                var balance = GetValue(credit, "balance");
-                var unlimited = GetValue(credit, "unlimited");
-                if (balance.ValueKind != JsonValueKind.String && unlimited.ValueKind != JsonValueKind.True) continue;
-                string amount = unlimited.ValueKind == JsonValueKind.True ? "无限额" : balance.GetString() ?? "未提供";
-                AddCard("CODEX · 积分", amount, "供应商返回的账户积分", null);
-            }
-        }
-        var resetCards = GetValue(GetValue(account, "reset_cards"), "value");
-        var cardCount = GetNumber(resetCards, "available_count");
-        if (cardCount.HasValue)
-        {
-            double? expires = GetNumber(GetValue(resetCards, "next_known_expiry"), "epoch_seconds");
-            string note = expires.HasValue ? "最近到期 " + DateTimeOffset.FromUnixTimeSeconds((long)expires.Value).LocalDateTime.ToString("MM-dd HH:mm") : "到期时间未提供";
-            AddCard("CODEX · 重置卡", $"{cardCount:0} 张可用", note, null);
-        }
         var otherAccounts = GetValue(root, "other_accounts");
         var kimiAccount = GetValue(otherAccounts, "Kimi Code");
         var kimiStatus = GetString(kimiAccount, "status", "");
@@ -995,13 +996,12 @@ internal sealed partial class MeterWindow : Form
                     double? remaining = GetNumber(q, "remaining_percent");
                     rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
                 }
-                AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"));
+                AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount));
             }
+            else if (AccountDetails.Read("Kimi Code", kimiAccount).HasContent) AddQuotaGroup("KIMI CODE", [], GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount));
             else if (kimiStatus == "disabled") AddCard("KIMI CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
             else if (kimiStatus is "unavailable" or "error") AddCard("KIMI CODE", "暂时无法获取额度", Reason(kimiAccount), null);
-            var wallet = GetValue(GetValue(kimiAccount, "credits"), "value");
-            string amount = GetString(wallet, "amount", ""), currency = GetString(wallet, "unit", "");
-            if (amount != "" && currency != "") AddCard("KIMI CODE · 额外用量钱包", amount + " " + currency, "账户服务提供的余额", null);
+
         }
         var claudeAccount = GetValue(otherAccounts, "Claude Code");
         var claudeQuotas = GetValue(GetValue(claudeAccount, "quota"), "value");
@@ -1015,7 +1015,7 @@ internal sealed partial class MeterWindow : Form
                 double? remaining = GetNumber(q, "remaining_percent");
                 rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
             }
-            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"));
+            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"), AccountDetails.Read("Claude Code", claudeAccount));
         }
         else if (GetString(claudeAccount, "status", "") == "disabled") AddCard("CLAUDE CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else if (GetString(claudeAccount, "reason", "") is not ("" or "claude_subscription_login_missing"))
@@ -1278,21 +1278,8 @@ internal sealed partial class MeterWindow : Form
         string status = GetString(account, "status", "disabled");
         if (status == "disabled") return;
         if (status == "loading") { AddCard("DEEPSEEK API", "正在读取余额", "只查询账户余额，不调用模型", null); return; }
-        var rows = GetValue(GetValue(account, "credits"), "value");
-        if (status is "available" or "partial" && rows.ValueKind == JsonValueKind.Array && rows.GetArrayLength() > 0)
-        {
-            int shown = 0;
-            foreach (var row in rows.EnumerateArray())
-            {
-                string unit = GetString(row, "unit", ""), total = GetString(row, "total", "");
-                string granted = GetString(row, "granted", ""), topped = GetString(row, "topped_up", "");
-                if (unit is not ("CNY" or "USD") || total.Length is < 1 or > 40 || granted.Length > 40 || topped.Length > 40) continue;
-                string details = granted.Length > 0 && topped.Length > 0 ? $"赠金 {granted} · 充值 {topped}" : "账户服务提供的余额";
-                AddCard("DEEPSEEK API · 余额", total + " " + unit, details, null);
-                shown++;
-            }
-            if (shown > 0) return;
-        }
+        var details = AccountDetails.Read("DeepSeek API", account);
+        if (details.Amounts.Count > 0) { AddQuotaGroup("DEEPSEEK API", [], details: details); return; }
         string note = GetString(account, "reason", "") switch
         {
             "deepseek_credential_not_connected" => "请在托盘菜单设置 API 密钥",
@@ -1307,24 +1294,15 @@ internal sealed partial class MeterWindow : Form
         if (status == "disabled") return;
         if (status == "loading") { AddCard("WORKBUDDY", "正在读取账户", "通过应用内独立登录资料查询", null); return; }
         var quota = GetValue(GetValue(account, "quota"), "value");
-        var credits = GetValue(GetValue(account, "credits"), "value");
         if (status is "available" or "partial")
         {
-            bool shown = false;
+            var details = AccountDetails.Read("WorkBuddy", account);
+            var rows = new List<QuotaRow>();
             if (quota.ValueKind == JsonValueKind.Array)
-            {
-                var rows = new List<QuotaRow>();
                 foreach (var item in quota.EnumerateArray())
                     rows.Add(new QuotaRow("积分额度", GetNumber(item, "remaining_percent"), QuotaResetClock.Read(item)));
-                if (rows.Count > 0) { AddQuotaGroup("WORKBUDDY", rows, localHistory); shown = true; }
-            }
-            string balance = GetString(credits, "balance", ""), total = GetString(credits, "total", ""), frozen = GetString(credits, "frozen", "");
-            if (balance.Length is > 0 and <= 40 && total.Length <= 40 && frozen.Length <= 40)
-            {
-                string details = total.Length > 0 ? "总额 " + total + (frozen.Length > 0 ? " · 冻结 " + frozen : "") : "账户服务提供的积分余额";
-                AddCard("WORKBUDDY · 积分余额", balance + " 积分", details, null); shown = true;
-            }
-            if (shown) return;
+            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("WORKBUDDY", rows, localHistory, details); return; }
+
         }
         string note = GetString(account, "reason", "") switch
         {
@@ -1558,21 +1536,30 @@ internal sealed partial class MeterWindow : Form
         StyleCard(box); content.Controls.Add(box);
     }
 
-    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default)
+    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default, AccountDetails? details = null)
     {
         int shown = Math.Min(rows.Count, 40);
-        if (shown == 0) return;
+        details ??= AccountDetails.Empty;
+        if (shown == 0 && !details.HasContent) return;
+        int headingHeight = details.Plan is null ? 62 : 78;
         var identity = ProviderStyle.For(provider);
-        var box = new RoundedCard(theme, identity.Color) { Height = 62 + shown * 70, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme, identity.Color) { Height = headingHeight + shown * 70, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         box.Controls.Add(new ProviderMark(identity) { Location = new Point(16, 13), Size = new Size(34, 34) });
         var heading = new Label { Text = identity.DisplayName, AutoEllipsis = true, Height = 25,
             Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = new Point(60, 19) };
         box.Controls.Add(heading);
+        if (details.Plan is not null)
+        {
+            heading.Top = 12;
+            var plan = new Label { Text = details.Plan + " · 账户套餐", Left = 60, Top = 37, Height = 21,
+                Font = new Font(Font.FontFamily, 9), ForeColor = Muted, AutoEllipsis = true };
+            box.Controls.Add(plan); box.Resize += (_, _) => plan.Width = Math.Max(0, box.Width - 76);
+        }
         box.Resize += (_, _) => heading.Width = Math.Max(0, box.ClientSize.Width - heading.Left - 16);
         for (int index = 0; index < shown; index++)
         {
             var row = rows[index];
-            int top = 59 + index * 70;
+            int top = headingHeight - 3 + index * 70;
             string label = new string(row.Name.Where(c => !char.IsControl(c)).Take(80).ToArray());
             if (label.Length == 0) label = "额度窗口";
             var name = new Label { Text = label, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(16, top) };
@@ -1590,10 +1577,11 @@ internal sealed partial class MeterWindow : Form
                 bar.Width = Math.Max(0, box.ClientSize.Width - 32);
             };
         }
+        box.Height += AddAccountDetails(box, box.Height, details);
         var usage = AccountLocalUsage.Read(localHistory);
         if (usage is not null)
         {
-            int top = 62 + shown * 70;
+            int top = box.Height;
             box.Height += usage.Trend is null ? 86 : 166;
             var divider = new Panel { Location = new Point(16, top), Height = 1, BackColor = theme.Border };
             var title = new Label { Text = "本机 Token · 未按账户区分", Font = new Font(Font.FontFamily, 9F, FontStyle.Bold),

@@ -17,6 +17,7 @@ internal sealed record ProviderStyle(string DisplayName, string Initial, Color C
             ("ZCODE", "ZCode", "Z", Color.FromArgb(72, 111, 229)),
             ("GEMINI CLI", "Gemini CLI", "G", Color.FromArgb(73, 128, 215)),
             ("DEEPSEEK HARNESS", "DeepSeek Harness", "D", Color.FromArgb(76, 122, 225)),
+            ("DEEPSEEK API", "DeepSeek API", "D", Color.FromArgb(76, 122, 225)),
             ("OPENCODE", "OpenCode", "O", Color.FromArgb(126, 100, 215)),
             ("MIMO CODE", "MiMo Code", "M", Color.FromArgb(223, 133, 48)),
             ("DEVECO", "DevECo", "D", Color.FromArgb(100, 138, 180)),

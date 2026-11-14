@@ -25,6 +25,7 @@ internal sealed partial class MeterWindow
                 foreach (var (label, epoch) in quotaResetLabels)
                     if (!label.IsDisposed) label.Text = QuotaResetClock.Detail(epoch, ForecastNow);
                 foreach (Control gauge in gauges.Controls) gauge.Invalidate();
+                foreach (var update in accountClockUpdates) update(ForecastNow);
             }
         }
         if (view != View.Forecast) return;

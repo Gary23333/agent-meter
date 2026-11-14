@@ -299,7 +299,7 @@ class WindowsBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as config:
             token = 'synthetic-test-token'
             path = Path(config) / '.credentials.json'
-            path.write_text(json.dumps({'claudeAiOauth': {'accessToken': token, 'expiresAt': 3000000000000}}), encoding='utf-8')
+            path.write_text(json.dumps({'claudeAiOauth': {'accessToken': token, 'expiresAt': 3000000000000, 'subscriptionType': 'max'}}), encoding='utf-8')
             response = {'five_hour': {'utilization': 25, 'resets_at': None}}
             with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config}), \
                  patch('agent_meter.claude_code.get_json', return_value=response) as request:
@@ -307,6 +307,7 @@ class WindowsBackendTests(unittest.TestCase):
             self.assertEqual(request.call_args.args[0], 'https://api.anthropic.com/api/oauth/usage')
             self.assertEqual(request.call_args.args[1], token)
             self.assertEqual(result['quota']['value'][0]['remaining_percent'], 75)
+            self.assertEqual(result['subscription']['plan'], 'max')
             self.assertNotIn(token, json.dumps(result))
 
     def test_claude_missing_credentials_never_starts_keychain_or_network(self):

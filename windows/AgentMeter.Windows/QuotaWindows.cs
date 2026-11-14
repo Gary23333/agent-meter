@@ -10,10 +10,24 @@ internal static class QuotaWindows
 {
     public static QuotaWindowPair? Select(JsonElement account)
     {
-        var rows = Field(Field(account, "quota"), "value");
-        if (rows.ValueKind != JsonValueKind.Array) return null;
         QuotaWindow? shortWindow = null, longWindow = null, fallback = null;
-        foreach (var row in rows.EnumerateArray())
+        foreach (var (window, isShort, isLong) in Parse(account))
+        {
+            if (isShort && shortWindow is null) shortWindow = window;
+            else if (isLong && longWindow is null) longWindow = window;
+            else if (fallback is null) fallback = window;
+        }
+        if (shortWindow is not null) return new QuotaWindowPair(shortWindow, longWindow);
+        if (longWindow is not null) return new QuotaWindowPair(longWindow, null);
+        return fallback is null ? null : new QuotaWindowPair(fallback, null);
+    }
+    public static IEnumerable<QuotaWindow> All(JsonElement account) => Parse(account).Select(item => item.Window);
+
+    static IEnumerable<(QuotaWindow Window, bool Short, bool Long)> Parse(JsonElement account)
+    {
+        var rows = Field(Field(account, "quota"), "value");
+        if (rows.ValueKind != JsonValueKind.Array) yield break;
+        foreach (var row in rows.EnumerateArray().Take(100))
         {
             var value = Field(row, "remaining_percent");
             if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double remaining) ||
@@ -25,16 +39,9 @@ internal static class QuotaWindows
             bool isLong = !longSpecific && (duration == 10080 || bucket is "limit7d" or "week" or "seven_day");
             bool isShort = duration == 300 || bucket is "limit5h" or "5h" or "five_hour";
             string label = isShort ? "5 小时" : isLong ? "7 天" : Label(row, bucket, duration);
-            var stamp = Field(Field(row, "resets_at"), "epoch_seconds");
-            long? resetAt = stamp.ValueKind == JsonValueKind.Number && stamp.TryGetInt64(out long seconds) && seconds >= 0 && seconds <= 253402300799 ? seconds : null;
-            var window = new QuotaWindow(label, remaining, resetAt);
-            if (isShort && shortWindow is null) shortWindow = window;
-            else if (isLong && longWindow is null) longWindow = window;
-            else if (fallback is null) fallback = window;
+            long? resetAt = QuotaResetClock.Read(row);
+            yield return (new QuotaWindow(label, remaining, resetAt), isShort, isLong);
         }
-        if (shortWindow is not null) return new QuotaWindowPair(shortWindow, longWindow);
-        if (longWindow is not null) return new QuotaWindowPair(longWindow, null);
-        return fallback is null ? null : new QuotaWindowPair(fallback, null);
     }
     static string Label(JsonElement row, string bucket, int? duration)
     {

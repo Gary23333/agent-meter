@@ -70,7 +70,7 @@ def claude_quota(home, now):
     if not credentials.is_file():
         raise SourceError("claude_subscription_login_missing")
     source = collect_claude(home, now, timeout=12, credential_path=credentials)
-    return {"status": source["status"], "quota": source["metrics"]["quota"]}
+    return {"status": source["status"], "quota": source["metrics"]["quota"], "subscription": source.get("subscription")}
 
 
 def minimax_quota(home, now):

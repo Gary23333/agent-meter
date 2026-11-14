@@ -12,6 +12,9 @@
     <Compile Include="..\AgentMeter.Windows\VisualThemes.cs" Link="VisualThemes.cs" />
     <Compile Include="..\AgentMeter.Windows\ProviderStyle.cs" Link="ProviderStyle.cs" />
     <Compile Include="..\AgentMeter.Windows\AccountLocalUsage.cs" Link="AccountLocalUsage.cs" />
+    <Compile Include="..\AgentMeter.Windows\AccountDetails.cs" Link="AccountDetails.cs" />
+    <Compile Include="..\AgentMeter.Windows\TrayIndicator.cs" Link="TrayIndicator.cs" />
+    <Compile Include="..\AgentMeter.Windows\TrayIndicatorIcon.cs" Link="TrayIndicatorIcon.cs" />
     <Compile Include="..\AgentMeter.Windows\ApplicationOverview.cs" Link="ApplicationOverview.cs" />
     <Compile Include="..\AgentMeter.Windows\ActivityRefreshPolicy.cs" Link="ActivityRefreshPolicy.cs" />
     <Compile Include="..\AgentMeter.Windows\PriceOverrides.cs" Link="PriceOverrides.cs" />
