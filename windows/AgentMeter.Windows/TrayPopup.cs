@@ -67,6 +67,13 @@ internal sealed partial class MeterWindow
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
         if (popup && keyData == Keys.Escape && !popupMenuVisible) { Hide(); return true; }
+        if (!popupMenuVisible && keyData is Keys.PageDown or Keys.PageUp or Keys.Home or Keys.End)
+        {
+            int position = -content.AutoScrollPosition.Y;
+            position = keyData switch { Keys.Home => 0, Keys.End => content.VerticalScroll.Maximum,
+                Keys.PageDown => position + content.Height - 40, _ => Math.Max(0, position - content.Height + 40) };
+            content.AutoScrollPosition = new Point(0, position); scrollRail?.Invalidate(); return true;
+        }
         return base.ProcessCmdKey(ref message, keyData);
     }
     protected override CreateParams CreateParams

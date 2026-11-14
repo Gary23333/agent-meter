@@ -97,6 +97,7 @@ jobs:
           root.mkdir(parents=True, exist_ok=True)
           row = NORMALIZE['willreset']()
           row.update(status='available', reason=None, provenance='https://willreset.com/api/forecast', updated_at={'epoch_seconds':time.time()})
+          row['typical_window'] = {'start_hour':4, 'end_hour':7, 'timezone':'UTC'}  # 明确时间仅用于隔离夹具
           history = [{'post_id':'synthetic', 'kind':'reset', 'announced_at':{'epoch_seconds':time.time()-86400}, 'sources':['willreset']}]
           (root / 'reset-forecast.json').write_text(json.dumps({'saved_at':time.time(), 'rows':[row], 'history':{'willreset':history}}), encoding='utf-8')
           '@

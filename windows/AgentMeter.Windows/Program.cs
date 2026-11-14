@@ -265,6 +265,8 @@ internal sealed partial class MeterWindow : Form
     Color Accent => theme.Accent;
     Color Primary => theme.Primary;
     readonly FlowLayoutPanel content = new();
+    readonly Panel contentViewport = new();
+    PopupScrollRail? scrollRail;
     readonly Label status = new();
     readonly PopupAction refresh = new(PopupActionKind.Refresh);
     readonly Panel header = new();
@@ -337,9 +339,19 @@ internal sealed partial class MeterWindow : Form
         header.Controls.Add(navigationStrip); LayoutTabs(); UpdateTabs();
         status.Dock = DockStyle.Bottom; status.Height = 31; status.Font = new Font(Font.FontFamily, 8.5F); status.AutoEllipsis = true;
         status.Padding = new Padding(17, 6, 8, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
-        content.Dock = DockStyle.Fill; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
+        contentViewport.Dock = DockStyle.Fill; contentViewport.BackColor = Background;
+        content.Dock = DockStyle.None; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
         content.Padding = new Padding(14, 0, 14, 10); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
-        Controls.Add(content); Controls.Add(status); Controls.Add(header);
+        scrollRail = new PopupScrollRail(content) { AccessibleName = "页面滚动", AccessibleRole = AccessibleRole.ScrollBar, TabStop = false,
+            BackColor = Background, ThumbColor = theme.Border };
+        contentViewport.Controls.Add(content); contentViewport.Controls.Add(scrollRail); scrollRail.BringToFront();
+        contentViewport.SizeChanged += (_, _) => {
+            content.Bounds = new Rectangle(0, 0, contentViewport.Width + Math.Max(32, 32 * DeviceDpi / 96), contentViewport.Height);
+            scrollRail.Bounds = new Rectangle(contentViewport.Width - 9, 3, 5, Math.Max(0, contentViewport.Height - 6)); ResizeCards();
+        };
+        content.Scroll += (_, _) => scrollRail.Invalidate(); content.Layout += (_, _) => scrollRail.Invalidate();
+        content.MouseWheel += (_, _) => { if (IsHandleCreated) BeginInvoke(() => scrollRail.Invalidate()); };
+        Controls.Add(contentViewport); Controls.Add(status); Controls.Add(header);
         InitializePopup();
         timer.Interval = 15 * 60 * 1000; timer.Tick += async (_, _) => await RefreshData(); timer.Start();
         activityTimer.Interval = 60 * 1000;
@@ -522,7 +534,8 @@ internal sealed partial class MeterWindow : Form
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { status.Text = "无法保存界面风格，请检查设置目录权限"; return false; }
         theme = value;
-        BackColor = header.BackColor = content.BackColor = gauges.BackColor = status.BackColor = Background;
+        BackColor = header.BackColor = content.BackColor = contentViewport.BackColor = gauges.BackColor = status.BackColor = Background;
+        if (scrollRail is not null) { scrollRail.BackColor = Background; scrollRail.ThumbColor = theme.Border; }
         ForeColor = Primary; title.ForeColor = Primary; subtitle.ForeColor = status.ForeColor = Muted;
         refresh.ForeColor = Accent; refresh.BackColor = Card; refresh.FlatAppearance.BorderColor = theme.Border;
         navigationStrip.BackColor = Card; ApplyPopupTheme();
@@ -1653,7 +1666,7 @@ internal sealed partial class MeterWindow : Form
             AddCard($"{++rank}. {label}", FormatNumber(entry.Value) + " tokens", "近 7 天 · 按本机记录统计", null);
         }
     }
-    void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(280, content.ClientSize.Width - 39); }
+    void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(280, contentViewport.ClientSize.Width - 28); }
     const string DemoData = """
     {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}},"MiniMax Code":{"status":"available","quota":{"value":[{"bucket":"5h","remaining_percent":55,"resets_at":{"epoch_seconds":1794654000}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.3-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}},"estimate":{"amount_usd":"2.464","partial":false}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false},"calendar_report":{"periods":{"week":{"previous_start":"2026-11-02","current_start":"2026-11-09","current_end":"2026-11-14","previous_tokens":4200000,"current_tokens":6367000},"month":{"previous_start":"2026-10-01","current_start":"2026-11-01","current_end":"2026-11-14","previous_tokens":14200000,"current_tokens":8200000}},"sources":2,"incomplete":false,"timezone":"Asia/Shanghai"},"activity":{"status":"available","window_hours":24,"idle_minutes":15,"apps":[{"name":"Codex","sessions":5,"recent_updates":2,"last_updated":1794650400},{"name":"Claude Code","sessions":2,"recent_updates":0,"last_updated":1794643200}]}}
     """;
