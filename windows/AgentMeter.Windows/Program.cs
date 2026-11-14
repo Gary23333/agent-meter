@@ -1683,12 +1683,6 @@ internal sealed class RoundedCard : Panel
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
-        if (Width < 2 || Height < 2) return;
-        using var path = new System.Drawing.Drawing2D.GraphicsPath();
-        int r = 20, w = Width - 1, h = Height - 1;
-        path.AddArc(0, 0, r, r, 180, 90); path.AddArc(w - r, 0, r, r, 270, 90);
-        path.AddArc(w - r, h - r, r, r, 0, 90); path.AddArc(0, h - r, r, r, 90, 90); path.CloseFigure();
-        Region?.Dispose(); Region = new Region(path);
         Invalidate();
     }
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -1696,8 +1690,15 @@ internal sealed class RoundedCard : Panel
         if (ClientRectangle.Width <= 0 || ClientRectangle.Height <= 0) return;
         Color start = providerColor.HasValue ? Mix(theme.Card, providerColor.Value, theme.Light ? .07 : .11) : theme.Card;
         Color end = providerColor.HasValue ? Mix(theme.CardEnd, providerColor.Value, theme.Light ? .025 : .035) : theme.CardEnd;
+        e.Graphics.Clear(Parent?.BackColor ?? theme.Background);
+        if (Width < 28 || Height < 28) return;
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var shape = new System.Drawing.Drawing2D.GraphicsPath();
+        int r = 28, w = Width - 1, h = Height - 1;
+        shape.AddArc(0, 0, r, r, 180, 90); shape.AddArc(w - r, 0, r, r, 270, 90);
+        shape.AddArc(w - r, h - r, r, r, 0, 90); shape.AddArc(0, h - r, r, r, 90, 90); shape.CloseFigure();
         using var fill = new System.Drawing.Drawing2D.LinearGradientBrush(ClientRectangle, start, end, 90F);
-        e.Graphics.FillRectangle(fill, ClientRectangle);
+        e.Graphics.FillPath(fill, shape);
     }
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -1706,7 +1707,7 @@ internal sealed class RoundedCard : Panel
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         using var border = new Pen(providerColor.HasValue ? Mix(theme.Border, providerColor.Value, theme.Light ? .25 : .38) : theme.Border);
         using var path = new System.Drawing.Drawing2D.GraphicsPath();
-        int r = 20, w = Width - 1, h = Height - 1;
+        int r = 28, w = Width - 1, h = Height - 1;
         path.AddArc(0, 0, r, r, 180, 90); path.AddArc(w - r, 0, r, r, 270, 90);
         path.AddArc(w - r, h - r, r, r, 0, 90); path.AddArc(0, h - r, r, r, 90, 90); path.CloseFigure();
         e.Graphics.DrawPath(border, path);

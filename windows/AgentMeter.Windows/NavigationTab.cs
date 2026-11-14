@@ -10,11 +10,12 @@ internal sealed class NavigationTab : Button
     public NavigationTab()
     {
         DoubleBuffered = true;
+        SetStyle(ControlStyles.SupportsTransparentBackColor, true);
         FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
     }
     public void SetAppearance(VisualTheme value, bool isSelected)
     {
-        theme = value; selected = isSelected; BackColor = value.Card;
+        theme = value; selected = isSelected; BackColor = Color.Transparent;
         AccessibleDescription = isSelected ? "当前页面" : "切换页面";
         Invalidate();
     }
@@ -22,7 +23,6 @@ internal sealed class NavigationTab : Button
     protected override void OnMouseLeave(EventArgs e) { hovering = false; base.OnMouseLeave(e); Invalidate(); }
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(theme.Card);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
         const int corner = 16;
@@ -32,7 +32,7 @@ internal sealed class NavigationTab : Button
         path.AddArc(bounds.Right - corner, bounds.Bottom - corner, corner, corner, 0, 90);
         path.AddArc(bounds.Left, bounds.Bottom - corner, corner, corner, 90, 90); path.CloseFigure();
         using var fill = new SolidBrush(selected ? theme.Selected : hovering ? theme.Border : theme.Card);
-        e.Graphics.FillPath(fill, path);
+        if (selected || hovering) e.Graphics.FillPath(fill, path);
         TextRenderer.DrawText(e.Graphics, Text, Font, bounds, selected ? Color.White : theme.Primary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(bounds, -5, -5));
@@ -41,6 +41,16 @@ internal sealed class NavigationTab : Button
 
 internal sealed class NavigationStrip : Panel
 {
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(Parent?.BackColor ?? BackColor);
+        if (Width < Height || Height < 2) return;
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = new GraphicsPath();
+        path.AddArc(0, 0, Height - 1, Height - 1, 90, 180);
+        path.AddArc(Width - Height, 0, Height - 1, Height - 1, 270, 180); path.CloseFigure();
+        using var fill = new SolidBrush(BackColor); e.Graphics.FillPath(fill, path);
+    }
     protected override void OnSizeChanged(EventArgs e)
     {
         base.OnSizeChanged(e);

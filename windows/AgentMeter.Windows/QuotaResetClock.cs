@@ -16,8 +16,8 @@ internal static class QuotaResetClock
         var remaining = DateTimeOffset.FromUnixTimeSeconds(epoch.Value) - now;
         if (remaining <= TimeSpan.Zero) return "已到时间 · 待刷新";
         long minutes = (long)Math.Ceiling(remaining.TotalMinutes);
-        return minutes >= 1440 ? $"{minutes / 1440} 天 {minutes % 1440 / 60} 时后" :
-               minutes >= 60 ? $"{minutes / 60} 时 {minutes % 60} 分后" : $"{minutes} 分后";
+        return minutes >= 1440 ? $"{minutes / 1440} 天 {minutes % 1440 / 60} 小时后" :
+               minutes >= 60 ? (minutes % 60 == 0 ? $"{minutes / 60} 小时后" : $"{minutes / 60} 小时 {minutes % 60} 分后") : $"{minutes} 分后";
     }
     public static string Detail(long? epoch, DateTimeOffset now)
     {
