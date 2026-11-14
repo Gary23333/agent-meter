@@ -78,7 +78,7 @@ internal sealed partial class MeterWindow
     }
     protected override CreateParams CreateParams
     {
-        get { var parameters = base.CreateParams; if (popup) parameters.ClassStyle |= 0x20000; return parameters; }
+        get { var parameters = base.CreateParams; if (popup) { parameters.ClassStyle |= 0x20000; parameters.ExStyle |= 0x80; } return parameters; }
     }
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); ApplyNativePopupFrame(); }
     protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); ApplyNativePopupFrame(); }
@@ -121,6 +121,12 @@ internal sealed partial class MeterWindow
         if (!gauges.Visible || header.Height != 234) throw new InvalidOperationException("账户页布局错误");
         SetView(View.Forecast);
         if (gauges.Visible || header.Height != 118) throw new InvalidOperationException("紧凑页面布局错误");
+        Message scrollMessage = default;
+        ProcessCmdKey(ref scrollMessage, Keys.End);
+        if (content.AutoScrollPosition.Y >= 0) throw new InvalidOperationException("翻页键未滚动内容");
+        ProcessCmdKey(ref scrollMessage, Keys.Home);
+        if (content.AutoScrollPosition.Y != 0 || content.Width <= contentViewport.Width)
+            throw new InvalidOperationException("弹层滚动区域不正确");
         using var other = new Form { StartPosition = FormStartPosition.Manual, Location = new Point(-31000, -31000), ShowInTaskbar = false };
         pinAction.PerformClick(); other.Show(); other.Activate(); await Task.Delay(150);
         if (!Visible || !popupPinned) throw new InvalidOperationException("固定面板被意外收起");

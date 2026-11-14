@@ -9,7 +9,7 @@ internal sealed class PopupScrollRail(FlowLayoutPanel content) : Control
     bool dragging;
     int dragOffset;
     public Color ThumbColor { set { thumbColor = value; Invalidate(); } }
-    int Maximum => Math.Max(0, content.VerticalScroll.Maximum - content.VerticalScroll.LargeChange + 1);
+    int Maximum => content.VerticalScroll.Visible ? Math.Max(0, content.VerticalScroll.Maximum - content.VerticalScroll.LargeChange + 1) : 0;
     Rectangle Thumb
     {
         get

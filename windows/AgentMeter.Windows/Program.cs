@@ -168,7 +168,7 @@ internal sealed class MeterContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
-        menu.Opening += (_, _) => window.PopupMenuVisible = true;
+        menu.Opening += (_, _) => { TrayMenuStyle.Apply(menu, VisualThemes.Find(window.ThemeId)); window.PopupMenuVisible = true; };
         menu.Closed += (_, _) => window.PopupMenuVisible = false;
         window.MenuRequested += point => menu.Show(window, point);
         window.QuotaLow += messages =>
