@@ -241,7 +241,7 @@ internal sealed class MeterContext : ApplicationContext
     }
 }
 
-internal sealed class MeterWindow : Form
+internal sealed partial class MeterWindow : Form
 {
     enum View { Accounts, Applications, Usage, Report, Forecast, Collection }
     enum ApplicationFilter { All, Recent, Other }
@@ -256,7 +256,7 @@ internal sealed class MeterWindow : Form
     readonly Button refresh = new();
     readonly Panel header = new();
     readonly Label title = new(), subtitle = new();
-    readonly Button accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
+    readonly NavigationTab accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
     readonly Font tabRegular = new("Microsoft YaHei UI", 9F, FontStyle.Bold), tabCompact = new("Microsoft YaHei UI", 8F, FontStyle.Bold);
     readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
@@ -328,6 +328,8 @@ internal sealed class MeterWindow : Form
         activityTimer.Interval = 60 * 1000;
         activityTimer.Tick += async (_, _) => await RefreshActivityIfNeeded();
         if (!demo) activityTimer.Start();
+        forecastClock.Interval = 1000; forecastClock.Tick += (_, _) => UpdateForecastClocks();
+        if (!demo) forecastClock.Start();
         VisibleChanged += (_, _) => { if (!Visible) activityCancellation?.Cancel(); };
     }
     public void PlaceAtTray(bool atCursor)
@@ -396,6 +398,20 @@ internal sealed class MeterWindow : Form
             .Any(button => button.Name == "app-expand-Claude Code")) throw new InvalidOperationException("application_filter_failed");
         SavePreview("aurora-applications-recent-narrow");
         applicationFilter = ApplicationFilter.All; expandedApplications.Clear();
+        SetView(View.Forecast); SavePreview("aurora-forecast-narrow");
+        var historyToggle = content.Controls.OfType<Button>().First(button => button.Name == "forecast-history-toggle");
+        if (content.Controls.OfType<RoundedCard>().Count(card => card.Name == "forecast-history-card") != 3)
+            throw new InvalidOperationException("forecast_history_initial_count");
+        historyToggle.PerformClick(); Application.DoEvents();
+        var historyCards = content.Controls.OfType<RoundedCard>().Where(card => card.Name == "forecast-history-card").ToArray();
+        if (historyCards.Length != 7) throw new InvalidOperationException("forecast_history_expand_failed");
+        content.ScrollControlIntoView(historyCards[0]); Application.DoEvents();
+        SavePreview("aurora-forecast-history-narrow");
+        content.Controls.OfType<Button>().First(button => button.Name == "forecast-history-toggle").PerformClick();
+        if (allForecastHistory || content.Controls.OfType<RoundedCard>().Count(card => card.Name == "forecast-history-card") != 3)
+            throw new InvalidOperationException("forecast_history_collapse_failed");
+        SetTheme(VisualThemes.Find("porcelain")); SetView(View.Forecast); SavePreview("porcelain-forecast-narrow");
+        SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
         SetView(View.Collection); SavePreview("aurora-collection-narrow");
         bool HasCard(string name) => content.Controls.OfType<RoundedCard>()
@@ -449,7 +465,7 @@ internal sealed class MeterWindow : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); }
+        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
     }
@@ -457,9 +473,14 @@ internal sealed class MeterWindow : Form
     {
         foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast), (collectionTab, View.Collection) })
         {
-            button.BackColor = view == tab ? theme.Selected : Card;
-            button.ForeColor = view == tab ? Color.White : Primary;
+            button.SetAppearance(theme, view == tab);
         }
+        gauges.Visible = view == View.Accounts;
+        header.Height = view == View.Accounts ? 280 : 136;
+        subtitle.Text = view switch { View.Accounts => "账户额度与本机消耗", View.Applications => "应用覆盖与近期活动",
+            View.Usage => "本机账本 · Token 与模型", View.Report => "自然周与自然月 · 用量报告",
+            View.Forecast => "Codex 全局重置 · 第三方预测", _ => "额度卡片与本机成就" };
+        LayoutTabs();
     }
     void LayoutTabs()
     {
@@ -470,7 +491,7 @@ internal sealed class MeterWindow : Form
         for (int index = 0; index < tabs.Length; index++)
         {
             tabs[index].Size = new Size(width, 36);
-            tabs[index].Location = new Point(22 + index * (width + 4), 228);
+            tabs[index].Location = new Point(22 + index * (width + 4), view == View.Accounts ? 228 : 84);
             tabs[index].Font = width < 70 ? tabCompact : tabRegular;
             tabs[index].Text = width < 70 ? compact[index] : full[index];
         }
@@ -607,7 +628,7 @@ internal sealed class MeterWindow : Form
                         ["tokens"] = demoDailyThousands[index] * 1000 });
                 sample["history"]!["Codex"]!["value"]!["daily_trend"] = new JsonObject { ["days"] = daily, ["incomplete"] = false };
                 sample["other_accounts"]!["DeepSeek API"] = JsonNode.Parse("""{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}""");
-                sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
+                sample["forecast"] = ForecastDemo();
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
                 sample["quota_cards"] = JsonNode.Parse("""{"status":"available","distinct":1,"cards":[{"id":"q5_50","name":"热身完毕","series":"five_hour","rarity":"common","description":"5 小时窗口用量达到 50% 即掉落","count":2},{"id":"q5_80","name":"八分饱","series":"five_hour","rarity":"rare","description":"5 小时窗口用量达到 80% 即掉落","count":0}]}""");
                 using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
@@ -859,8 +880,9 @@ internal sealed class MeterWindow : Form
     {
         lastSnapshot = root.GetRawText();
         SnapshotUpdated?.Invoke(lastSnapshot);
-        UpdateGauges(root);
+        if (view == View.Accounts) UpdateGauges(root);
         content.SuspendLayout();
+        forecastClocks.Clear();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();
         if (view == View.Accounts)
         {
@@ -1028,53 +1050,6 @@ internal sealed class MeterWindow : Form
         else if (view == View.Forecast) AddForecast(GetValue(root, "forecast"));
         else AddCollection(GetValue(root, "local_medals"), GetValue(root, "quota_cards"));
         content.ResumeLayout(); ResizeCards();
-    }
-    void AddForecast(JsonElement forecast)
-    {
-        AddHeading("重置预测", "第三方公开预测 · 不代表账户自身的重置时间");
-        string state = GetString(forecast, "status", "disabled");
-        if (state == "disabled")
-        {
-            AddCard("第三方预测", "默认关闭", "在托盘菜单开启后访问三个第三方网站", null,
-                    "WillReset · Tibo Radar · Reset Monitor");
-            return;
-        }
-        if (state == "loading") { AddCard("第三方预测", "正在读取", "不会发送账户凭据或本机会话", null); return; }
-        var rows = GetValue(forecast, "sources");
-        if (state is "error" or "unavailable" || rows.ValueKind != JsonValueKind.Array)
-        {
-            AddCard("第三方预测", "暂时无法获取", "请检查网络或稍后刷新", null);
-            return;
-        }
-        string cache = GetString(forecast, "cache_state", "");
-        if (cache == "stale") AddCard("数据状态", "使用旧缓存", "最新查询失败，预测可能已过时", null);
-        else if (state == "partial") AddCard("数据状态", "部分来源不可用", "以下数值由各站独立发布或推算", null);
-        foreach (var row in rows.EnumerateArray())
-        {
-            string name = GetString(row, "name", "第三方");
-            if (GetString(row, "status", "") is not ("available" or "stale"))
-            { AddCard(name, "暂时不可用", "此来源未返回可用预测", null); continue; }
-            var day = GetNumber(row, "24h"); var twoDays = GetNumber(row, "48h");
-            string first = day.HasValue ? $"24 小时 {day:0.#}%" : "24 小时未提供";
-            string second = twoDays.HasValue ? $"48 小时 {twoDays:0.#}%" : "48 小时未提供";
-            string basis = !day.HasValue && !twoDays.HasValue ? "该站未提供可用数值" :
-                GetString(row, "24h_basis", "") == "cadence_model_fallback" || GetString(row, "48h_basis", "") == "cadence_model_fallback"
-                    ? "含站点模型推算值" : "站点公布值";
-            double? updated = GetNumber(row, "updated_at");
-            string updatedNote = "站点未提供更新时间";
-            if (updated.HasValue && double.IsFinite(updated.Value) && updated.Value >= 0 && updated.Value <= 253402300799)
-            {
-                try
-                {
-                    var stamp = DateTimeOffset.FromUnixTimeSeconds((long)updated.Value);
-                    updatedNote = "站点更新 " + stamp.LocalDateTime.ToString("MM-dd HH:mm") +
-                        (DateTimeOffset.UtcNow - stamp > TimeSpan.FromHours(48) ? " · 已超过 48 小时" : "");
-                }
-                catch (ArgumentException) { }
-            }
-            AddCard(name, first, second, null, basis, updatedNote);
-        }
-        AddCard("统计说明", "仅供参考", "第三方预测并非官方承诺，也不是个人额度周期", null);
     }
     void AddCollection(JsonElement collection, JsonElement quotaCards)
     {

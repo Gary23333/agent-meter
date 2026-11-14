@@ -171,6 +171,61 @@ class WindowsBackendTests(unittest.TestCase):
             self.assertEqual(collect.call_args.kwargs['cache_path'], Path(root) / 'forecast' / 'reset-forecast.json')
         self.assertEqual(backend.forecast_summary({'metrics': {}})['status'], 'unavailable')
 
+    def test_forecast_ensemble_uses_valid_fresh_sources_and_keeps_missing_horizon(self):
+        now = 1800000000
+        def row(key, number, age, confidence):
+            return {'source': key, 'status': 'available', 'headline_24h': number,
+                    'updated_at': {'epoch_seconds': now - age}, 'self_reported': {'confidence': confidence}}
+        source = {'status': 'available', 'metrics': {'reset_forecast': {'value': {'sources': [
+            row('willreset', 35, 1800, 'high'), row('codex_reset', 28, 3600, 'low'),
+            row('codexreset_org', 99, 49 * 3600, 'high')]}}}}
+        result = backend.forecast_summary(source, now=now)
+        self.assertEqual(result['ensemble']['24h'], {'min': 28, 'max': 35, 'weighted_median': 35,
+                         'n': 2, 'agreement': 'close', 'has_model': False})
+        self.assertNotIn('48h', result['ensemble'])
+        source['metrics']['reset_forecast']['value']['sources'][0]['headline_24h'] = float('nan')
+        result = backend.forecast_summary(source, now=now)
+        self.assertEqual(result['ensemble']['24h']['weighted_median'], 28)
+        self.assertEqual(result['ensemble']['24h']['n'], 1)
+
+    def test_forecast_projects_clock_and_history_without_remote_prose_or_urls(self):
+        now = 1800000000
+        source = {'status': 'partial', 'metrics': {'reset_forecast': {'value': {
+            'sources': [], 'history_events': [
+                {'kind': 'reset', 'announced_at': {'epoch_seconds': now - i * 86400},
+                 'effective_at': {'epoch_seconds': now - i * 86400 + 60}, 'confirmed': True,
+                 'sources': ['willreset', 'codex_reset', 'willreset', 'unknown'],
+                 'summary': 'private-marker', 'url': 'https://invalid.example/private-marker', 'post_id': 'private-marker'}
+                for i in range(45)]}},
+            'known_reset_countdown': {'value': {'targets': [
+                {'kind': 'typical_window', 'precision': 'window', 'open_at': {'epoch_seconds': now},
+                 'close_at': {'epoch_seconds': now + 3600}, 'sources': ['willreset'], 'quote': 'private-marker'},
+                {'kind': 'promised_reset', 'precision': 'label_only', 'label': 'tomorrow', 'sources': ['willreset']},
+                {'kind': 'promised_reset', 'precision': 'window', 'close_at': {'epoch_seconds': True}, 'sources': ['willreset']},
+                {'kind': 'promised_reset', 'precision': 'window', 'open_at': {'epoch_seconds': now + 10},
+                 'close_at': {'epoch_seconds': now}, 'sources': ['willreset']}]}}}}
+        result = backend.forecast_summary(source, now=now)
+        self.assertEqual(result['targets'], [{'kind': 'typical_window', 'open_at': now, 'close_at': now + 3600, 'sources': ['WillReset']}])
+        self.assertEqual(len(result['history']), 40)
+        self.assertEqual(result['history'][0]['announced_at'], now)
+        self.assertEqual(result['history'][0]['sources'], ['WillReset', 'Tibo Radar'])
+        self.assertNotIn('private-marker', json.dumps(result))
+        self.assertNotIn('tomorrow', json.dumps(result))
+
+    def test_forecast_refresh_requests_history_even_when_cache_exists(self):
+        from tests.test_reset_forecast import NORMALIZE
+        from agent_meter.reset_forecast import normalize_history
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / 'reset-forecast.json'
+            cache.write_text(json.dumps({'saved_at': 1000, 'rows': [], 'history': {}}), encoding='utf-8')
+            history = normalize_history('willreset', [{'id': 'synthetic', 'announced_at': '2026-11-01T00:00:00Z', 'kind': 'reset'}])
+            fetchers = {'willreset': {'forecast': lambda now: NORMALIZE['willreset'](), 'history': lambda: history}}
+            with patch('windows.backend.default_fetchers', return_value=fetchers) as factories:
+                result = backend.forecast_only(directory)
+            factories.assert_called_once_with(with_history=True)
+            self.assertEqual(result['history'][0]['kind'], 'reset')
+            self.assertEqual(result['history'][0]['sources'], ['WillReset'])
+
     def test_minimax_account_is_opt_in_and_uses_fixed_service(self):
         payload = {'base_resp': {'status_code': 0}, 'model_remains': [{'model_name': 'general',
             'current_interval_remaining_percent': 65, 'end_time': 1800003600000}]}

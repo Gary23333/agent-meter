@@ -11,6 +11,23 @@ if (!directory.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison
 try
 {
     var clock = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+    using (var forecast = JsonDocument.Parse("""{"kind":"typical_window","open_at":1800000060,"close_at":1800003660,"sources":["WillReset","unknown","WillReset"]}"""))
+    {
+        var window = ForecastWindow.Read(forecast.RootElement) ?? throw new InvalidOperationException("预测窗口未解析");
+        if (window.Sources != "WillReset" || window.Countdown(clock) != "距时段开始 1 分 00 秒" ||
+            window.Countdown(clock.AddSeconds(60)) != "时段内 · 距结束 1 小时 00 分" ||
+            window.Countdown(clock.AddSeconds(3660)) != "时段已结束 · 等待更新")
+            throw new InvalidOperationException("预测窗口倒计时边界错误");
+        var promise = window with { Typical = false, Open = null };
+        if (promise.Countdown(clock.AddSeconds(3661)) != "时间已过 · 尚待确认")
+            throw new InvalidOperationException("不可把时间已过当作确认重置");
+    }
+    using (var invalid = JsonDocument.Parse("""{"kind":"promised_reset","close_at":true,"sources":["WillReset"]}"""))
+        if (ForecastWindow.Read(invalid.RootElement) is not null) throw new InvalidOperationException("无效时钟不应生成倒计时");
+    using (var invalidRange = JsonDocument.Parse("""{"weighted_median":95,"min":20,"max":40,"n":2}"""))
+        if (ForecastRange.Read(invalidRange.RootElement) is not null) throw new InvalidOperationException("越界中位数不应展示");
+    using (var validRange = JsonDocument.Parse("""{"weighted_median":35,"min":28,"max":35,"n":2,"has_model":true}"""))
+        if (ForecastRange.Read(validRange.RootElement)?.HasModel != true) throw new InvalidOperationException("预测依据未保留");
     if (!ActivityRefreshPolicy.CanRefresh(false, true, true, false, false, true, clock.AddSeconds(-60), clock) ||
         ActivityRefreshPolicy.CanRefresh(false, false, true, false, false, true, clock.AddSeconds(-60), clock) ||
         ActivityRefreshPolicy.CanRefresh(false, true, false, false, false, true, clock.AddSeconds(-60), clock) ||

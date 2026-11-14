@@ -30,7 +30,8 @@ from agent_meter.opencode_tokens import collect_opencode_tokens, readonly_databa
 from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
 from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
-from agent_meter.reset_forecast import collect_reset_forecast, pooled_value
+from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
+from windows.forecast import forecast_summary
 from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, save_ledger, track_windows
 from agent_meter.deepseek import collect_deepseek
 from agent_meter.web_sources import collect_workbuddy
@@ -266,38 +267,13 @@ def guarded(fn):
         return {"status": "error", "reason": "read_failed", "value": None}
 
 
-def forecast_summary(source):
-    """只投影第三方预测的公开数字，不把预测当作账户重置时间。"""
-    forecast = source.get("metrics", {}).get("reset_forecast", {})
-    value = forecast.get("value")
-    if not isinstance(value, dict):
-        return {"status": "unavailable", "reason": "reset_forecast_sources_unavailable", "sources": []}
-    names = {"willreset": "WillReset", "codex_reset": "Tibo Radar", "codexreset_org": "Reset Monitor"}
-    rows = []
-    for item in value.get("sources", []):
-        if not isinstance(item, dict) or item.get("source") not in names:
-            continue
-        row = {"name": names[item["source"]], "status": item.get("status") if item.get("status") in {"available", "stale"} else "unavailable"}
-        updated = item.get("updated_at")
-        updated = updated.get("epoch_seconds") if isinstance(updated, dict) else None
-        if (not isinstance(updated, bool) and isinstance(updated, (int, float)) and math.isfinite(updated)
-                and 0 <= updated <= 253402300799):
-            row["updated_at"] = int(updated)
-        for period in ("24h", "48h"):
-            number, basis = pooled_value(item, period)
-            if (row["status"] in {"available", "stale"} and not isinstance(number, bool) and
-                    isinstance(number, (int, float)) and math.isfinite(number) and 0 <= number <= 100):
-                row[period] = number
-                row[period + "_basis"] = basis
-        rows.append(row)
-    return {"status": source.get("status", "unavailable"), "cache_state": value.get("cache_state"), "sources": rows}
-
-
 def forecast_only(directory):
     """调用前必须由用户主动启用；仅缓存公开预测，不读取本机账本或凭据。"""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    return forecast_summary(collect_reset_forecast(cache_path=directory / "reset-forecast.json"))
+    # 历史跟随预测的缓存周期更新，避免第二次联网刷新把已有历史覆盖为空。
+    return forecast_summary(collect_reset_forecast(cache_path=directory / "reset-forecast.json",
+                                                 fetchers=default_fetchers(with_history=True)))
 
 
 def collect(local_only=False, home=None, account_only=False, disabled_accounts=frozenset(), enable_minimax=False, saved_accounts=None):
