@@ -7,13 +7,27 @@ internal sealed partial class MeterWindow
 {
     readonly System.Windows.Forms.Timer forecastClock = new();
     readonly List<(Label Label, ForecastWindow Window)> forecastClocks = [];
+    readonly List<(Label Label, long? Epoch)> quotaResetLabels = [];
+    long lastQuotaClockMinute = -1;
     bool allForecastHistory;
     static readonly DateTimeOffset ForecastDemoNow = new(2026, 11, 14, 15, 0, 0, TimeSpan.FromHours(8));
     DateTimeOffset ForecastNow => demo ? ForecastDemoNow : DateTimeOffset.UtcNow;
 
     void UpdateForecastClocks()
     {
-        if (!Visible || view != View.Forecast) return;
+        if (!Visible) return;
+        if (view == View.Accounts)
+        {
+            long minute = ForecastNow.ToUnixTimeSeconds() / 60;
+            if (lastQuotaClockMinute != minute)
+            {
+                lastQuotaClockMinute = minute;
+                foreach (var (label, epoch) in quotaResetLabels)
+                    if (!label.IsDisposed) label.Text = QuotaResetClock.Detail(epoch, ForecastNow);
+                foreach (Control gauge in gauges.Controls) gauge.Invalidate();
+            }
+        }
+        if (view != View.Forecast) return;
         foreach (var (label, window) in forecastClocks)
             if (!label.IsDisposed) label.Text = window.Countdown(ForecastNow);
     }

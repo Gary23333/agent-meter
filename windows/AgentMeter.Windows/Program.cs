@@ -20,12 +20,22 @@ internal static class Program
             RunActivitySmoke();
             return;
         }
+        if (args.Length == 1 && args[0] == "--popup-ui-smoke")
+        {
+            using var popup = new MeterWindow(demo: true, windowed: false) { Location = new Point(-32000, -32000) };
+            popup.Shown += async (_, _) => {
+                try { await popup.SyntheticPopupSmokeAsync(); }
+                catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
+                finally { popup.Close(); }
+            };
+            Application.Run(popup); return;
+        }
         // 构建机使用纯演示数据生成视觉检查图，不启动采集器或读取用户设置。
         if (args.Length == 2 && args[0] == "--render-demo")
         {
             try
             {
-                using var preview = new MeterWindow(demo: true, windowed: true);
+                using var preview = new MeterWindow(demo: true, windowed: false);
                 preview.RenderDemoImages(args[1]);
             }
             catch (Exception) { Environment.ExitCode = 1; }
@@ -158,6 +168,9 @@ internal sealed class MeterContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
+        menu.Opening += (_, _) => window.PopupMenuVisible = true;
+        menu.Closed += (_, _) => window.PopupMenuVisible = false;
+        window.MenuRequested += point => menu.Show(window, point);
         window.QuotaLow += messages =>
         {
             string summary = string.Join("\n", messages.Take(3)) + (messages.Count > 3 ? $"\n另有 {messages.Count - 3} 项，请打开面板查看。" : "");
@@ -165,7 +178,7 @@ internal sealed class MeterContext : ApplicationContext
             try { tray.ShowBalloonTip(8000, "Agent 额度提醒", summary, ToolTipIcon.Warning); }
             catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.ComponentModel.Win32Exception) { }
         };
-        tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else ShowPanel(true); } };
+        tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else if (!window.JustDismissedAtCursor) ShowPanel(true); } };
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
         window.SnapshotUpdated += snapshot => pet?.SetSnapshot(snapshot);
@@ -253,8 +266,9 @@ internal sealed partial class MeterWindow : Form
     Color Primary => theme.Primary;
     readonly FlowLayoutPanel content = new();
     readonly Label status = new();
-    readonly Button refresh = new();
+    readonly PopupAction refresh = new(PopupActionKind.Refresh);
     readonly Panel header = new();
+    readonly NavigationStrip navigationStrip = new();
     readonly Label title = new(), subtitle = new();
     readonly NavigationTab accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
     readonly Font tabRegular = new("Microsoft YaHei UI", 9F, FontStyle.Bold), tabCompact = new("Microsoft YaHei UI", 8F, FontStyle.Bold);
@@ -286,28 +300,28 @@ internal sealed partial class MeterWindow : Form
 
     public MeterWindow(bool demo, bool windowed)
     {
-        this.demo = demo; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
+        this.demo = demo; popup = !windowed; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
         alertsEnabled = !demo && AlertPreferences.Load(AccountPreferences.DefaultDirectory);
         forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
         theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
         Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Primary;
-        ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
-        ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
+        ClientSize = new Size(440, 680); MinimumSize = new Size(380, 420); StartPosition = FormStartPosition.Manual;
+        ShowInTaskbar = windowed; FormBorderStyle = windowed ? FormBorderStyle.Sizable : FormBorderStyle.None;
         preferredSize = Size;
         Resize += (_, _) => { if (!positioning && WindowState == FormWindowState.Normal) preferredSize = Size; };
-        header.Dock = DockStyle.Top; header.Height = 280; header.BackColor = Background;
-        title.Text = "◈  Agent 用量"; title.Font = new Font(Font.FontFamily, 17F, FontStyle.Bold); title.AutoSize = true; title.Location = new Point(22, 16); title.ForeColor = Accent;
-        subtitle.Text = "账户额度与本机消耗"; subtitle.AutoSize = true; subtitle.Location = new Point(25, 55); subtitle.ForeColor = Muted;
+        header.Dock = DockStyle.Top; header.Height = 234; header.BackColor = Background;
+        title.Text = "Agent 用量"; title.Font = new Font(Font.FontFamily, 14F, FontStyle.Bold); title.AutoSize = true; title.Location = new Point(63, 14); title.ForeColor = Primary;
+        subtitle.Text = "账户额度与本机消耗"; subtitle.AutoSize = false; subtitle.Size = new Size(220, 20); subtitle.Font = new Font(Font.FontFamily, 8.5F); subtitle.Location = new Point(64, 42); subtitle.ForeColor = Muted;
         refresh.Text = "刷新"; refresh.Size = new Size(66, 32); refresh.Location = new Point(0, 23);
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = theme.Border; refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
-        header.Resize += (_, _) => { refresh.Left = header.ClientSize.Width - refresh.Width - 22; gauges.Width = Math.Max(0, header.ClientSize.Width - 40); LayoutTabs(); };
+        header.Resize += (_, _) => { gauges.Width = Math.Max(0, header.ClientSize.Width - 32); LayoutTabs(); };
         foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab })
         {
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
             tab.Font = tabRegular; tab.Size = new Size(86, 36);
         }
-        gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 144);
+        gauges.Location = new Point(16, 72); gauges.Size = new Size(406, 116);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
         gauges.Resize += (_, _) => LayoutGauges();
@@ -319,11 +333,14 @@ internal sealed partial class MeterWindow : Form
         reportTab.Click += (_, _) => SetView(View.Report);
         forecastTab.Click += (_, _) => SetView(View.Forecast);
         collectionTab.Click += (_, _) => SetView(View.Collection);
-        header.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab]); LayoutTabs(); UpdateTabs();
-        status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
+        navigationStrip.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab]);
+        header.Controls.Add(navigationStrip); LayoutTabs(); UpdateTabs();
+        status.Dock = DockStyle.Bottom; status.Height = 31; status.Font = new Font(Font.FontFamily, 8.5F); status.AutoEllipsis = true;
+        status.Padding = new Padding(17, 6, 8, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
         content.Dock = DockStyle.Fill; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
-        content.Padding = new Padding(18, 0, 18, 14); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
+        content.Padding = new Padding(14, 0, 14, 10); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
         Controls.Add(content); Controls.Add(status); Controls.Add(header);
+        InitializePopup();
         timer.Interval = 15 * 60 * 1000; timer.Tick += async (_, _) => await RefreshData(); timer.Start();
         activityTimer.Interval = 60 * 1000;
         activityTimer.Tick += async (_, _) => await RefreshActivityIfNeeded();
@@ -350,6 +367,7 @@ internal sealed partial class MeterWindow : Form
     {
         if (!demo) throw new InvalidOperationException("demo_required");
         Directory.CreateDirectory(directory);
+        suppressPopupDismissal = true;
         Location = new Point(-32000, -32000);
         Show();
         RefreshData().GetAwaiter().GetResult();
@@ -410,7 +428,7 @@ internal sealed partial class MeterWindow : Form
         content.Controls.OfType<Button>().First(button => button.Name == "forecast-history-toggle").PerformClick();
         if (allForecastHistory || content.Controls.OfType<RoundedCard>().Count(card => card.Name == "forecast-history-card") != 3)
             throw new InvalidOperationException("forecast_history_collapse_failed");
-        SetTheme(VisualThemes.Find("porcelain")); SetView(View.Forecast); SavePreview("porcelain-forecast-narrow");
+        SetTheme(VisualThemes.Find("porcelain")); SetView(View.Forecast); content.AutoScrollPosition = Point.Empty; SavePreview("porcelain-forecast-narrow");
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
         SetView(View.Collection); SavePreview("aurora-collection-narrow");
@@ -465,7 +483,7 @@ internal sealed partial class MeterWindow : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); }
+        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); popupTips.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
     }
@@ -476,7 +494,7 @@ internal sealed partial class MeterWindow : Form
             button.SetAppearance(theme, view == tab);
         }
         gauges.Visible = view == View.Accounts;
-        header.Height = view == View.Accounts ? 280 : 136;
+        header.Height = view == View.Accounts ? 234 : 118;
         subtitle.Text = view switch { View.Accounts => "账户额度与本机消耗", View.Applications => "应用覆盖与近期活动",
             View.Usage => "本机账本 · Token 与模型", View.Report => "自然周与自然月 · 用量报告",
             View.Forecast => "Codex 全局重置 · 第三方预测", _ => "额度卡片与本机成就" };
@@ -487,13 +505,14 @@ internal sealed partial class MeterWindow : Form
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab };
         string[] full = ["账户额度", "应用", "本机消耗", "用量报告", "重置预测", "收集"];
         string[] compact = ["账户", "应用", "用量", "报告", "预测", "收集"];
-        int width = Math.Max(1, (header.ClientSize.Width - 44 - 4 * (tabs.Length - 1)) / tabs.Length);
+        navigationStrip.Bounds = new Rectangle(16, view == View.Accounts ? 192 : 76, Math.Max(1, header.ClientSize.Width - 32), 35);
+        int width = Math.Max(1, (navigationStrip.ClientSize.Width - 6) / tabs.Length);
         for (int index = 0; index < tabs.Length; index++)
         {
-            tabs[index].Size = new Size(width, 36);
-            tabs[index].Location = new Point(22 + index * (width + 4), view == View.Accounts ? 228 : 84);
-            tabs[index].Font = width < 70 ? tabCompact : tabRegular;
-            tabs[index].Text = width < 70 ? compact[index] : full[index];
+            tabs[index].Size = new Size(width, 29);
+            tabs[index].Location = new Point(3 + index * width, 3);
+            tabs[index].Font = width < 62 ? tabCompact : tabRegular;
+            tabs[index].Text = width < 62 ? compact[index] : full[index];
         }
     }
     public string ThemeId => theme.Id;
@@ -504,8 +523,9 @@ internal sealed partial class MeterWindow : Form
         { status.Text = "无法保存界面风格，请检查设置目录权限"; return false; }
         theme = value;
         BackColor = header.BackColor = content.BackColor = gauges.BackColor = status.BackColor = Background;
-        ForeColor = Primary; title.ForeColor = Accent; subtitle.ForeColor = status.ForeColor = Muted;
+        ForeColor = Primary; title.ForeColor = Primary; subtitle.ForeColor = status.ForeColor = Muted;
         refresh.ForeColor = Accent; refresh.BackColor = Card; refresh.FlatAppearance.BorderColor = theme.Border;
+        navigationStrip.BackColor = Card; ApplyPopupTheme();
         UpdateTabs();
         if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
         return true;
@@ -513,8 +533,11 @@ internal sealed partial class MeterWindow : Form
     void SetView(View selected)
     {
         if (selected != View.Applications) activityCancellation?.Cancel();
+        bool changed = view != selected;
+        if (changed) content.AutoScrollPosition = Point.Empty;
         view = selected; UpdateTabs();
         if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
+        if (changed) content.AutoScrollPosition = Point.Empty;
         if (selected == View.Applications) _ = RefreshActivityIfNeeded();
     }
 
@@ -882,11 +905,11 @@ internal sealed partial class MeterWindow : Form
         SnapshotUpdated?.Invoke(lastSnapshot);
         if (view == View.Accounts) UpdateGauges(root);
         content.SuspendLayout();
-        forecastClocks.Clear();
+        forecastClocks.Clear(); quotaResetLabels.Clear();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();
         if (view == View.Accounts)
         {
-        AddHeading("账户额度", "来自账户接口 · 与本机 Token 分开统计");
+        // 托盘面板直接进入账户卡片，避免重复标题占据首屏。
         var localHistories = GetValue(root, "history");
         var account = GetValue(root, "account"); var quotas = GetValue(GetValue(account, "quota"), "value");
         if (quotas.ValueKind == JsonValueKind.Array && quotas.GetArrayLength() > 0)
@@ -899,7 +922,7 @@ internal sealed partial class MeterWindow : Form
                 string period = minutes == 300 ? "5 小时" : minutes == 10080 ? "7 天" : minutes.HasValue ? $"{minutes:0} 分钟" : window;
                 double? remaining = GetNumber(q, "remaining_percent");
                 string prefix = bucket.Equals("codex", StringComparison.OrdinalIgnoreCase) ? "" : bucket.ToUpperInvariant() + " · ";
-                rows.Add(new QuotaRow(prefix + period, remaining, ResetNote(q)));
+                rows.Add(new QuotaRow(prefix + period, remaining, QuotaResetClock.Read(q)));
             }
             AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"));
         }
@@ -943,7 +966,7 @@ internal sealed partial class MeterWindow : Form
                     string label = bucket switch { "limit5h" => "5 小时", "limit7d" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", _ => bucket };
                     if (duration.HasValue) label = $"{duration:0.##} " + (unit switch { "hour" => "小时", "day" => "天", "week" => "周", "month" => "月", "minute" => "分钟", "second" => "秒", _ => unit });
                     double? remaining = GetNumber(q, "remaining_percent");
-                    rows.Add(new QuotaRow(label, remaining, ResetNote(q)));
+                    rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
                 }
                 AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"));
             }
@@ -963,7 +986,7 @@ internal sealed partial class MeterWindow : Form
                 string bucket = GetString(q, "bucket", "");
                 string label = bucket switch { "five_hour" => "5 小时", "seven_day" => "7 天", "seven_day_opus" => "7 天 · Opus", "seven_day_sonnet" => "7 天 · Sonnet", "seven_day_oauth_apps" => "7 天 · OAuth 应用", _ => bucket };
                 double? remaining = GetNumber(q, "remaining_percent");
-                rows.Add(new QuotaRow(label, remaining, ResetNote(q)));
+                rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
             }
             if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"));
         }
@@ -1214,7 +1237,7 @@ internal sealed partial class MeterWindow : Form
             {
                 string label = GetString(quota, "bucket", "") switch { "5h" => "5 小时", "week" => "7 天", var other => other };
                 double? remaining = GetNumber(quota, "remaining_percent");
-                rows.Add(new QuotaRow(label, remaining, ResetNote(quota)));
+                rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(quota)));
             }
             AddQuotaGroup(prefix, rows);
         }
@@ -1265,7 +1288,7 @@ internal sealed partial class MeterWindow : Form
             {
                 var rows = new List<QuotaRow>();
                 foreach (var item in quota.EnumerateArray())
-                    rows.Add(new QuotaRow("积分额度", GetNumber(item, "remaining_percent"), ResetNote(item)));
+                    rows.Add(new QuotaRow("积分额度", GetNumber(item, "remaining_percent"), QuotaResetClock.Read(item)));
                 if (rows.Count > 0) { AddQuotaGroup("WORKBUDDY", rows, localHistory); shown = true; }
             }
             string balance = GetString(credits, "balance", ""), total = GetString(credits, "total", ""), frozen = GetString(credits, "frozen", "");
@@ -1387,7 +1410,7 @@ internal sealed partial class MeterWindow : Form
     void AddGauge(string provider, JsonElement account)
     {
         var windows = QuotaWindows.Select(account);
-        if (windows is not null) gauges.Controls.Add(new QuotaGauge(provider, windows, theme));
+        if (windows is not null) gauges.Controls.Add(new QuotaGauge(provider, windows, theme, demo ? ForecastDemoNow : null));
     }
     static string FormatNumber(double n) => n >= 1_000_000_000 ? $"{n / 1_000_000_000:0.##}B" : n >= 1_000_000 ? $"{n / 1_000_000:0.##}M" : n >= 1_000 ? $"{n / 1_000:0.##}K" : $"{n:0}";
     static JsonElement GetValue(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;
@@ -1422,9 +1445,10 @@ internal sealed partial class MeterWindow : Form
     };
     void AddHeading(string title, string subtitle)
     {
-        var box = new Panel { Height = 60, Margin = new Padding(0, 3, 0, 1), BackColor = Background };
+        var box = new Panel { Height = 52, Margin = new Padding(0, 3, 0, 1), BackColor = Background };
         box.Controls.Add(new Label { Text = title, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), AutoSize = true, Location = new Point(3, 5), ForeColor = Primary });
-        box.Controls.Add(new Label { Text = subtitle, AutoSize = true, Location = new Point(3, 32), ForeColor = Muted }); content.Controls.Add(box);
+        var note = new Label { Text = subtitle, AutoSize = false, AutoEllipsis = true, Height = 19, Font = new Font(Font.FontFamily, 8.5F), Location = new Point(3, 29), ForeColor = Muted };
+        box.Controls.Add(note); box.Resize += (_, _) => note.Width = Math.Max(0, box.Width - 6); content.Controls.Add(box);
     }
     void AddUsageSummary(JsonElement history)
     {
@@ -1483,7 +1507,7 @@ internal sealed partial class MeterWindow : Form
         box.Resize += (_, _) => chart.Width = Math.Max(0, box.ClientSize.Width - 28); box.Controls.Add(chart);
         StyleCard(box); content.Controls.Add(box);
     }
-    sealed record QuotaRow(string Name, double? Remaining, string Reset);
+    sealed record QuotaRow(string Name, double? Remaining, long? ResetEpoch);
 
     void AddMedalCard(string name, string tier, bool earned, string detail, string? date, double progress)
     {
@@ -1507,15 +1531,6 @@ internal sealed partial class MeterWindow : Form
         StyleCard(box); content.Controls.Add(box);
     }
 
-    static string ResetNote(JsonElement quota)
-    {
-        double? epoch = GetNumber(GetValue(quota, "resets_at"), "epoch_seconds");
-        if (!epoch.HasValue || !double.IsFinite(epoch.Value) || epoch.Value < 0 || epoch.Value > 253402300799)
-            return "重置时间未提供";
-        try { return "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)epoch.Value).LocalDateTime.ToString("MM-dd HH:mm"); }
-        catch (ArgumentException) { return "重置时间未提供"; }
-    }
-
     void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default)
     {
         int shown = Math.Min(rows.Count, 40);
@@ -1537,8 +1552,9 @@ internal sealed partial class MeterWindow : Form
             double? remaining = row.Remaining is double number && double.IsFinite(number) && number >= 0 && number <= 100 ? number : null;
             var amount = new Label { Text = remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", AutoSize = true,
                 Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = remaining.HasValue ? MeterBar.ValueColor(theme, remaining.Value) : Muted, Location = new Point(0, top) };
-            var note = new Label { Text = row.Reset, AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 40) };
+            var note = new Label { Text = QuotaResetClock.Detail(row.ResetEpoch, ForecastNow), AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 40) };
             var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 27), Height = 7 };
+            quotaResetLabels.Add((note, row.ResetEpoch));
             box.Controls.AddRange([name, amount, note, bar]);
             box.Resize += (_, _) =>
             {
@@ -1637,7 +1653,7 @@ internal sealed partial class MeterWindow : Form
             AddCard($"{++rank}. {label}", FormatNumber(entry.Value) + " tokens", "近 7 天 · 按本机记录统计", null);
         }
     }
-    void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
+    void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(280, content.ClientSize.Width - 39); }
     const string DemoData = """
     {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}},"MiniMax Code":{"status":"available","quota":{"value":[{"bucket":"5h","remaining_percent":55,"resets_at":{"epoch_seconds":1794654000}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.3-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}},"estimate":{"amount_usd":"2.464","partial":false}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false},"calendar_report":{"periods":{"week":{"previous_start":"2026-11-02","current_start":"2026-11-09","current_end":"2026-11-14","previous_tokens":4200000,"current_tokens":6367000},"month":{"previous_start":"2026-10-01","current_start":"2026-11-01","current_end":"2026-11-14","previous_tokens":14200000,"current_tokens":8200000}},"sources":2,"incomplete":false,"timezone":"Asia/Shanghai"},"activity":{"status":"available","window_hours":24,"idle_minutes":15,"apps":[{"name":"Codex","sessions":5,"recent_updates":2,"last_updated":1794650400},{"name":"Claude Code","sessions":2,"recent_updates":0,"last_updated":1794643200}]}}
     """;
@@ -1727,10 +1743,11 @@ internal sealed class QuotaGauge : Control
     readonly string provider;
     readonly QuotaWindowPair windows;
     readonly VisualTheme theme;
-    public QuotaGauge(string provider, QuotaWindowPair windows, VisualTheme theme)
+    readonly DateTimeOffset? referenceNow;
+    public QuotaGauge(string provider, QuotaWindowPair windows, VisualTheme theme, DateTimeOffset? referenceNow = null)
     {
-        this.provider = provider; this.windows = windows; this.theme = theme;
-        Size = new Size(95, 126); Margin = new Padding(0, 0, 7, 0);
+        this.provider = provider; this.windows = windows; this.theme = theme; this.referenceNow = referenceNow;
+        Size = new Size(95, 116); Margin = new Padding(0, 0, 7, 0);
         AccessibleRole = AccessibleRole.Graphic;
         AccessibleName = $"{provider} {windows.Primary.Label}，剩余 {windows.Primary.Remaining:0.#}%" +
             (windows.Secondary is null ? "" : $"；{windows.Secondary.Label}，剩余 {windows.Secondary.Remaining:0.#}%");
@@ -1753,13 +1770,14 @@ internal sealed class QuotaGauge : Control
         if (windows.Secondary is not null)
             Ring(new Rectangle(left + 8, 12, 44, 44), windows.Secondary.Remaining,
                 theme.Light ? Color.FromArgb(103, 75, 159) : Color.FromArgb(178, 145, 255));
-        using var valueFont = new Font(Font.FontFamily, 8F, FontStyle.Bold);
-        using var small = new Font(Font.FontFamily, 8F);
+        using var valueFont = new Font(Font.FontFamily, 9F, FontStyle.Bold);
+        using var small = new Font(Font.FontFamily, 7.5F);
         TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(left + 12, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 67, Width, 20), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Label} {windows.Primary.Remaining:0.#}%", small, new Rectangle(0, 88, Width, 19), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        if (windows.Secondary is not null)
-            TextRenderer.DrawText(e.Graphics, $"{windows.Secondary.Label} {windows.Secondary.Remaining:0.#}%", small, new Rectangle(0, 107, Width, 19), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 66, Width, 19), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        string shortName = windows.Primary.Label == "5 小时" ? "5h" : windows.Primary.Label == "7 天" ? "7d" : windows.Primary.Label;
+        string periods = $"{shortName} {windows.Primary.Remaining:0.#}" + (windows.Secondary is null ? "%" : $" / 7d {windows.Secondary.Remaining:0.#}");
+        TextRenderer.DrawText(e.Graphics, periods, small, new Rectangle(0, 84, Width, 16), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(e.Graphics, QuotaResetClock.Short(windows.Primary.ResetAt, referenceNow ?? DateTimeOffset.UtcNow), small, new Rectangle(0, 100, Width, 16), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
     }
 }
 internal sealed class DailyChart : Control

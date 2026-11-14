@@ -2,7 +2,7 @@ using System.Drawing.Drawing2D;
 
 namespace AgentMeter.Windows;
 
-/// <summary>以颜色和缩写区分服务；保留账户别名，不使用未经授权的商标图案。</summary>
+/// <summary>沿用原版的服务色与通用语义图形，保留账户别名。</summary>
 internal sealed record ProviderStyle(string DisplayName, string Initial, Color Color)
 {
     public static ProviderStyle For(string provider)
@@ -56,6 +56,29 @@ internal sealed class ProviderMark : Control
         using var fill = new LinearGradientBrush(bounds, provider.Color,
             Color.FromArgb((int)(provider.Color.R * .7), (int)(provider.Color.G * .7), (int)(provider.Color.B * .7)), 90F);
         e.Graphics.FillPath(fill, shape);
+        var saved = e.Graphics.Save();
+        e.Graphics.ScaleTransform(Width / 36F, Height / 36F);
+        using var pen = new Pen(Color.White, 2.5F) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        bool drawn = true;
+        if (provider.DisplayName.StartsWith("Codex", StringComparison.OrdinalIgnoreCase))
+        {
+            e.Graphics.DrawLines(pen, [new PointF(11, 12), new PointF(6, 18), new PointF(11, 24)]);
+            e.Graphics.DrawLines(pen, [new PointF(25, 12), new PointF(30, 18), new PointF(25, 24)]);
+            e.Graphics.DrawLine(pen, 21, 10, 15, 26);
+        }
+        else if (provider.DisplayName.StartsWith("Claude", StringComparison.OrdinalIgnoreCase))
+        {
+            for (int i = 0; i < 8; i++) { double a = i * Math.PI / 4; e.Graphics.DrawLine(pen, 18 + (float)Math.Cos(a) * 5, 18 + (float)Math.Sin(a) * 5, 18 + (float)Math.Cos(a) * 11, 18 + (float)Math.Sin(a) * 11); }
+        }
+        else if (provider.DisplayName.StartsWith("Kimi", StringComparison.OrdinalIgnoreCase))
+        {
+            e.Graphics.DrawArc(pen, 9, 8, 18, 20, 55, 255);
+            e.Graphics.DrawArc(pen, 16, 6, 13, 16, 70, 175);
+            e.Graphics.DrawLine(pen, 26, 8, 26, 14); e.Graphics.DrawLine(pen, 23, 11, 29, 11);
+        }
+        else drawn = false;
+        e.Graphics.Restore(saved);
+        if (drawn) return;
         using var font = new Font(Font.FontFamily, 13F, FontStyle.Bold);
         TextRenderer.DrawText(e.Graphics, provider.Initial, font, bounds, Color.White,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);

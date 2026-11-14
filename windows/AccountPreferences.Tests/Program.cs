@@ -11,6 +11,9 @@ if (!directory.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison
 try
 {
     var clock = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+    if (QuotaResetClock.Short(1800003660, clock) != "1 时 1 分后" ||
+        QuotaResetClock.Short(1800000000, clock) != "已到时间 · 待刷新" ||
+        QuotaResetClock.Short(null, clock) != "重置时间未知") throw new InvalidOperationException("账户重置倒计时不正确");
     using (var forecast = JsonDocument.Parse("""{"kind":"typical_window","open_at":1800000060,"close_at":1800003660,"sources":["WillReset","unknown","WillReset"]}"""))
     {
         var window = ForecastWindow.Read(forecast.RootElement) ?? throw new InvalidOperationException("预测窗口未解析");

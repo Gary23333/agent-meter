@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace AgentMeter.Windows;
 
-internal sealed record QuotaWindow(string Label, double Remaining);
+internal sealed record QuotaWindow(string Label, double Remaining, long? ResetAt = null);
 internal sealed record QuotaWindowPair(QuotaWindow Primary, QuotaWindow? Secondary);
 
 /// <summary>优先配对短窗口与七天窗口，未知窗口只在单独展示时作为后备。</summary>
@@ -25,7 +25,9 @@ internal static class QuotaWindows
             bool isLong = !longSpecific && (duration == 10080 || bucket is "limit7d" or "week" or "seven_day");
             bool isShort = duration == 300 || bucket is "limit5h" or "5h" or "five_hour";
             string label = isShort ? "5 小时" : isLong ? "7 天" : Label(row, bucket, duration);
-            var window = new QuotaWindow(label, remaining);
+            var stamp = Field(Field(row, "resets_at"), "epoch_seconds");
+            long? resetAt = stamp.ValueKind == JsonValueKind.Number && stamp.TryGetInt64(out long seconds) && seconds >= 0 && seconds <= 253402300799 ? seconds : null;
+            var window = new QuotaWindow(label, remaining, resetAt);
             if (isShort && shortWindow is null) shortWindow = window;
             else if (isLong && longWindow is null) longWindow = window;
             else if (fallback is null) fallback = window;

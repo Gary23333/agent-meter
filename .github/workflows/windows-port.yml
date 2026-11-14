@@ -96,8 +96,9 @@ jobs:
           root = Path(sys.argv[1]) / 'agentmeter-forecast' / 'AgentMeter'
           root.mkdir(parents=True, exist_ok=True)
           row = NORMALIZE['willreset']()
-          row.update(status='available', reason=None, provenance='https://willreset.com/api/forecast')
-          (root / 'reset-forecast.json').write_text(json.dumps({'saved_at':time.time(), 'rows':[row], 'history':{}}), encoding='utf-8')
+          row.update(status='available', reason=None, provenance='https://willreset.com/api/forecast', updated_at={'epoch_seconds':time.time()})
+          history = [{'post_id':'synthetic', 'kind':'reset', 'announced_at':{'epoch_seconds':time.time()-86400}, 'sources':['willreset']}]
+          (root / 'reset-forecast.json').write_text(json.dumps({'saved_at':time.time(), 'rows':[row], 'history':{'willreset':history}}), encoding='utf-8')
           '@
           $forecastFixture | ./.venv-win/Scripts/python.exe - $env:RUNNER_TEMP
           if ($LASTEXITCODE -ne 0) { throw 'Forecast fixture failed' }
@@ -106,6 +107,7 @@ jobs:
             $env:LOCALAPPDATA = "$env:RUNNER_TEMP/agentmeter-forecast"
             $forecast = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --forecast-only | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $forecast.cache_state -ne 'served_from_cache' -or $forecast.sources[0].name -ne 'WillReset' -or $forecast.sources[0].'24h' -ne 83) { throw 'Forecast cache projection failed' }
+            if ($forecast.ensemble.'24h'.weighted_median -ne 83 -or @($forecast.targets).Count -lt 1 -or @($forecast.history).Count -ne 1) { throw 'Forecast ensemble, clocks or history missing' }
           } finally { $env:LOCALAPPDATA = $savedLocalAppData }
           try {
             $env:LOCALAPPDATA = "$env:RUNNER_TEMP/agentmeter-cards"
@@ -145,6 +147,15 @@ jobs:
             if (-not $app.WaitForExit(30000)) { throw 'Activity refresh smoke test timed out' }
             if ($app.ExitCode -ne 0) { throw "Activity refresh smoke test failed ($($app.ExitCode))" }
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
+      - name: Smoke test tray popup lifecycle with synthetic data
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/popup-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--popup-ui-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Popup smoke timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Popup lifecycle failed' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
       - name: Render isolated demo previews
         shell: pwsh
         run: |

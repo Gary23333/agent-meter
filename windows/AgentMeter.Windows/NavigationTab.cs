@@ -14,7 +14,7 @@ internal sealed class NavigationTab : Button
     }
     public void SetAppearance(VisualTheme value, bool isSelected)
     {
-        theme = value; selected = isSelected; BackColor = value.Background;
+        theme = value; selected = isSelected; BackColor = value.Card;
         AccessibleDescription = isSelected ? "当前页面" : "切换页面";
         Invalidate();
     }
@@ -22,7 +22,7 @@ internal sealed class NavigationTab : Button
     protected override void OnMouseLeave(EventArgs e) { hovering = false; base.OnMouseLeave(e); Invalidate(); }
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(theme.Background);
+        e.Graphics.Clear(theme.Card);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
         const int corner = 16;
@@ -36,5 +36,18 @@ internal sealed class NavigationTab : Button
         TextRenderer.DrawText(e.Graphics, Text, Font, bounds, selected ? Color.White : theme.Primary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(bounds, -5, -5));
+    }
+}
+
+internal sealed class NavigationStrip : Panel
+{
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        if (Width < Height || Height < 2) return;
+        using var path = new GraphicsPath();
+        path.AddArc(0, 0, Height, Height, 90, 180);
+        path.AddArc(Width - Height, 0, Height, Height, 270, 180); path.CloseFigure();
+        var previous = Region; Region = new Region(path); previous?.Dispose();
     }
 }
