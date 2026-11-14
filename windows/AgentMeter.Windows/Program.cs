@@ -390,6 +390,20 @@ internal sealed partial class MeterWindow : Form
             DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
             image.Save(Path.Combine(directory, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
         }
+        foreach (string id in new[] { "aurora", "porcelain" })
+        {
+            using var previewMenu = new ContextMenuStrip { Font = Font };
+            previewMenu.Items.Add("刷新数据");
+            var branch = new ToolStripMenuItem("界面风格"); branch.DropDownItems.Add(new ToolStripMenuItem("极光") { Checked = true });
+            previewMenu.Items.Add(branch); previewMenu.Items.Add(new ToolStripMenuItem("低额度提醒") { Checked = true });
+            previewMenu.Items.Add(new ToolStripSeparator()); previewMenu.Items.Add("退出");
+            TrayMenuStyle.Apply(previewMenu, VisualThemes.Find(id));
+            previewMenu.Show(this, new Point(20, 60)); Application.DoEvents();
+            using var picture = new Bitmap(previewMenu.Width, previewMenu.Height);
+            previewMenu.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, id + "-menu.png"), System.Drawing.Imaging.ImageFormat.Png);
+            previewMenu.Close();
+        }
         foreach (var option in VisualThemes.All)
         {
             SetTheme(option);

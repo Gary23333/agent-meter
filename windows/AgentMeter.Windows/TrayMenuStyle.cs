@@ -5,7 +5,7 @@ internal static class TrayMenuStyle
 {
     public static void Apply(ContextMenuStrip menu, VisualTheme theme)
     {
-        menu.Renderer = new ToolStripProfessionalRenderer(new Palette(theme));
+        menu.Renderer = new MenuRenderer(theme);
         menu.BackColor = theme.Card; menu.ForeColor = theme.Primary;
         void Visit(ToolStripItemCollection items)
         {
@@ -15,11 +15,23 @@ internal static class TrayMenuStyle
                 if (item is ToolStripMenuItem branch)
                 {
                     branch.DropDown.BackColor = theme.Card; branch.DropDown.ForeColor = theme.Primary;
+                    branch.DropDown.Renderer = menu.Renderer;
                     Visit(branch.DropDownItems);
                 }
             }
         }
         Visit(menu.Items);
+    }
+    sealed class MenuRenderer(VisualTheme theme) : ToolStripProfessionalRenderer(new Palette(theme))
+    {
+        protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e) { e.ArrowColor = theme.Primary; base.OnRenderArrow(e); }
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e) { e.TextColor = theme.Primary; base.OnRenderItemText(e); }
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            var rect = e.ImageRectangle;
+            using var pen = new Pen(theme.Accent, 2) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+            e.Graphics.DrawLines(pen, [new Point(rect.Left + 3, rect.Top + 8), new Point(rect.Left + 7, rect.Top + 12), new Point(rect.Left + 14, rect.Top + 4)]);
+        }
     }
     sealed class Palette(VisualTheme theme) : ProfessionalColorTable
     {
