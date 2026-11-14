@@ -9,6 +9,15 @@ internal sealed class PopupScrollRail(FlowLayoutPanel content) : Control
     bool dragging;
     int dragOffset;
     public Color ThumbColor { set { thumbColor = value; Invalidate(); } }
+    internal bool HasThumb => !Thumb.IsEmpty;
+    internal void SyntheticDragToEnd()
+    {
+        var thumb = Thumb;
+        if (thumb.IsEmpty) throw new InvalidOperationException("滚动轨道没有滑块");
+        OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, Width / 2, thumb.Top + thumb.Height / 2, 0));
+        OnMouseMove(new MouseEventArgs(MouseButtons.Left, 0, Width / 2, Height + thumb.Height, 0));
+        OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, Width / 2, Height - 1, 0));
+    }
     int Maximum => content.VerticalScroll.Visible ? Math.Max(0, content.VerticalScroll.Maximum - content.VerticalScroll.LargeChange + 1) : 0;
     Rectangle Thumb
     {

@@ -121,6 +121,10 @@ internal sealed partial class MeterWindow
         if (!gauges.Visible || header.Height != 234) throw new InvalidOperationException("账户页布局错误");
         SetView(View.Forecast);
         if (gauges.Visible || header.Height != 118) throw new InvalidOperationException("紧凑页面布局错误");
+        if (scrollRail is null || !scrollRail.HasThumb || contentClip.Right > scrollRail.Left)
+            throw new InvalidOperationException("滚动轨道不可用或与内容重叠");
+        scrollRail.SyntheticDragToEnd();
+        if (content.AutoScrollPosition.Y >= 0) throw new InvalidOperationException("拖动轨道没有滚动内容");
         Message scrollMessage = default;
         ProcessCmdKey(ref scrollMessage, Keys.End);
         if (content.AutoScrollPosition.Y >= 0) throw new InvalidOperationException("翻页键未滚动内容");

@@ -49,7 +49,8 @@ internal sealed record AccountDetails(string? Plan, IReadOnlyList<AccountAmount>
             foreach (var credit in credits.EnumerateArray().Take(5))
             {
                 string? amount = Field(credit, "unlimited").ValueKind == JsonValueKind.True ? "不限额" : Amount(credit, "balance", negative: true);
-                if (amount is not null) amounts.Add(new AccountAmount(++index == 1 ? "账户积分" : $"账户积分池 {index}", amount, "不同积分池独立计量"));
+                if (amount is not null) amounts.Add(new AccountAmount(++index == 1 ? "账户积分" : $"账户积分池 {index}", amount,
+                    credits.GetArrayLength() > 1 ? "不同积分池独立计量" : null));
             }
         }
         else if (provider == "Kimi Code")

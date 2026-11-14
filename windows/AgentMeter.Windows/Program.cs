@@ -281,6 +281,7 @@ internal sealed partial class MeterWindow : Form
     Color Primary => theme.Primary;
     readonly FlowLayoutPanel content = new();
     readonly Panel contentViewport = new();
+    readonly Panel contentClip = new();
     PopupScrollRail? scrollRail;
     readonly Label status = new();
     readonly PopupAction refresh = new(PopupActionKind.Refresh);
@@ -359,9 +360,12 @@ internal sealed partial class MeterWindow : Form
         content.Padding = new Padding(14, 0, 14, 10); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
         scrollRail = new PopupScrollRail(content) { AccessibleName = "页面滚动", AccessibleRole = AccessibleRole.ScrollBar, TabStop = false,
             BackColor = Background, ThumbColor = theme.Border };
-        contentViewport.Controls.Add(content); contentViewport.Controls.Add(scrollRail); scrollRail.BringToFront();
+        // 单独裁剪原生滚动区，为细轨道留出不重叠的空间，避免子控件重绘时覆盖轨道。
+        contentClip.BackColor = Background; contentClip.Controls.Add(content);
+        contentViewport.Controls.Add(contentClip); contentViewport.Controls.Add(scrollRail);
         contentViewport.SizeChanged += (_, _) => {
-            content.Bounds = new Rectangle(0, 0, contentViewport.Width + Math.Max(32, 32 * DeviceDpi / 96), contentViewport.Height);
+            contentClip.Bounds = new Rectangle(0, 0, Math.Max(0, contentViewport.Width - 10), contentViewport.Height);
+            content.Bounds = new Rectangle(0, 0, contentClip.Width + Math.Max(32, 32 * DeviceDpi / 96), contentClip.Height);
             scrollRail.Bounds = new Rectangle(contentViewport.Width - 9, 3, 5, Math.Max(0, contentViewport.Height - 6)); ResizeCards();
         };
         content.Scroll += (_, _) => scrollRail.Invalidate(); content.Layout += (_, _) => scrollRail.Invalidate();
@@ -565,7 +569,7 @@ internal sealed partial class MeterWindow : Form
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { status.Text = "无法保存界面风格，请检查设置目录权限"; return false; }
         theme = value;
-        BackColor = header.BackColor = content.BackColor = contentViewport.BackColor = gauges.BackColor = status.BackColor = Background;
+        BackColor = header.BackColor = content.BackColor = contentViewport.BackColor = contentClip.BackColor = gauges.BackColor = status.BackColor = Background;
         if (scrollRail is not null) { scrollRail.BackColor = Background; scrollRail.ThumbColor = theme.Border; }
         ForeColor = Primary; title.ForeColor = Primary; subtitle.ForeColor = status.ForeColor = Muted;
         refresh.ForeColor = Accent; refresh.BackColor = Card; refresh.FlatAppearance.BorderColor = theme.Border;
