@@ -30,7 +30,7 @@ internal static class TrayMenuStyle
         {
             var rect = e.ImageRectangle;
             using var pen = new Pen(theme.Accent, 2) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
-            e.Graphics.DrawLines(pen, [new Point(rect.Left + 3, rect.Top + 8), new Point(rect.Left + 7, rect.Top + 12), new Point(rect.Left + 14, rect.Top + 4)]);
+            e.Graphics.DrawLines(pen, new Point[] { new(rect.Left + 3, rect.Top + 8), new(rect.Left + 7, rect.Top + 12), new(rect.Left + 14, rect.Top + 4) });
         }
     }
     sealed class Palette(VisualTheme theme) : ProfessionalColorTable
