@@ -17,4 +17,6 @@ WorkBuddy 登录使用 `%LOCALAPPDATA%\AgentMeter\webprofiles\workbuddy` 独立�
 
 托盘余量来源保存在同目录的 `tray-display.json`，只包含模式标识，不保存额度快照、账户名称或凭据。托盘图标仅使用已采集的账户结果，更新图标不会额外请求账户接口。
 
+用户主动导出的 JSON / CSV 只包含固定来源名称、周期、数据完整状态与本机 Token 汇总；不包含账户快照、凭据、会话、路径、本机积分或金额估算。导出后文件由用户保存在选定位置；未知值保留为空或 null。
+
 返回[项目首页](../README.md)。

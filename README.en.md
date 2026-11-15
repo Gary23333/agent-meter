@@ -16,11 +16,12 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The Alpha 14 panel previews use fictional data on an isolated Windows runner. The default panel is a borderless tray flyout; desktop-composited corners and shadows are not included in these renders. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png), [reset forecast](windows/assets/forecast-preview.png), [collection](windows/assets/collection-preview.png), [DeepSeek balance](windows/assets/deepseek-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
+The panel previews use fictional data on an isolated Windows runner. The default panel is a borderless tray flyout; desktop-composited corners and shadows are not included in these renders. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png), [reset forecast](windows/assets/forecast-preview.png), [collection](windows/assets/collection-preview.png), [DeepSeek balance](windows/assets/deepseek-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
 
 ## What it does
 
 - **Tray flyout** — a compact borderless panel with no taskbar window button. Click the tray icon to toggle, click outside or press Esc to dismiss, or pin it temporarily. The top menu and tray context menu share the same settings.
+- **Local usage export** — export available per-source Token summaries for four periods as JSON or CSV. Missing values remain null or blank; credentials, sessions and paths are excluded. Local credits and cost estimates are not included.
 - **Tray remaining percentage** — choose a provider, the lowest valid window, or the brand icon. Unknown, expired and disabled readings are excluded; a tooltip identifies the source and period. Selection adds no account queries.
 - **Unified account details** — balances, wallets, supported plan names and Codex reset-credit expiry tiles appear within the relevant account card. Expired details do not rewrite provider-reported totals.
 - **Account switches** — enable or disable Codex, Kimi, Claude, MiniMax and DeepSeek account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials; MiniMax, DeepSeek and WorkBuddy are off by default.
@@ -75,7 +76,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.14](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.14), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
+Download [Windows v0.1.0-alpha.15](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.15), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
 
 ### Build from source
 

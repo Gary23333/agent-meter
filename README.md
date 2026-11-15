@@ -10,11 +10,11 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.14) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.15) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 14**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 15**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 14 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.14) 下载 `AgentMeter-Windows-x64.zip`。
+1. 从 [Alpha 15 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.15) 下载 `AgentMeter-Windows-x64.zip`。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；WorkBuddy 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -48,7 +48,7 @@
 | --- | --- |
 | 账户 | 各服务剩余额度、周期重置时间、可用的套餐与余额，以及独立标注的本机统计 |
 | 应用 | 工具覆盖情况、近期有更新的活动记录；支持筛选和展开数据来源 |
-| 用量 | 今日、近 7 天、近 30 天和累计 Token，7 日模型排行、自然日趋势及今日 API 等价估算 |
+| 用量 | 今日、近 7 天、近 30 天和累计 Token，7 日模型排行、自然日趋势及今日 API 等价估算；支持导出 JSON / CSV 汇总 |
 | 报告 | 本周、上周、本月和上月汇总，导出 Markdown 或随主题变化的 PNG 分享图 |
 | 预测 | 主动开启后查看第三方 24 / 48 小时预测、上游加权中位数、明确时间窗口与历史事件 |
 | 收集 | 本机用量徽章、5 小时和 7 天额度窗口的掉落卡片；更多类别仍在移植 |
@@ -60,7 +60,7 @@
 
 ![账户重置卡明细，虚构演示数据](windows/assets/account-reset-preview.png)
 ![应用概览，虚构演示数据](windows/assets/applications-preview.png)
-![本机消耗，虚构演示数据](windows/assets/usage-preview.png)
+![本机消耗与导出入口，虚构演示数据](windows/assets/usage-preview.png)
 ![账户本机用量与趋势，虚构演示数据](windows/assets/account-local-preview.png)
 
 </details>
@@ -99,6 +99,8 @@ Codex 账户和部分本机账本已有真实数据核对；其他新增账户�
 ## 数字怎么理解
 
 **账户额度与本机历史分别计量。** 本机历史只覆盖当前电脑能读取的记录，未按登录账户归属，不等于账户总用量；不同账本可能重叠。今日、自然日和周月报告使用北京时间（Asia/Shanghai），近 7 天等滚动窗口另行标注。未知不等于零，不同服务的积分不相加。
+
+本机汇总可导出 JSON 或 CSV，只包含可用来源、周期、状态和 Token 汇总，不含路径、会话或账户凭据。未知值保留为空或 null；本机积分和金额估算不包含在内。
 
 API 等价估算使用上游内置价格快照或本机自定义美元价格，单位为每百万 Token；部分人民币价格使用 1 美元 = 7.25 元的固定回退汇率。它不是实际账单或订阅扣费，缺少必要字段时会标注不完整。实时价格、汇率和更完整的峰谷设置仍在移植。
 
