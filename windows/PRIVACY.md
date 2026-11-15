@@ -21,4 +21,6 @@ WorkBuddy 登录使用 `%LOCALAPPDATA%\AgentMeter\webprofiles\workbuddy` 独立�
 
 用量页面周期保存在 `usage-view.json`，只记录周期选项，不包含账户或会话数据。
 
+用户开启登录启动时，程序在当前用户的 `Software\Microsoft\Windows\CurrentVersion\Run` 中登记 `AgentMeter.Windows`，内容仅为可执行文件路径和后台启动参数。关闭选项可移除属于当前路径的启动项；与其他路径冲突时不会覆盖或删除。
+
 返回[项目首页](../README.md)。

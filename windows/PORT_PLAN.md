@@ -40,7 +40,9 @@
 
 - [Alpha 16 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.16) 对应提交 `44180cb`；四周期切换、偏好、分周期费用与主题图表通过隔离检查。Windows 和跨平台检查通过；ZIP 独立解压验证通过，SHA-256：`9bfe8176501d200343415534ca2906e5dbc92e14626b80b899f4955998154f6d`。真实账户与多屏、高 DPI 仍需实体设备验收。
 
-- 当前公开 [Alpha 17 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.17) 对应提交 `e11aff9`。自然日对照、跨月及零值边界通过测试，深浅主题和窄弹层演示已检查，ZIP 独立解压校验通过。Windows 构建和跨平台 Python、桌宠检查通过，macOS Swift 检查等待构建资源；真实设备验收仍未完成。SHA-256：`37c157d0d12421b49dbabf9eed3c9baf17dd04bc9f2f9dd8d3931987897703ce`。
+- [Alpha 17 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.17) 对应提交 `e11aff9`。自然日对照、跨月及零值边界通过测试，深浅主题和窄弹层演示已检查，ZIP 独立解压校验通过。Windows 构建和跨平台 Python、桌宠检查通过，macOS Swift 检查等待构建资源；真实设备验收仍未完成。SHA-256：`37c157d0d12421b49dbabf9eed3c9baf17dd04bc9f2f9dd8d3931987897703ce`。
+
+- 当前公开 [Alpha 18 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.18) 对应提交 `2a10554`。Windows 构建、隔离注册表启停和后台启动检查通过，ZIP 独立解压校验通过。跨平台 Python 与桌宠检查通过，macOS Swift 检查仍在运行；实体设备上的登录启动、多屏与高 DPI 仍需验收。SHA-256：`e9ba169d8a78f75025397e90546b2210fdae52c8e6455edd5a2f815e45256aea`。
 
 ## 安全与数据边界
 
