@@ -503,6 +503,8 @@ internal sealed partial class MeterWindow : Form
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "+25%"))
             throw new InvalidOperationException("报告已结束自然日对照缺失");
         SavePreview("aurora-report-comparison-narrow");
+        var reportExport = content.Controls.OfType<Button>().First(button => button.Text == "导出报告分享图");
+        content.ScrollControlIntoView(reportExport); Application.DoEvents(); SavePreview("aurora-report-actions-narrow");
         SetView(View.Applications);
         var expandApp = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
             .FirstOrDefault(button => button.Name == "app-expand-Codex") ?? throw new InvalidOperationException("application_card_missing");
@@ -1141,8 +1143,8 @@ internal sealed partial class MeterWindow : Form
         {
             AddUsageSummary(history);
             AddDailyTrend(GetValue(root, "daily_trend"));
-            var exportData = new Button { Name = "usage-export-data", Text = "导出本机汇总 · JSON / CSV", Height = 42,
-                Margin = new Padding(0, 0, 0, 12), BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+            var exportData = new RoundedActionButton(theme) { Name = "usage-export-data", Text = "导出本机汇总 · JSON / CSV", Height = 42,
+                Margin = new Padding(0, 0, 0, 12), ForeColor = Primary };
             exportData.FlatAppearance.BorderColor = theme.Border;
             exportData.Click += (_, _) => ExportUsageData(); content.Controls.Add(exportData);
             AddHeading("本机账本", GetString(root, "price_status", "") == "invalid"
@@ -1449,13 +1451,13 @@ internal sealed partial class MeterWindow : Form
         }
         AddCard("统计说明", "自然周期比较", "当前周期尚未结束；上期为完整周期", null,
                 "仅覆盖本机可读取记录，不等于账户总量");
-        var export = new Button { Text = "导出 Markdown 报告", Height = 42, Margin = new Padding(0, 0, 0, 12),
-            BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+        var export = new RoundedActionButton(theme) { Text = "导出 Markdown 报告", Height = 42, Margin = new Padding(0, 0, 0, 12),
+            ForeColor = Primary };
         export.FlatAppearance.BorderColor = theme.Border;
         export.Click += (_, _) => ExportCalendarReport();
         content.Controls.Add(export);
-        var imageExport = new Button { Text = "导出报告分享图", Height = 42, Margin = new Padding(0, 0, 0, 12),
-            BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+        var imageExport = new RoundedActionButton(theme) { Text = "导出报告分享图", Height = 42, Margin = new Padding(0, 0, 0, 12),
+            ForeColor = Primary };
         imageExport.FlatAppearance.BorderColor = theme.Border;
         imageExport.Click += (_, _) => ExportShareImage();
         content.Controls.Add(imageExport);
