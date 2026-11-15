@@ -368,7 +368,7 @@ internal sealed partial class MeterWindow : Form
     readonly NavigationTab accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
     readonly Font tabRegular = new("Microsoft YaHei UI", 9F, FontStyle.Bold), tabCompact = new("Microsoft YaHei UI", 8F, FontStyle.Bold);
     readonly FlowLayoutPanel gauges = new();
-    readonly Button gaugePrevious = new(), gaugeNext = new();
+    readonly GaugePageButton gaugePrevious = new(false), gaugeNext = new(true);
     int gaugePage;
     readonly System.Windows.Forms.Timer timer = new();
     readonly System.Windows.Forms.Timer activityTimer = new();
@@ -439,13 +439,14 @@ internal sealed partial class MeterWindow : Form
         foreach (var button in new[] { gaugePrevious, gaugeNext })
         {
             button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderSize = 0; button.BackColor = Background;
-            button.ForeColor = Muted; button.Font = new Font(Font.FontFamily, 14F, FontStyle.Bold); button.Size = new Size(16, 32);
+            button.ForeColor = Muted; button.Size = new Size(20, 32);
         }
         gaugePrevious.Text = "‹"; gaugePrevious.AccessibleName = "上一组账户额度";
         gaugeNext.Text = "›"; gaugeNext.AccessibleName = "下一组账户额度";
         gaugePrevious.Click += (_, _) => { gaugePage--; LayoutGauges(); };
         gaugeNext.Click += (_, _) => { gaugePage++; LayoutGauges(); };
         header.Controls.AddRange([gaugePrevious, gaugeNext]);
+        gaugePrevious.BringToFront(); gaugeNext.BringToFront();
         accountTab.Text = "账户额度"; applicationsTab.Text = "应用";
         usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测"; collectionTab.Text = "收集";
         accountTab.Click += (_, _) => SetView(View.Accounts); applicationsTab.Click += (_, _) => SetView(View.Applications);
@@ -676,6 +677,12 @@ internal sealed partial class MeterWindow : Form
         SetView(View.Accounts); SavePreview("aurora-many-accounts-narrow");
         if (gauges.AutoScroll || !gaugeNext.Visible || !gaugeNext.Enabled || gaugePage != 0)
             throw new InvalidOperationException("多账户额度分页不可用");
+        using (var arrow = new Bitmap(gaugeNext.Width, gaugeNext.Height))
+        {
+            gaugeNext.DrawToBitmap(arrow, new Rectangle(Point.Empty, arrow.Size));
+            if (!Enumerable.Range(0, arrow.Width).Any(x => Enumerable.Range(0, arrow.Height).Any(y => arrow.GetPixel(x, y).ToArgb() != gaugeNext.BackColor.ToArgb())))
+                throw new InvalidOperationException("分页箭头没有绘制");
+        }
         gaugeNext.PerformClick(); Application.DoEvents();
         if (gaugePage != 1 || !gaugePrevious.Enabled || gauges.Controls.OfType<QuotaGauge>().Count(item => item.Visible) > 4)
             throw new InvalidOperationException("下一组账户额度未正确切换");
@@ -1839,7 +1846,7 @@ internal sealed partial class MeterWindow : Form
         gaugePage = Math.Clamp(gaugePage, 0, pages - 1);
         gaugePrevious.Visible = gaugeNext.Visible = view == View.Accounts && pages > 1;
         gaugePrevious.Enabled = gaugePage > 0; gaugeNext.Enabled = gaugePage + 1 < pages;
-        gaugePrevious.Location = new Point(0, 110); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 16), 110);
+        gaugePrevious.Location = new Point(1, 110); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 21), 110);
         if (items.Length == 0) return;
         int shown = Math.Min(4, items.Length - gaugePage * 4);
         int width = Math.Clamp(gauges.ClientSize.Width / Math.Max(1, shown) - 7, 70, 95);
@@ -2234,6 +2241,24 @@ internal sealed class MeterBar : Control
         path.CloseFigure(); return path;
     }
 }
+/// <summary>手绘窄箭头，避免系统按钮的文字边距将分页入口挤出面板。</summary>
+internal sealed class GaugePageButton(bool forward) : Button
+{
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.Clear(BackColor);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        Color color = Enabled ? ForeColor : Color.FromArgb(80, ForeColor);
+        using var pen = new Pen(color, 2F) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+        float middle = Height / 2F, center = Width / 2F;
+        float direction = forward ? 1 : -1;
+        e.Graphics.DrawLines(pen, [new PointF(center - direction * 3, middle - 5), new PointF(center + direction * 2, middle),
+            new PointF(center - direction * 3, middle + 5)]);
+        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(2, 4, Width - 4, Height - 8));
+    }
+}
+
 internal sealed class QuotaGauge : Control
 {
     readonly string provider;
