@@ -170,7 +170,7 @@ jobs:
         shell: pwsh
         run: |
           $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -PassThru -Wait
-          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 63) { throw 'Demo preview generation failed' }
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 64) { throw 'Demo preview generation failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: AgentMeter-demo-previews

@@ -447,6 +447,11 @@ internal sealed partial class MeterWindow : Form
         content.AutoScrollPosition = Point.Empty;
         Size = new Size(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
+        SetView(View.Usage);
+        var usageExport = content.Controls.OfType<Button>().Single(button => button.Name == "usage-export-data");
+        content.ScrollControlIntoView(usageExport); Application.DoEvents(); SavePreview("aurora-usage-export-narrow");
+        using (var snapshot = JsonDocument.Parse(lastSnapshot!))
+            if (!UsageDataExport.Json(snapshot.RootElement, demo: true).Contains("\"demo\": true")) throw new InvalidOperationException("演示汇总导出缺少标识");
         SetView(View.Applications);
         var expandApp = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
             .FirstOrDefault(button => button.Name == "app-expand-Codex") ?? throw new InvalidOperationException("application_card_missing");
@@ -1043,6 +1048,10 @@ internal sealed partial class MeterWindow : Form
         {
             AddUsageSummary(history);
             AddDailyTrend(GetValue(root, "daily_trend"));
+            var exportData = new Button { Name = "usage-export-data", Text = "导出本机汇总 · JSON / CSV", Height = 42,
+                Margin = new Padding(0, 0, 0, 12), BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+            exportData.FlatAppearance.BorderColor = theme.Border;
+            exportData.Click += (_, _) => ExportUsageData(); content.Controls.Add(exportData);
             AddHeading("本机账本", GetString(root, "price_status", "") == "invalid"
                 ? "自定义价格无法读取，已隐藏金额" : "按价格快照及自定义价格估算，不代表账单");
             int visible = 0;
@@ -1370,6 +1379,28 @@ internal sealed partial class MeterWindow : Form
             MessageBox.Show(this, ex is InvalidDataException ? ex.Message : "无法导出报告，请检查目标位置。",
                 "导出未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+    void ExportUsageData()
+    {
+        try
+        {
+            if (lastSnapshot is null) throw new InvalidDataException("没有可导出的本机 Token 汇总");
+            using var snapshot = JsonDocument.Parse(lastSnapshot);
+            // 在打开保存窗口前先确认有数据，避免写出空文件。
+            _ = UsageDataExport.Read(snapshot.RootElement);
+            using var dialog = new SaveFileDialog { Title = "导出本机 Token 汇总", Filter = "JSON 文件 (*.json)|*.json|CSV 文件 (*.csv)|*.csv",
+                FileName = "AgentMeter-本机汇总-" + DateTime.Now.ToString("yyyy-MM-dd"), AddExtension = true, OverwritePrompt = true };
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            string extension = Path.GetExtension(dialog.FileName);
+            bool csv = extension.Equals(".csv", StringComparison.OrdinalIgnoreCase);
+            if (!csv && !extension.Equals(".json", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("请选择 .json 或 .csv 文件名");
+            string data = csv ? UsageDataExport.Csv(snapshot.RootElement, demo) : UsageDataExport.Json(snapshot.RootElement, demo);
+            // CSV 加 BOM，便于 Windows 版 Excel 正确识别中文；JSON 使用标准 UTF-8。
+            File.WriteAllText(dialog.FileName, data, new System.Text.UTF8Encoding(csv));
+            status.Text = "本机汇总已导出到所选位置";
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or JsonException or System.Security.SecurityException)
+        { MessageBox.Show(this, ex is InvalidDataException ? ex.Message : "无法导出汇总，请检查目标位置。", "导出未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     }
     void ExportShareImage()
     {
