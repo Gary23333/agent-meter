@@ -484,6 +484,9 @@ internal sealed partial class MeterWindow : Form
                 throw new InvalidOperationException("用量周期切换或汇总错误：" + period);
             if (period == "7d" && !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text.Contains("近 7 天 API 等价估算 $12.3")))
                 throw new InvalidOperationException("用量周期费用未切换");
+            var totalCost = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Single(label => label.Name == "usage-cost-total");
+            if (period == "7d" && totalCost.Text != "$12.3" || period == "today" && totalCost.Text != "$2.464")
+                throw new InvalidOperationException("用量页首屏费用未跟随周期");
             if (period == "7d") SavePreview("aurora-usage-period-seven-days");
         }
         string fullUsageSnapshot = lastSnapshot!;
@@ -1613,8 +1616,21 @@ internal sealed partial class MeterWindow : Form
             return;
         }
         var box = new RoundedCard(theme) { Height = 190, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new Label { Text = UsagePeriodLabel + " Token 总量", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) });
-        box.Controls.Add(new Label { Name = "usage-total", Text = FormatNumber(total), AutoSize = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) });
+        var totalTitle = new Label { Text = UsagePeriodLabel + " Token 总量", Height = 22, AutoEllipsis = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) };
+        var totalValue = new Label { Name = "usage-total", Text = FormatNumber(total), Height = 38, AutoEllipsis = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) };
+        box.Controls.AddRange([totalTitle, totalValue]);
+        var cost = UsageCostSummary.Read(history, usagePeriod);
+        var costTitle = new Label { Text = "API 等价估算 · 非账单", Top = 11, Height = 21, Font = new Font(Font.FontFamily, 8.5F), ForeColor = Muted, AutoEllipsis = true };
+        var costValue = new Label { Name = "usage-cost-total", Text = cost.Display, Top = 34, Height = 28, Font = new Font(Font.FontFamily, 13F, FontStyle.Bold), ForeColor = Primary, AutoEllipsis = true };
+        var costNote = new Label { Text = cost.Amount is null ? "暂无可估算金额" : cost.Partial ? "部分来源未计入" : "按本机价格表估算", Top = 62, Height = 19, Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, AutoEllipsis = true };
+        box.Controls.AddRange([costTitle, costValue, costNote]);
+        popupTips.SetToolTip(costValue, cost.Display); popupTips.SetToolTip(totalValue, FormatNumber(total));
+        box.Resize += (_, _) => {
+            int x = Math.Max(175, box.ClientSize.Width * 58 / 100);
+            totalTitle.Width = totalValue.Width = Math.Max(0, x - 25);
+            costTitle.Left = costValue.Left = costNote.Left = x;
+            costTitle.Width = costValue.Width = costNote.Width = Math.Max(0, box.ClientSize.Width - x - 16);
+        };
         box.Controls.Add(new Label { Text = $"{sources} 个本机账本相加" + (partial ? " · 含不完整来源" : ""), AutoSize = true, ForeColor = Muted, Location = new Point(16, 82) });
         if (complete && total > 0)
         {

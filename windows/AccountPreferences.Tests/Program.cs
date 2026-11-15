@@ -12,6 +12,14 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    using (var costs = JsonDocument.Parse("""{"A":{"status":"available","value":{"periods":{"7d":{"totals":{"total_tokens":42}}}},"estimates":{"7d":{"amount_usd":"1.25","partial":false}}},"B":{"status":"partial","value":{"periods":{"7d":{"totals":{"total_tokens":9}}}}}}"""))
+    {
+        var totalCost = UsageCostSummary.Read(costs.RootElement, "7d");
+        if (totalCost.Amount != 1.25m || !totalCost.Partial || totalCost.Display != "$1.25" || UsageCostSummary.Read(costs.RootElement, "today").Amount is not null)
+            throw new InvalidOperationException("费用汇总应只统计同周期已知价格并提示不完整");
+    }
+    using (var costs = JsonDocument.Parse("""{"A":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1}}}},"estimate":{"amount_usd":"0","partial":false}}}"""))
+        if (UsageCostSummary.Read(costs.RootElement, "today") is not { Amount: 0, Partial: false }) throw new InvalidOperationException("免费价格估算不能误当未知");
     StartupTests.Run();
     using (var comparison = JsonDocument.Parse("""{"comparable_days":3,"current_comparable_tokens":150,"previous_comparable_tokens":100}"""))
         if (ReportComparison.Read(comparison.RootElement)?.Change != "+50%") throw new InvalidOperationException("相同天数的报告对照错误");
