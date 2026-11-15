@@ -24,6 +24,29 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_volcengine_requires_explicit_pair_and_signs_fixed_endpoint(self):
+        payload = {'Result': {'PlanName': 'PLAN_TIER_LITE', 'QuotaUsage': [
+            {'Level': 'session', 'Percent': 20}, {'Level': 'weekly', 'Percent': 50}]}}
+        with patch.dict('os.environ', {'VOLC_ACCESSKEY': 'ambient-private'}), \
+             patch('agent_meter.volcengine.get_json', return_value=payload) as request:
+            with self.assertRaises(SourceError): backend.volcengine_quota(None, 1800000000)
+            with self.assertRaises(SourceError): backend.volcengine_quota({'access_key_id':'ark-key','secret_access_key':'x'}, 1800000000)
+            request.assert_not_called()
+            result = backend.volcengine_quota({'access_key_id':'AK-synthetic', 'secret_access_key':'synthetic-private'}, 1800000000)
+            self.assertEqual(request.call_args.args[0], 'https://open.volcengineapi.com/?Action=GetCodingPlanUsage&Version=2024-01-01')
+            self.assertEqual(request.call_args.kwargs['body'], b'')
+            self.assertEqual(result['quota']['value'][0]['remaining_percent'], 80)
+            self.assertNotIn('synthetic-private', json.dumps(result))
+            self.assertNotIn('AK-synthetic', json.dumps(result))
+            self.assertNotIn('ambient-private', json.dumps(result))
+
+    def test_volcengine_subprocess_missing_pair_is_offline(self):
+        env = dict(os.environ, VOLC_ACCESSKEY='synthetic-ambient-secret')
+        result = subprocess.run([sys.executable, '-m', 'windows.backend', '--volcengine-only'], input='{"credentials":null}',
+                                text=True, encoding='utf-8', capture_output=True, timeout=15, check=True, env=env)
+        self.assertEqual(json.loads(result.stdout)['reason'], 'volcengine_credential_not_connected')
+        self.assertNotIn('synthetic-ambient-secret', result.stdout + result.stderr)
+
     def test_zcode_requires_explicit_key_and_filters_account_metadata(self):
         payload = {'code': 200, 'success': True, 'data': {'level': 'pro', 'limits': [
             {'type': 'CREDIT_LIMIT', 'unit': 3, 'number': 5, 'usage': 100, 'remaining': 75},

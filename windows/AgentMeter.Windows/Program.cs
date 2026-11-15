@@ -122,7 +122,7 @@ internal sealed partial class MeterContext : ApplicationContext
         {
             var accounts = new ToolStripMenuItem("账户查询");
             var accountItems = new Dictionary<string, ToolStripMenuItem>();
-            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode" })
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine" })
             {
                 var item = new ToolStripMenuItem(provider == "DeepSeek" ? "DeepSeek API 余额" : provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
                 item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
@@ -157,6 +157,13 @@ internal sealed partial class MeterContext : ApplicationContext
                 using var editor = new ZCodeKeyDialog();
                 if (editor.ShowDialog(window) != DialogResult.OK) return;
                 if (window.SetAccountEnabled("ZCode", !editor.Deleted)) accountItems["ZCode"].Checked = !editor.Deleted;
+            });
+            menu.Items.Add("设置火山方舟 AccessKey", null, (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new VolcengineKeyDialog();
+                if (editor.ShowDialog(window) != DialogResult.OK) return;
+                if (window.SetAccountEnabled("Volcengine", !editor.Deleted)) accountItems["Volcengine"].Checked = !editor.Deleted;
             });
             menu.Items.Add("登录 WorkBuddy", null, (_, _) =>
             {
@@ -598,6 +605,20 @@ internal sealed partial class MeterWindow : Form
             picture.Save(Path.Combine(directory, "zcode-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
             dialog.Close();
         }
+        var volcengine = JsonNode.Parse(lastSnapshot!)!.AsObject();
+        volcengine["other_accounts"] = JsonNode.Parse("""{"Volcengine":{"status":"available","subscription":{"plan":"Coding Plan Lite"},"quota":{"value":[{"bucket":"session","window_minutes":300,"remaining_percent":82},{"bucket":"weekly","window_minutes":10080,"remaining_percent":60},{"bucket":"monthly","window_minutes":43200,"remaining_percent":45}]}}}""");
+        using (var snapshot = JsonDocument.Parse(volcengine.ToJsonString())) Render(snapshot.RootElement);
+        SetView(View.Accounts); SavePreview("aurora-volcengine-narrow");
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "月度额度"))
+            throw new InvalidOperationException("火山方舟额度卡片缺少月度窗口");
+        using (var dialog = new VolcengineKeyDialog { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        {
+            dialog.Show(); Application.DoEvents();
+            using var picture = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, "volcengine-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
+            dialog.Close();
+        }
         Hide();
     }
     protected override void Dispose(bool disposing)
@@ -664,7 +685,8 @@ internal sealed partial class MeterWindow : Form
     public bool AccountEnabled(string provider) => provider switch
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude,
-        "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy, "ZCode" => preferences.ZCode, _ => false
+        "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy,
+        "ZCode" => preferences.ZCode, "Volcengine" => preferences.Volcengine, _ => false
     };
     public Task RefreshAfterAccountChange()
     {
@@ -717,7 +739,7 @@ internal sealed partial class MeterWindow : Form
             "Codex" => preferences with { Codex = enabled }, "Kimi" => preferences with { Kimi = enabled },
             "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled },
             "DeepSeek" => preferences with { DeepSeek = enabled }, "WorkBuddy" => preferences with { WorkBuddy = enabled },
-            "ZCode" => preferences with { ZCode = enabled }, _ => preferences
+            "ZCode" => preferences with { ZCode = enabled }, "Volcengine" => preferences with { Volcengine = enabled }, _ => preferences
         };
         try { next.Save(AccountPreferences.DefaultDirectory); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -750,6 +772,7 @@ internal sealed partial class MeterWindow : Form
         if (!preferences.DeepSeek) others["DeepSeek API"] = Disabled();
         if (!preferences.WorkBuddy) others["WorkBuddy"] = Disabled();
         if (!preferences.ZCode) others["ZCode"] = Disabled();
+        if (!preferences.Volcengine) others["Volcengine"] = Disabled();
         if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
@@ -809,6 +832,15 @@ internal sealed partial class MeterWindow : Form
                 var workbuddyTask = preferences.WorkBuddy ? WorkBuddyAccountAsync(accountCancellation.Token) : null;
                 Task<string>? deepseekTask = null;
                 Task<string>? zcodeTask = null;
+                Task<string>? volcengineTask = null;
+                if (preferences.Volcengine)
+                {
+                    VolcengineKeys? keys = null;
+                    try { keys = VolcengineKeyStore.Read(); }
+                    catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+                    string? secretInput = VolcengineKeyStore.Input(keys); keys = null;
+                    volcengineTask = RunCollector("--volcengine-only", accountCancellation.Token, secretInput); secretInput = null;
+                }
                 if (preferences.ZCode)
                 {
                     string? key = null;
@@ -844,6 +876,7 @@ internal sealed partial class MeterWindow : Form
                 combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = preferences.DeepSeek ? "loading" : "disabled" };
                 combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = preferences.WorkBuddy ? "loading" : "disabled" };
                 combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = preferences.ZCode ? "loading" : "disabled" };
+                combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = preferences.Volcengine ? "loading" : "disabled" };
                 ApplyAccountPreferences(combined);
                 string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
@@ -867,6 +900,14 @@ internal sealed partial class MeterWindow : Form
                     try { combined["other_accounts"]!["ZCode"] = JsonNode.Parse(await zcodeTask); }
                     catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                     { combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
+                }
+                if (volcengineTask is not null)
+                {
+                    try { combined["other_accounts"]!["Volcengine"] = JsonNode.Parse(await volcengineTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = "error" }; }
                     ApplyAccountPreferences(combined);
                     using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
                 }
@@ -1133,6 +1174,7 @@ internal sealed partial class MeterWindow : Form
         AddDeepSeekBalance(GetValue(otherAccounts, "DeepSeek API"));
         AddWorkBuddyAccount(GetValue(otherAccounts, "WorkBuddy"), GetValue(localHistories, "WorkBuddy"));
         AddZCodeAccount(GetValue(otherAccounts, "ZCode"), GetValue(localHistories, "ZCode"));
+        AddVolcengineAccount(GetValue(otherAccounts, "Volcengine"));
         }
         else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)
@@ -1530,6 +1572,7 @@ internal sealed partial class MeterWindow : Form
         AddGauge("Claude", GetValue(GetValue(root, "other_accounts"), "Claude Code"));
         AddGauge("WorkBuddy", GetValue(GetValue(root, "other_accounts"), "WorkBuddy"));
         AddGauge("ZCode", GetValue(GetValue(root, "other_accounts"), "ZCode"));
+        AddGauge("火山方舟", GetValue(GetValue(root, "other_accounts"), "Volcengine"));
         var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {

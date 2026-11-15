@@ -15,6 +15,7 @@ internal sealed record ProviderStyle(string DisplayName, string Initial, Color C
             ("MINIMAX CODE", "MiniMax Code", "M", Color.FromArgb(212, 72, 132)),
             ("WORKBUDDY", "WorkBuddy", "W", Color.FromArgb(71, 145, 215)),
             ("ZCODE", "ZCode", "Z", Color.FromArgb(72, 111, 229)),
+            ("火山方舟", "火山方舟", "火", Color.FromArgb(235, 106, 55)),
             ("GEMINI CLI", "Gemini CLI", "G", Color.FromArgb(73, 128, 215)),
             ("DEEPSEEK HARNESS", "DeepSeek Harness", "D", Color.FromArgb(76, 122, 225)),
             ("DEEPSEEK API", "DeepSeek API", "D", Color.FromArgb(76, 122, 225)),

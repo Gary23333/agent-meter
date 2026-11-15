@@ -36,6 +36,7 @@ from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, sa
 from agent_meter.deepseek import collect_deepseek
 from agent_meter.web_sources import collect_workbuddy
 from agent_meter.zcode import collect_zcode
+from agent_meter.volcengine import collect_volcengine
 
 
 def codex_binary():
@@ -100,7 +101,23 @@ def zcode_quota(key, now):
     if not isinstance(key, str) or not 0 < len(key) <= 1280 or any(not '!' <= c <= '~' for c in key):
         raise SourceError("zcode_credential_invalid")
     source = collect_zcode({"api_key": key}, now, timeout=12)
-    return {"status": source["status"], "quota": source["metrics"]["quota"], "subscription": source.get("subscription")}
+    return {"status": source["status"], "quota": source["metrics"]["quota"],
+            "subscription": {"plan": source.get("subscription", {}).get("plan")}}
+
+
+def volcengine_quota(credentials, now):
+    """只使用用户主动提供的 AccessKey 对，只调用上游固定的额度接口。"""
+    if credentials is None:
+        raise SourceError("volcengine_credential_not_connected")
+    if not isinstance(credentials, dict) or set(credentials) != {"access_key_id", "secret_access_key"}:
+        raise SourceError("volcengine_credential_invalid")
+    ak, sk = credentials["access_key_id"], credentials["secret_access_key"]
+    if (not isinstance(ak, str) or not ak.startswith("AK") or not 2 <= len(ak) <= 240 or
+            not isinstance(sk, str) or not 0 < len(sk) <= 512 or any(not '!' <= c <= '~' for c in ak + sk)):
+        raise SourceError("volcengine_credential_invalid")
+    source = collect_volcengine({"access_key_id": ak, "secret_access_key": sk}, now, timeout=12)
+    return {"status": source["status"], "quota": source["metrics"]["quota"],
+            "subscription": {"plan": source.get("subscription", {}).get("plan")}}
 
 
 def workbuddy_balance(session, now):
@@ -765,6 +782,7 @@ def main():
     parser.add_argument("--cards-update", action="store_true", help="使用标准输入中的额度更新本地卡册")
     parser.add_argument("--deepseek-only", action="store_true", help="使用标准输入中的密钥查询 DeepSeek 余额")
     parser.add_argument("--zcode-only", action="store_true", help="使用标准输入中的密钥查询 GLM Coding Plan 额度")
+    parser.add_argument("--volcengine-only", action="store_true", help="使用标准输入中的 AccessKey 对查询火山方舟 Coding Plan")
     parser.add_argument("--workbuddy-only", action="store_true", help="使用标准输入中的应用专用会话查询 WorkBuddy")
     parser.add_argument("--activity-only", action="store_true", help="只读取本机活动汇总，不查询账户")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
@@ -776,7 +794,7 @@ def main():
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
     if args.activity_only:
-        if (args.workbuddy_only or args.deepseek_only or args.zcode_only or args.cards_update or args.forecast_only or args.history_worker
+        if (args.workbuddy_only or args.deepseek_only or args.zcode_only or args.volcengine_only or args.cards_update or args.forecast_only or args.history_worker
                 or args.account_only or args.local_only or args.account_input or args.enable_minimax_account
                 or any(getattr(args, "disable_" + provider + "_account") for provider in ("codex", "kimi", "claude"))):
             raise SystemExit(2)
@@ -790,7 +808,7 @@ def main():
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
         return
     if args.workbuddy_only:
-        if args.zcode_only or args.deepseek_only or args.cards_update or args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
+        if args.volcengine_only or args.zcode_only or args.deepseek_only or args.cards_update or args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
             raise SystemExit(2)
         try:
             sys.stdin.reconfigure(encoding="utf-8")
@@ -804,6 +822,20 @@ def main():
         except (ValueError, TypeError, RecursionError):
             raise SystemExit(2) from None
         print(json.dumps(guarded(lambda: workbuddy_balance(session, time.time())), ensure_ascii=False))
+        return
+    if args.volcengine_only:
+        if args.zcode_only or args.deepseek_only or args.cards_update or args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
+            raise SystemExit(2)
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+            raw = sys.stdin.read(65537)
+            if len(raw) > 65536: raise ValueError("credential input too large")
+            data = json.loads(raw.lstrip("\ufeff"))
+            if not isinstance(data, dict) or set(data) != {"credentials"}: raise ValueError("invalid credential input")
+            credentials = data["credentials"]
+        except (ValueError, TypeError, RecursionError):
+            raise SystemExit(2) from None
+        print(json.dumps(guarded(lambda: volcengine_quota(credentials, time.time())), ensure_ascii=False))
         return
     if args.deepseek_only or args.zcode_only:
         if args.deepseek_only and args.zcode_only:

@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace AgentMeter.Windows;
 
 /// <summary>只保存账户查询开关，不保存凭据或账户数据。</summary>
-internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bool MiniMax = false, bool DeepSeek = false, bool WorkBuddy = false, bool ZCode = false)
+internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bool MiniMax = false, bool DeepSeek = false, bool WorkBuddy = false, bool ZCode = false, bool Volcengine = false)
 {
     public static AccountPreferences Enabled => new(true, true, true);
     public static AccountPreferences Disabled => new(false, false, false);
@@ -23,7 +23,8 @@ internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bo
             bool workbuddy = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("workbuddy", out _)
                 ? ReadBoolean(root, "workbuddy") : false;
             bool zcode = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("zcode", out _) ? ReadBoolean(root, "zcode") : false;
-            return new AccountPreferences(ReadBoolean(root, "codex"), ReadBoolean(root, "kimi"), ReadBoolean(root, "claude"), minimax, deepseek, workbuddy, zcode);
+            bool volcengine = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("volcengine", out _) ? ReadBoolean(root, "volcengine") : false;
+            return new AccountPreferences(ReadBoolean(root, "codex"), ReadBoolean(root, "kimi"), ReadBoolean(root, "claude"), minimax, deepseek, workbuddy, zcode, volcengine);
         }
         catch (FileNotFoundException) { return Enabled; }
         catch (DirectoryNotFoundException) { return Enabled; }
@@ -50,7 +51,7 @@ internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bo
         try
         {
             var values = new Dictionary<string, bool> { ["codex"] = Codex, ["kimi"] = Kimi, ["claude"] = Claude,
-                ["minimax"] = MiniMax, ["deepseek"] = DeepSeek, ["workbuddy"] = WorkBuddy, ["zcode"] = ZCode };
+                ["minimax"] = MiniMax, ["deepseek"] = DeepSeek, ["workbuddy"] = WorkBuddy, ["zcode"] = ZCode, ["volcengine"] = Volcengine };
             using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 created = true;

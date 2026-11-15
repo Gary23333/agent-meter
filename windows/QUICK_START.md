@@ -26,6 +26,8 @@
 
 「设置智谱 Coding Plan 密钥」用于查看智谱 GLM Coding Plan 额度，默认关闭；密钥由用户输入，保存在 Windows 凭据管理器，可在同一窗口删除。开启后经本地子进程标准输入传递，并通过 HTTPS 发往 `open.bigmodel.cn` 的用量接口，不读取浏览器或桌面登录。账号额度与本机 ZCode Token 账本分别统计；本功能目前仅经模拟测试，真实账户尚待验证。
 
+「设置火山方舟 AccessKey」用于查看火山方舟 Coding Plan 额度，默认关闭。需要火山引擎访问控制中的 AccessKey ID 和 SecretAccessKey，并应使用仅有对应查询权限的凭据；模型调用 API 密钥不能用于此功能。两项凭据作为一条记录存入 Windows 凭据管理器，可在同一窗口删除。启用查询后经本地子进程标准输入传递，并签名请求 `open.volcengineapi.com` 的 `GetCodingPlanUsage`；不调用模型、不读取浏览器登录或环境变量。本功能目前仅经模拟测试，真实账户及权限尚待验证。
+
 账户积分、Kimi 钱包及 Codex 重置卡现在收在对应账户卡片内。重置卡显示服务报告的总数和按到期顺序排列的明细，超过 3 条可展开；「已到期 · 待刷新」不会自行减少服务报告的总数。钱包与积分仍按各自单位展示，不能合并。
 
 本机会话较多时首次扫描可能较慢。账户额度和本机 Token 分别统计；未提供的数据不会当作零。运行 `AgentMeter.Windows.exe --demo` 可查看虚构演示数据；运行 `AgentMeter.Windows.exe --window` 可用普通任务栏窗口查看真实数据。

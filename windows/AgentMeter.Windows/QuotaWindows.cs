@@ -51,6 +51,7 @@ internal static class QuotaWindows
         var value = Field(window, "duration");
         if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out double n) && double.IsFinite(n) && n > 0 && n <= 100000)
             return $"{n:0.#}" + (Text(window, "unit") switch { "hour" => "小时", "day" => "天", "week" => "周", "month" => "月", "minute" => "分钟", _ => "" });
+        if (duration == 43200) return "月度";
         if (duration is > 0 and <= 100000) return $"{duration} 分钟";
         return bucket switch { "monthTotal" => "月度总额", "monthCode" => "月度代码", "credits" => "积分", "mcp" => "MCP 调用", _ => "额度" };
     }

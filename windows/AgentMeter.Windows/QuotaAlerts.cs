@@ -18,6 +18,7 @@ internal sealed class QuotaAlerts
         Inspect("Claude", Field(other, "Claude Code"), messages, now);
         Inspect("WorkBuddy", Field(other, "WorkBuddy"), messages, now);
         Inspect("ZCode", Field(other, "ZCode"), messages, now);
+        Inspect("火山方舟", Field(other, "Volcengine"), messages, now);
         var minimax = Field(other, "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {
@@ -46,7 +47,7 @@ internal sealed class QuotaAlerts
             if (bucket.Length > 80 || bucket.Any(char.IsControl)) continue;
             var minutes = Field(quota, "window_minutes");
             string period = minutes.ValueKind == JsonValueKind.Number && minutes.TryGetInt32(out int duration)
-                ? duration == 300 ? "5 小时" : duration == 10080 ? "7 天" : $"{duration} 分钟"
+                ? duration == 300 ? "5 小时" : duration == 10080 ? "7 天" : duration == 43200 ? "月度" : $"{duration} 分钟"
                 : bucket switch { "limit5h" or "5h" => "5 小时", "limit7d" or "week" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", "credits" => "积分额度", "mcp" => "MCP 调用", _ => bucket };
             string limitType = Text(quota, "limit_type") switch { "CREDIT_LIMIT" => "Coding Plan", "TOKENS_LIMIT" => "Token", "TIME_LIMIT" => "MCP", _ => "" };
             if (provider == "ZCode" && limitType is "Coding Plan" or "Token") period = limitType + " · " + period;

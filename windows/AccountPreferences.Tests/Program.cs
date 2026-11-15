@@ -150,13 +150,21 @@ try
         throw new InvalidOperationException("账户开关未正确覆盖");
     File.WriteAllText(Path.Combine(directory, "preferences.json"), "{\"codex\":true,\"kimi\":false,\"claude\":true}");
     var oldPreferences = AccountPreferences.Load(directory);
-    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy || oldPreferences.ZCode)
+    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy || oldPreferences.ZCode || oldPreferences.Volcengine)
         throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
     var deepseekPreferences = oldPreferences with { DeepSeek = true, WorkBuddy = true };
     deepseekPreferences.Save(directory);
     if (AccountPreferences.Load(directory) != deepseekPreferences) throw new InvalidOperationException("DeepSeek 开关保存失败");
     var zcodePreferences = deepseekPreferences with { ZCode = true }; zcodePreferences.Save(directory);
     if (AccountPreferences.Load(directory) != zcodePreferences) throw new InvalidOperationException("智谱账户开关保存失败");
+    var volcPreferences = zcodePreferences with { Volcengine = true }; volcPreferences.Save(directory);
+    if (AccountPreferences.Load(directory) != volcPreferences) throw new InvalidOperationException("火山方舟账户开关保存失败");
+    if (!VolcengineKeyStore.Valid(new VolcengineKeys("AK-synthetic", "synthetic-secret")) ||
+        VolcengineKeyStore.Valid(new VolcengineKeys("model-api-key", "secret")) ||
+        VolcengineKeyStore.Valid(new VolcengineKeys("AK-valid", "bad\nsecret")))
+        throw new InvalidOperationException("火山方舟凭据格式校验失败");
+    using (var input = JsonDocument.Parse(VolcengineKeyStore.Input(new VolcengineKeys("bad", "secret"))))
+        if (input.RootElement.GetProperty("credentials").ValueKind != JsonValueKind.Null) throw new InvalidOperationException("无效凭据不能传给后端");
     if (!ZCodeKeyStore.IsValid("synthetic-key") || ZCodeKeyStore.IsValid("bad key") || ZCodeKeyStore.IsValid("bad\nkey"))
         throw new InvalidOperationException("智谱密钥格式校验失败");
     using (var input = JsonDocument.Parse(ZCodeKeyStore.Input("bad key")))
