@@ -19,4 +19,6 @@ WorkBuddy 登录使用 `%LOCALAPPDATA%\AgentMeter\webprofiles\workbuddy` 独立�
 
 用户主动导出的 JSON / CSV 只包含固定来源名称、周期、数据完整状态与本机 Token 汇总；不包含账户快照、凭据、会话、路径、本机积分或金额估算。导出后文件由用户保存在选定位置；未知值保留为空或 null。
 
+用量页面周期保存在 `usage-view.json`，只记录周期选项，不包含账户或会话数据。
+
 返回[项目首页](../README.md)。

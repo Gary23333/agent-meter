@@ -36,7 +36,9 @@
 
 - [Alpha 14 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.14) 对应提交 `859e948`。Windows 与跨平台检查通过；隔离 Windows 构建机验证了托盘来源反复切换、图标克隆与释放、细轨道拖动、重置卡展开和收起。生成 63 张虚构数据预览，七种账户主题、深浅色到期状态、主要页面和图标尺寸已检查。最终 ZIP 独立解压验证通过，SHA-256 为 `120044d0b297632498ed9b62f81a662965251f4e1c8f603a551b210ede92e26f`。真实新增账户与多屏、高 DPI、隐藏图标区仍需实体设备验收。
 
-- 当前公开 [Alpha 15 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.15) 对应提交 `ebe7419`。Windows 构建及跨平台检查通过；结构化本机 Token 汇总导出通过虚构数据隐私、未知值和零值检查。隔离 Windows 构建机生成 64 张演示预览，已查看窄面板导出入口；ZIP 独立解压并验证历史、隐私字段、卡册及预测缓存。SHA-256：`6fb3301b108a8d640d6b46c4334c488558fc505a79d58ff69bb1549de2a2e393`。真实保存对话框及实体设备验收仍待完成。
+- [Alpha 15 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.15) 对应提交 `ebe7419`。Windows 构建及跨平台检查通过；结构化本机 Token 汇总导出通过虚构数据隐私、未知值和零值检查。隔离 Windows 构建机生成 64 张演示预览，已查看窄面板导出入口；ZIP 独立解压并验证历史、隐私字段、卡册及预测缓存。SHA-256：`6fb3301b108a8d640d6b46c4334c488558fc505a79d58ff69bb1549de2a2e393`。真实保存对话框及实体设备验收仍待完成。
+
+- 当前公开 [Alpha 16 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.16) 对应提交 `44180cb`；四周期切换、偏好、分周期费用与主题图表通过隔离检查。Windows 和跨平台检查通过；ZIP 独立解压验证通过，SHA-256：`9bfe8176501d200343415534ca2906e5dbc92e14626b80b899f4955998154f6d`。真实账户与多屏、高 DPI 仍需实体设备验收。
 
 ## 安全与数据边界
 
