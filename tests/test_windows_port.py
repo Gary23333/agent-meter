@@ -469,9 +469,7 @@ class WindowsBackendTests(unittest.TestCase):
             variables = {'KIMI_CODE_HOME': str(kimi), 'XDG_DATA_HOME': str(xdg), 'OPENCODE_DB': 'custom.db'}
             with patch.dict('os.environ', variables), \
                  patch.object(backend, 'collect_kimi_tokens', return_value={'status': 'available'}) as kimi_read, \
-                 patch.object(backend, 'collect_opencode_tokens', return_value={'metrics': {'tokens': {'status': 'available'}}}) as opencode_read, \
-                 patch.object(backend, 'opencode_database') as opencode_db:
-                opencode_db.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = None
+                 patch.object(backend, 'collect_opencode_tokens', return_value={'metrics': {'tokens': {'status': 'available'}}}) as opencode_read:
                 jobs = backend.histories(home, 123)
                 jobs['Kimi Code'](); jobs['OpenCode']()
                 kimi_read.assert_called_once_with(home, 123, sessions_root=kimi / 'sessions')
@@ -494,7 +492,7 @@ class WindowsBackendTests(unittest.TestCase):
             conn.commit(); conn.close()
             with patch.dict('os.environ', {'OPENCODE_DB': str(db)}):
                 result = backend.histories(Path(root), now)['OpenCode']()
-            self.assertEqual((result['status'], result['reason']), ('partial', 'opencode_v2_unread'))
+            self.assertEqual((result['status'], result['reason']), ('partial', 'opencode_v2_partial'))
             self.assertEqual(result['value']['periods']['all']['totals']['total_tokens'], 14)
 
     def test_qoder_credits_are_separate_and_keep_decimal_strings(self):
@@ -674,6 +672,9 @@ class WindowsBackendTests(unittest.TestCase):
             'one': {'status': 'not_connected', 'reason': 'unsupported_schema'},
             'two': {'status': 'not_connected', 'reason': 'sessions_not_found'}}}, 1800000000)
         self.assertEqual(result['status'], 'partial')
+        v2 = backend.compact_activity({'activities': [], 'sources_meta': {
+            'opencode': {'status': 'partial', 'reason': 'opencode_v2_activity_partial'}}}, 1800000000)
+        self.assertEqual((v2['status'], v2['sources']['OpenCode']), ('partial', 'partial'))
 
     def test_activity_coverage_exposes_only_safe_statuses(self):
         result = backend.compact_activity({'activities': [], 'sources_meta': {

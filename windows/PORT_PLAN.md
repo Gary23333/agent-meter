@@ -24,7 +24,7 @@
 - [Alpha 24 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.24) 对应提交 `e9c33e6`；Windows 和跨平台检查通过。提醒阈值、旧设置兼容、过期数据过滤和异步账户结果经过模拟检查，隔离环境菜单演示与便携包校验通过；系统通知显示仍待实体设备验收。SHA-256：`d49ff83bd586bfed0e21efd7b69a847076354bc26c36ac6f1994d6365ed5ce78`。
 
 - Codex 账户额度和本机历史已在开发电脑上读取；Codex 累计 Token 与原始记录独立重算一致。WorkBuddy 和 ZCode 今日及累计账本也与独立重算一致；不代表其他账户或版本均已验证。
-- Kimi、OpenCode、MiniMax Code、MiMo Code、DevEco 和 Qoder CN 的新增读取器目前以模拟数据验证为主。Kimi 账户通过模拟本地服务测试；Claude Code 账户使用模拟本地凭据及模拟接口响应测试；两者均尚无真实 Windows 账户验收。OpenCode 检测到新版消息时标记统计不完整。
+- Kimi、OpenCode、MiniMax Code、MiMo Code、DevEco 和 Qoder CN 的新增读取器目前以模拟数据验证为主。Kimi 账户通过模拟本地服务测试；Claude Code 账户使用模拟本地凭据及模拟接口响应测试；两者均尚无真实 Windows 账户验收。OpenCode v2 助手消息和近期活动经过模拟测试；压缩记录和无法识别的数据标记不完整，真实账本仍待验收。
 - 真实大账本首次扫描约 91 秒，同一进程内第二次约 1.3 秒；缓存只保存在内存，文件变化会重新读取。测试结果只适用于本机数据规模。
 - GitHub Windows 运行器已构建便携包并通过隔离数据和程序启动检查；开发电脑也验证了解压启动。完整托盘交互与另一台独立实体电脑尚未验证。
 - 此前公开的 [Alpha 7 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.7) 并非完整移植，尚未代码签名。该包对应提交 `033d7b9`；Windows 构建和跨平台检查通过，解压包已用隔离账本验证价格、活动汇总隐私、徽章与卡片、账户开关、DeepSeek 默认关闭和预测缓存，卡册展开与桌宠窗口在隔离构建机完成基础检查。主题、通知、完整托盘交互和真实新增账户仍待实机验收。

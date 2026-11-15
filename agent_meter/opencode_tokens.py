@@ -122,20 +122,57 @@ def collect_message_db_tokens(path, now, *, source_id, app, coverage,
                               missing_code="opencode_db_not_found",
                               read_code="opencode_db_read_failed",
                               schema_code="unsupported_opencode_schema",
-                              zone=ZoneInfo("Asia/Shanghai")):
+                              zone=ZoneInfo("Asia/Shanghai"), include_v2=False):
     """Shared reader for opencode-family message databases (one row per response)."""
     with readonly_database(path, missing_code=missing_code, read_code=read_code) as conn:
-        validate_schema(conn, schema_code=schema_code)
+        legacy_columns = {r[1] for r in conn.execute("PRAGMA table_info(message)")}
+        v2_columns = {r[1] for r in conn.execute("PRAGMA table_info(session_message)")} if include_v2 else set()
+        legacy_ok = COLUMNS <= legacy_columns
+        v2_ok = {"id", "type", "time_created", "data"} <= v2_columns
+        if not legacy_ok and not (include_v2 and v2_ok):
+            raise SourceError(schema_code)
         rows = []
         malformed = 0
-        for time_created, data in conn.execute("SELECT time_created, data FROM message WHERE time_created <= ?", (now*1000,)):
-            parsed = _tokens(data)
-            if parsed is None:
-                if '"tokens"' in (data or ""):
-                    malformed += 1
-                continue
-            day = datetime.fromtimestamp(time_created / 1000, zone).date().isoformat()
-            rows.append((day, time_created, *parsed))
+        v2_present = bool(v2_columns and conn.execute("SELECT 1 FROM session_message LIMIT 1").fetchone())
+        v2_partial = bool(v2_present and (not v2_ok or (legacy_ok and "id" not in legacy_columns)))
+        if legacy_ok:
+            for time_created, data in conn.execute("SELECT time_created, data FROM message WHERE time_created <= ?", (now*1000,)):
+                parsed = _tokens(data)
+                if parsed is None:
+                    if '"tokens"' in (data or ""):
+                        malformed += 1
+                    continue
+                day = datetime.fromtimestamp(time_created / 1000, zone).date().isoformat()
+                rows.append((day, time_created, *parsed))
+        if include_v2 and v2_present and v2_ok and not v2_partial:
+            # 新版迁移保留消息 ID；优先使用旧表中相同 ID，避免迁移记录重复计数。
+            exclude_legacy = " AND NOT EXISTS (SELECT 1 FROM message AS old WHERE old.id = newer.id)" if legacy_ok else ""
+            try:
+                query = ("SELECT time_created, json_valid(data), CASE WHEN json_valid(data) THEN json_extract(data, '$.model.id') END, "
+                         "CASE WHEN json_valid(data) THEN json_extract(data, '$.tokens') END "
+                         "FROM session_message AS newer WHERE type = 'assistant' AND time_created <= ?" + exclude_legacy)
+                for time_created, valid, model, tokens in conn.execute(query, (now * 1000,)):
+                    if not valid:
+                        v2_partial = True
+                        continue
+                    try:
+                        decoded = json.loads(tokens) if isinstance(tokens, str) else None
+                    except ValueError:
+                        v2_partial = True
+                        continue
+                    parsed = _tokens(json.dumps({"role": "assistant", "modelID": model,
+                                                 "tokens": decoded}))
+                    if parsed is None:
+                        # 正在生成的消息可能尚无用量；其余异常不视作完整数据。
+                        if tokens is not None: v2_partial = True
+                        continue
+                    day = datetime.fromtimestamp(time_created / 1000, zone).date().isoformat()
+                    rows.append((day, time_created, *parsed))
+                # 压缩消息可能包含单独的模型调用，暂不猜测其与助手消息的归属。
+                if conn.execute("SELECT 1 FROM session_message WHERE type = 'compaction' AND time_created <= ? LIMIT 1", (now * 1000,)).fetchone():
+                    v2_partial = True
+            except (sqlite3.OperationalError, ValueError, TypeError):
+                v2_partial = True
     periods = {p: summarize(rows, *period_bounds(now, p, zone), app=app) for p in ("today", "7d", "30d", "all")}
     for p in periods.values():
         p["timezone"] = str(zone)
@@ -154,10 +191,10 @@ def collect_message_db_tokens(path, now, *, source_id, app, coverage,
         "coverage": coverage,
         "dedup_rule": "one_assistant_message_per_response",
         "malformed_token_rows": malformed,
-    })
+    }, status="partial" if v2_partial else "available", reason="opencode_v2_partial" if v2_partial else None)
     return out
 
 
 def collect_opencode_tokens(path, now, zone=ZoneInfo("Asia/Shanghai")):
     return collect_message_db_tokens(path, now, source_id="opencode", app="opencode",
-                                     coverage="opencode_local_message_db", zone=zone)
+                                     coverage="opencode_local_message_db", zone=zone, include_v2=True)

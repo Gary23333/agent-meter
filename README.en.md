@@ -64,12 +64,12 @@ The table describes the current `main` branch. Check the release notes for the e
 | DeepSeek Harness | Not yet | Local session logs, including supported compressed logs |
 | DeepSeek API | API balance, explicit key and opt-in (synthetic validation) | No direct local history; DeepSeek Harness is separate |
 | Kimi Code / legacy Kimi CLI | Existing Kimi Code local server (synthetic validation) | Local session logs |
-| OpenCode | Not yet | Local v1 message database; v2 records are flagged as incomplete |
+| OpenCode | Not yet | Local v1 / v2 assistant messages, deduplicated by ID; some compaction usage remains incomplete |
 | MiniMax Code | Up to five separate accounts or an environment-variable key, explicitly enabled (synthetic validation) | Local usage database |
 | MiMo Code, DevECo | Not yet | Local usage databases |
 | Qoder CN | Not yet | Local credits consumed, not token usage or account balance |
 
-The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers have synthetic Windows tests; they have not been validated against real installations on this Windows machine. OpenCode's v2 messages are not yet counted. The application reports only data it can read. A provider or account may omit fields or use an unsupported format. Local history is limited to records on this computer; it is not necessarily the same as account-wide usage, invoices, or remaining plan quota. Period boundaries currently use **Asia/Shanghai**. Credits from different services are not combined.
+The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers have synthetic Windows tests; they have not been validated against real installations on this Windows machine. OpenCode v2 compaction and unsupported records are flagged as incomplete. The application reports only data it can read. A provider or account may omit fields or use an unsupported format. Local history is limited to records on this computer; it is not necessarily the same as account-wide usage, invoices, or remaining plan quota. Period boundaries currently use **Asia/Shanghai**. Credits from different services are not combined.
 
 ## Getting started
 

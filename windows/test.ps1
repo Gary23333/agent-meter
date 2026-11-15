@@ -10,7 +10,7 @@ $testCases = @(
     'tests.test_local_tokens.OpenCodeTests', 'tests.test_local_tokens.QoderCreditsTests',
     'tests.test_kimi_tokens.KimiTokenTests', 'tests.test_mimocode_tokens', 'tests.test_claude_code',
     'tests.test_prices.PriceTableTests', 'tests.test_prices.PeakPriceTests',
-    'tests.test_activity.CodexImageTests', 'tests.test_activity.KimiTests', 'tests.test_activity.CollectActivityTests',
+    'tests.test_activity.CodexImageTests', 'tests.test_activity.KimiTests', 'tests.test_activity.OpencodeTests', 'tests.test_activity.CollectActivityTests',
     'tests.test_reset_forecast.NormalizeTests', 'tests.test_reset_forecast.CombineTests',
     'tests.test_reset_forecast.CountdownTests', 'tests.test_reset_forecast.HistoryTests',
     'tests.test_reset_forecast.CollectTests', 'tests.test_reset_forecast.TransportTests',

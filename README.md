@@ -94,13 +94,13 @@
 | DeepSeek Harness | 暂不支持 | 本机会话日志，包含受支持的压缩日志 |
 | DeepSeek API | API 余额，主动添加密钥并启用（模拟验证） | 不直接提供本机历史；DeepSeek Harness 另列 |
 | Kimi Code / 旧版 Kimi CLI | Kimi Code 已运行本地服务（模拟验证） | 本机会话日志 |
-| OpenCode | 暂不支持 | 本地 v1 消息数据库；检测到 v2 记录时提示统计不完整 |
+| OpenCode | 暂不支持 | 本地 v1 / v2 助手消息，迁移记录按编号去重；部分压缩记录暂未计入 |
 | MiniMax Code | 最多 5 个独立账户或环境变量密钥，主动开启（模拟验证） | 本机用量数据库 |
 | 小米 MiMo 平台 | 实验性独立网页登录与余额／Token Plan，默认关闭（模拟验证） | 不直接提供本机历史 |
 | MiMo Code、DevECo | 暂不支持 | 本机用量数据库 |
 | Qoder CN | 暂不支持 | 本机积分消耗，不是 Token 或账户余额 |
 
-Codex 账户和部分本机账本已有真实数据核对；其他新增账户接入目前以模拟测试为主。OpenCode v2 消息暂不计入；Windows 版尚未完成所有上游数据源、账户隔离、3D 桌宠和动效。逐项证据与待验收内容见[移植计划](windows/PORT_PLAN.md)。
+Codex 账户和部分本机账本已有真实数据核对；其他新增账户接入目前以模拟测试为主。OpenCode 压缩记录和无法识别的数据会标记为不完整；Windows 版尚未完成所有上游数据源、账户隔离、3D 桌宠和动效。逐项证据与待验收内容见[移植计划](windows/PORT_PLAN.md)。
 
 ## 数字怎么理解
 

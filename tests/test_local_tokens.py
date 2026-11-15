@@ -115,6 +115,58 @@ class OpenCodeTests(unittest.TestCase):
             groups = {g["model"]: g for g in value["periods"]["all"]["groups"]}
             self.assertIn("other", groups)
 
+    def test_v2_messages_and_migration_deduplication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "opencode.db"
+            now_ms = int(NOW * 1000) - 1000
+            opencode_db(db, [("same", now_ms, message(now_ms, input=10, output=2))])
+            conn = sqlite3.connect(db)
+            conn.execute("CREATE TABLE session_message(id TEXT PRIMARY KEY, type TEXT, time_created INTEGER, data TEXT)")
+            def v2(n, model="new"):
+                return json.dumps({"model": {"id": model, "providerID": "demo"}, "tokens":
+                                   {"input": n, "output": 3, "reasoning": 1, "cache": {"read": 2, "write": 0}},
+                                   "content": [{"text": "不应读取或展示的内容"}]})
+            conn.executemany("INSERT INTO session_message VALUES (?, ?, ?, ?)", [
+                ("same", "assistant", now_ms, v2(1000)),
+                ("new", "assistant", now_ms, v2(20)),
+                ("user", "user", now_ms, v2(1000)),
+                ("future", "assistant", now_ms + 100000, v2(1000)),
+            ])
+            conn.commit(); conn.close()
+            result = collect_opencode_tokens(db, NOW, ZONE)["metrics"]["tokens"]
+            self.assertEqual(result["status"], "available")
+            totals = result["value"]["periods"]["all"]["totals"]
+            self.assertEqual((totals["requests"], totals["fresh_input"], totals["total_tokens"]), (2, 30, 38))
+            groups = result["value"]["periods"]["all"]["groups"]
+            self.assertIn("new", [group["model"] for group in groups])
+            self.assertNotIn("不应读取或展示的内容", json.dumps(result, ensure_ascii=False))
+
+    def test_v2_only_and_unresolved_compaction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "opencode.db"
+            conn = sqlite3.connect(db)
+            conn.execute("CREATE TABLE session_message(id TEXT PRIMARY KEY, type TEXT, time_created INTEGER, data TEXT)")
+            payload = json.dumps({"model": {"id": "v2"}, "tokens":
+                                  {"input": 5, "output": 2, "reasoning": 0, "cache": {"read": 0, "write": 0}}})
+            conn.execute("INSERT INTO session_message VALUES (?, ?, ?, ?)", ("new", "assistant", int(NOW * 1000) - 1, payload))
+            conn.commit(); conn.close()
+            result = collect_opencode_tokens(db, NOW, ZONE)["metrics"]["tokens"]
+            self.assertEqual(result["status"], "available")
+            self.assertEqual(result["value"]["periods"]["all"]["totals"]["total_tokens"], 7)
+            conn = sqlite3.connect(db)
+            conn.execute("INSERT INTO session_message VALUES (?, ?, ?, ?)", ("compact", "compaction", int(NOW * 1000) - 1, payload))
+            conn.commit(); conn.close()
+            result = collect_opencode_tokens(db, NOW, ZONE)["metrics"]["tokens"]
+            self.assertEqual((result["status"], result["reason"]), ("partial", "opencode_v2_partial"))
+            self.assertEqual(result["value"]["periods"]["all"]["totals"]["total_tokens"], 7)
+            conn = sqlite3.connect(db)
+            conn.execute("DELETE FROM session_message WHERE id = 'compact'")
+            conn.execute("INSERT INTO session_message VALUES (?, ?, ?, ?)", ("bad", "assistant", int(NOW * 1000) - 1, "{bad"))
+            conn.commit(); conn.close()
+            result = collect_opencode_tokens(db, NOW, ZONE)["metrics"]["tokens"]
+            self.assertEqual((result["status"], result["reason"]), ("partial", "opencode_v2_partial"))
+            self.assertEqual(result["value"]["periods"]["all"]["totals"]["total_tokens"], 7)
+
     def test_missing_db(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "opencode.db"

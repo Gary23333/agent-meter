@@ -1301,7 +1301,7 @@ internal sealed partial class MeterWindow : Form
                 string? extra = allTokens.HasValue && weekTokens.HasValue && monthTokens.HasValue ? "累计 " + FormatNumber(allTokens.Value) + " tokens" : null;
                 if (GetString(item.Value, "status", "") == "partial")
                 {
-                    string detail = GetString(item.Value, "reason", "") == "opencode_v2_unread" ? "新版记录未计入" : "部分记录未读取";
+                    string detail = GetString(item.Value, "reason", "") == "opencode_v2_partial" ? "部分新版记录未计入" : "部分记录未读取";
                     if (extra is null) note += " · " + detail; else extra += " · " + detail;
                 }
                 var estimate = GetValue(GetValue(item.Value, "estimates"), usagePeriod);
@@ -1717,7 +1717,7 @@ internal sealed partial class MeterWindow : Form
         "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or "zcode_db_not_found" or "dsh_sessions_not_found" => "未找到本机会话记录",
         "zstd_unavailable" => "部分压缩会话无法读取",
         "unsupported_qoder_usage_schema" => "当前 Qoder 记录格式暂不支持",
-        "opencode_v2_unread" => "检测到新版记录，暂未计入",
+        "opencode_v2_partial" => "部分新版记录暂未计入",
         "unsupported_opencode_schema" => "当前 OpenCode 数据格式暂不支持",
         _ => "未连接、未提供数据或读取失败"
     };

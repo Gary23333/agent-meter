@@ -26,7 +26,7 @@ from agent_meter.prices import PriceTable, estimate_source_cost, normalize_model
 from agent_meter.kimi_tokens import collect_kimi_tokens
 from agent_meter.kimi import collect_kimi
 from agent_meter.kimi_legacy_tokens import collect_kimi_legacy_tokens
-from agent_meter.opencode_tokens import collect_opencode_tokens, readonly_database as opencode_database
+from agent_meter.opencode_tokens import collect_opencode_tokens
 from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
 from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
@@ -214,14 +214,7 @@ def histories(home, now):
     def opencode():
         if opencode_override == ":memory:":
             raise SourceError("opencode_memory_database")
-        result = collect_opencode_tokens(opencode_path, now)["metrics"]["tokens"]
-        # 上游解析器尚不读取 OpenCode v2 消息；发现新版记录时标记不完整。
-        with opencode_database(opencode_path) as connection:
-            has_v2 = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_message'").fetchone()
-            if has_v2 and connection.execute("SELECT 1 FROM session_message LIMIT 1").fetchone():
-                result["status"] = "partial"
-                result["reason"] = "opencode_v2_unread"
-        return result
+        return collect_opencode_tokens(opencode_path, now)["metrics"]["tokens"]
     return {
         "Codex": lambda: codex_tokens_metric(codex / "sessions", codex / "archived_sessions", now),
         "Claude Code": lambda: claude_tokens_metric(claude / "projects", now),
@@ -285,7 +278,7 @@ def compact_activity(payload, now):
         item["last_updated"] = max(item["last_updated"], int(stamp))
     meta = payload.get("sources_meta")
     incomplete = bool(invalid_sources) or not isinstance(meta, dict) or any(isinstance(item, dict) and
-        (item.get("status") == "error" or (item.get("status") == "not_connected" and item.get("reason") and
+        (item.get("status") in {"error", "partial"} or (item.get("status") == "not_connected" and item.get("reason") and
          not str(item.get("reason")).endswith("_not_found") and item.get("reason") != "disabled_by_user")) for item in meta.values())
     sources = {}
     if isinstance(meta, dict):
@@ -294,8 +287,8 @@ def compact_activity(payload, now):
             if not isinstance(item, dict):
                 continue
             status, reason = item.get("status"), item.get("reason")
-            if status == "available":
-                sources[name] = "partial" if key in invalid_sources else "available"
+            if status in {"available", "partial"}:
+                sources[name] = "partial" if status == "partial" or key in invalid_sources else "available"
             elif status == "not_connected" and reason == "disabled_by_user":
                 sources[name] = "disabled"
             elif status == "not_connected" and isinstance(reason, str) and reason.endswith("_not_found"):
