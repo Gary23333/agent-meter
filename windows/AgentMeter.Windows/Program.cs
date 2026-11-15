@@ -1306,8 +1306,8 @@ internal sealed partial class MeterWindow : Form
         var distinct = GetNumber(collection, "distinct");
         AddCard("额度卡片", distinct.HasValue ? $"{distinct:0} / {cards.GetArrayLength()} 种已收集" : "本机卡册",
                 "额度窗口达到对应用量时掉落", null);
-        var toggle = new Button { Text = showAllQuotaCards ? "只看已收集卡片" : "查看全部额度卡片", Height = 38,
-            Margin = new Padding(0, 0, 0, 12), BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+        var toggle = new RoundedActionButton(theme) { Text = showAllQuotaCards ? "只看已收集卡片" : "查看全部额度卡片", Height = 38,
+            Margin = new Padding(0, 0, 0, 12), ForeColor = Primary };
         toggle.FlatAppearance.BorderColor = theme.Border;
         toggle.Click += (_, _) =>
         {
@@ -1333,21 +1333,19 @@ internal sealed partial class MeterWindow : Form
         AddHeading("应用概览", "额度、本机用量与活动记录分别统计");
         var activity = GetValue(root, "activity");
         var apps = ApplicationOverview.Build(root);
-        var filters = new Panel { Height = 42, Margin = new Padding(0, 0, 0, 12), BackColor = Background };
-        var buttons = new List<Button>();
+        var filters = new NavigationStrip { Height = 40, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var buttons = new List<NavigationTab>();
         foreach (var (filter, label) in new[] { (ApplicationFilter.All, "全部"), (ApplicationFilter.Recent, "近期有更新"), (ApplicationFilter.Other, "其他") })
         {
-            var button = new Button { Text = label, Name = "app-filter-" + filter, Height = 34, FlatStyle = FlatStyle.Flat,
-                BackColor = applicationFilter == filter ? theme.Selected : Card,
-                ForeColor = applicationFilter == filter ? Color.White : Primary, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold) };
-            button.FlatAppearance.BorderSize = 0;
+            var button = new NavigationTab { Text = label, Name = "app-filter-" + filter, Font = tabRegular };
+            button.SetAppearance(theme, applicationFilter == filter);
             button.Click += (_, _) => { applicationFilter = filter; if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); } };
             buttons.Add(button); filters.Controls.Add(button);
         }
         filters.Resize += (_, _) =>
         {
-            int width = Math.Max(1, (filters.ClientSize.Width - 8) / 3);
-            for (int index = 0; index < buttons.Count; index++) { buttons[index].Width = width; buttons[index].Left = index * (width + 4); }
+            int width = Math.Max(1, (filters.ClientSize.Width - 6) / 3);
+            for (int index = 0; index < buttons.Count; index++) buttons[index].Bounds = new Rectangle(3 + index * width, 3, width, 34);
         };
         content.Controls.Add(filters);
         AddHeading("数据覆盖", "近 15 分钟有记录更新 ≠ 应用正在运行");

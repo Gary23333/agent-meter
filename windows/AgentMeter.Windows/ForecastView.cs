@@ -156,8 +156,8 @@ internal sealed partial class MeterWindow
         }
         if (events.Length > 3)
         {
-            var toggle = new Button { Name = "forecast-history-toggle", Text = allForecastHistory ? "收起历史事件" : $"查看全部 {events.Length} 条事件", Height = 34,
-                FlatStyle = FlatStyle.Flat, ForeColor = Accent, BackColor = Card, Margin = new Padding(0, 0, 0, 12) };
+            var toggle = new RoundedActionButton(theme) { Name = "forecast-history-toggle", Text = allForecastHistory ? "收起历史事件" : $"查看全部 {events.Length} 条事件", Height = 34,
+                AccentText = true, Margin = new Padding(0, 0, 0, 12) };
             toggle.FlatAppearance.BorderColor = theme.Border;
             toggle.Click += (_, _) => { allForecastHistory = !allForecastHistory; using var snapshot = JsonDocument.Parse(lastSnapshot!); Render(snapshot.RootElement); };
             content.Controls.Add(toggle);

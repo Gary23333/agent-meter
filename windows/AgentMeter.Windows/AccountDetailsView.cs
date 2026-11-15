@@ -87,8 +87,8 @@ internal sealed partial class MeterWindow
             top += (shown + 2) / 3 * 82;
             if (resets.Cards.Count > 3)
             {
-                var toggle = new Button { Name = "account-reset-toggle", Text = expandedResetCredits ? "收起到期明细" : $"查看全部 {resets.Cards.Count} 条明细",
-                    Left = 16, Top = top, Height = 28, FlatStyle = FlatStyle.Flat, BackColor = Card, ForeColor = Accent, Font = new Font(Font.FontFamily, 8.5F) };
+                var toggle = new RoundedActionButton(theme) { Name = "account-reset-toggle", Text = expandedResetCredits ? "收起到期明细" : $"查看全部 {resets.Cards.Count} 条明细",
+                    Left = 16, Top = top, Height = 28, AccentText = true, Font = new Font(Font.FontFamily, 8.5F) };
                 toggle.FlatAppearance.BorderColor = theme.Border;
                 toggle.Click += (_, _) => {
                     expandedResetCredits = !expandedResetCredits; var scroll = content.AutoScrollPosition;

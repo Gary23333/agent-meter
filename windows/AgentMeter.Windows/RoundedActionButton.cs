@@ -7,6 +7,7 @@ internal sealed class RoundedActionButton : Button
 {
     readonly VisualTheme theme;
     bool hovered, pressed;
+    public bool AccentText { get; set; }
     public RoundedActionButton(VisualTheme theme)
     {
         this.theme = theme; DoubleBuffered = true;
@@ -29,7 +30,7 @@ internal sealed class RoundedActionButton : Button
         using var fill = new SolidBrush(pressed || hovered ? theme.Border : theme.Card);
         using var border = new Pen(theme.Border);
         e.Graphics.FillPath(fill, shape); e.Graphics.DrawPath(border, shape);
-        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, Enabled ? theme.Primary : theme.Secondary,
+        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, Enabled ? (AccentText ? theme.Accent : theme.Primary) : theme.Secondary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -6, -6));
     }
