@@ -4,7 +4,8 @@ internal sealed partial class MeterContext
 {
     void ConfigureStartupMenu(ContextMenuStrip menu)
     {
-        var item = new ToolStripMenuItem("登录 Windows 时启动") { Enabled = false };
+        var item = new ToolStripMenuItem("登录时启动（需系统允许）") { Enabled = false,
+            ToolTipText = "注册启动项后，仍受 Windows 启动应用设置控制" };
         menu.Items.Add(item);
         StartupRegistration? startup = null;
         try
@@ -13,7 +14,7 @@ internal sealed partial class MeterContext
             item.Checked = startup.Enabled(); item.Enabled = true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.Security.SecurityException)
-        { item.ToolTipText = "启动项不可用，请检查 Windows 启动应用设置"; }
+        { item.Text = "登录启动（配置不可用）"; item.ToolTipText = "启动项无法读取或不属于当前程序路径"; }
         item.Click += (_, _) => {
             try { startup!.Set(!item.Checked); item.Checked = startup.Enabled(); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.Security.SecurityException)
