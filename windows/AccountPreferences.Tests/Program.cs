@@ -12,6 +12,17 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    using (var comparison = JsonDocument.Parse("""{"comparable_days":3,"current_comparable_tokens":150,"previous_comparable_tokens":100}"""))
+        if (ReportComparison.Read(comparison.RootElement)?.Change != "+50%") throw new InvalidOperationException("相同天数的报告对照错误");
+    using (var zero = JsonDocument.Parse("""{"comparable_days":1,"current_comparable_tokens":5,"previous_comparable_tokens":0}"""))
+        if (ReportComparison.Read(zero.RootElement)?.Change != "上期为 0 · 不计算增幅") throw new InvalidOperationException("上期为零不能计算增长率");
+    using (var firstDay = JsonDocument.Parse("""{"comparable_days":0,"current_comparable_tokens":0,"previous_comparable_tokens":0}"""))
+        if (ReportComparison.Read(firstDay.RootElement) is not null) throw new InvalidOperationException("首日不能显示虚假的对照");
+    using (var invalidComparison = JsonDocument.Parse("""{"comparable_days":true,"current_comparable_tokens":3,"previous_comparable_tokens":2}"""))
+        if (ReportComparison.Read(invalidComparison.RootElement) is not null) throw new InvalidOperationException("无效对照字段不应中断报告");
+    using (var comparableReport = JsonDocument.Parse("""{"calendar_report":{"periods":{"week":{"previous_start":"2025-12-22","current_start":"2025-12-29","current_end":"2026-01-01","previous_tokens":50,"current_tokens":300,"comparable_days":3,"current_comparable_tokens":150,"previous_comparable_tokens":100},"month":{"previous_start":"2025-12-01","current_start":"2026-01-01","current_end":"2026-01-01","previous_tokens":180,"current_tokens":200}}}}"""))
+        if (!CalendarReportExport.Create(comparableReport.RootElement).Contains("前 3 个自然日") || !CalendarReportExport.Create(comparableReport.RootElement).Contains("变化 +50%"))
+            throw new InvalidOperationException("报告导出缺少可比口径");
     var usagePreferencesDirectory = Path.Combine(directory, "usage-period");
     if (UsagePeriodPreferences.Load(usagePreferencesDirectory) != "today") throw new InvalidOperationException("默认用量周期错误");
     UsagePeriodPreferences.Save(usagePreferencesDirectory, "30d");

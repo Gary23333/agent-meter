@@ -374,9 +374,13 @@ def calendar_report(result):
     month = today.replace(day=1)
     last_month = (month - timedelta(days=1)).replace(day=1)
     bounds = {"week": (week - timedelta(days=7), week), "month": (last_month, month)}
-    out = {kind: {"previous_start": previous.isoformat(), "current_start": current.isoformat(),
-                  "current_end": today.isoformat(), "previous_tokens": 0, "current_tokens": 0}
-           for kind, (previous, current) in bounds.items()}
+    out = {}
+    for kind, (previous, current) in bounds.items():
+        # 按完整自然日对齐，当前日期仍在进行中；上月天数不足时两边都截到共同长度。
+        completed = min((today - current).days, (current - previous).days)
+        out[kind] = {"previous_start": previous.isoformat(), "current_start": current.isoformat(),
+                     "current_end": today.isoformat(), "previous_tokens": 0, "current_tokens": 0,
+                     "comparable_days": completed, "current_comparable_tokens": 0, "previous_comparable_tokens": 0}
     sources = 0
     incomplete = False
     for item in result["history"].values():
@@ -412,6 +416,11 @@ def calendar_report(result):
                     out[kind]["current_tokens"] += count
                 elif previous <= day < current:
                     out[kind]["previous_tokens"] += count
+                elapsed = out[kind]["comparable_days"]
+                if current <= day < current + timedelta(days=elapsed):
+                    out[kind]["current_comparable_tokens"] += count
+                elif previous <= day < previous + timedelta(days=elapsed):
+                    out[kind]["previous_comparable_tokens"] += count
     return {"periods": out, "sources": sources, "incomplete": incomplete, "timezone": "Asia/Shanghai"} if sources else None
 
 

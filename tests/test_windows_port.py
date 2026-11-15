@@ -542,11 +542,26 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(report['periods']['week']['current_start'], '2025-12-29')
         self.assertEqual(report['periods']['week']['current_tokens'], 300)
         self.assertEqual(report['periods']['week']['previous_tokens'], 50)
+        self.assertEqual(report['periods']['week']['comparable_days'], 3)
+        self.assertEqual(report['periods']['week']['current_comparable_tokens'], 100)
+        self.assertEqual(report['periods']['week']['previous_comparable_tokens'], 0)
         self.assertEqual(report['periods']['month']['current_start'], '2026-01-01')
         self.assertEqual(report['periods']['month']['current_tokens'], 200)
         self.assertEqual(report['periods']['month']['previous_tokens'], 180)
+        self.assertEqual(report['periods']['month']['comparable_days'], 0)
         self.assertEqual(report['sources'], 1)
         self.assertTrue(report['incomplete'])
+
+    def test_calendar_comparison_caps_to_shorter_previous_month(self):
+        now = datetime(2026, 3, 31, 4, tzinfo=timezone.utc).timestamp()
+        source = {'observed_at': now, 'history': {'Codex': {'status': 'available', 'value': {'periods': {}, 'daily_buckets': [
+            {'date': '2026-02-28', 'tokens': 4}, {'date': '2026-03-28', 'tokens': 5},
+            {'date': '2026-03-29', 'tokens': 6}, {'date': '2026-03-31', 'tokens': 8}]}}}}
+        month = backend.calendar_report(source)['periods']['month']
+        self.assertEqual(month['comparable_days'], 28)
+        self.assertEqual(month['previous_comparable_tokens'], 4)
+        self.assertEqual(month['current_comparable_tokens'], 5)
+        self.assertEqual(month['current_tokens'], 19)
 
     def test_recent_activity_summarizes_without_project_paths_or_session_ids(self):
         now = 1800000000

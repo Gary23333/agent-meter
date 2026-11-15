@@ -28,6 +28,8 @@ internal static class CalendarReportExport
             static string FormatDate(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             output.AppendLine($"- {current}（{FormatDate(currentStart)} 至 {FormatDate(currentEnd)}，截至当前日期）：{currentTokens.ToString("N0", CultureInfo.InvariantCulture)} Token");
             output.AppendLine($"- {previous}（{FormatDate(previousStart)} 至 {FormatDate(currentStart.AddDays(-1))}，完整周期）：{previousTokens.ToString("N0", CultureInfo.InvariantCulture)} Token").AppendLine();
+            if (ReportComparison.Read(period) is { } comparable)
+                output.AppendLine($"已结束的前 {comparable.Days} 个自然日：{current} {comparable.Current.ToString("N0", CultureInfo.InvariantCulture)} Token；{previous} {comparable.Previous.ToString("N0", CultureInfo.InvariantCulture)} Token；变化 {comparable.Change}。当前日期未计入。").AppendLine();
         }
         if (Field(report, "incomplete").ValueKind == JsonValueKind.True)
             output.AppendLine("部分来源或逐日记录不完整，汇总可能偏低。").AppendLine();

@@ -465,6 +465,10 @@ internal sealed partial class MeterWindow : Form
                 throw new InvalidOperationException("用量周期费用未切换");
             if (period == "7d") SavePreview("aurora-usage-period-seven-days");
         }
+        SetView(View.Report);
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "+25%"))
+            throw new InvalidOperationException("报告已结束自然日对照缺失");
+        SavePreview("aurora-report-comparison-narrow");
         SetView(View.Applications);
         var expandApp = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
             .FirstOrDefault(button => button.Name == "app-expand-Codex") ?? throw new InvalidOperationException("application_card_missing");
@@ -719,6 +723,12 @@ internal sealed partial class MeterWindow : Form
                 sample["history"]!["Codex"]!["estimates"] = JsonNode.Parse("""{"today":{"amount_usd":"2.464","partial":false},"7d":{"amount_usd":"12.3","partial":false},"30d":{"amount_usd":"35.8","partial":true},"all":{"amount_usd":"120.9","partial":true}}""");
                 sample["other_accounts"]!["DeepSeek API"] = JsonNode.Parse("""{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}""");
                 sample["forecast"] = ForecastDemo();
+                sample["calendar_report"]!["periods"]!["week"]!["comparable_days"] = 5;
+                sample["calendar_report"]!["periods"]!["week"]!["current_comparable_tokens"] = 5000000;
+                sample["calendar_report"]!["periods"]!["week"]!["previous_comparable_tokens"] = 4000000;
+                sample["calendar_report"]!["periods"]!["month"]!["comparable_days"] = 13;
+                sample["calendar_report"]!["periods"]!["month"]!["current_comparable_tokens"] = 6500000;
+                sample["calendar_report"]!["periods"]!["month"]!["previous_comparable_tokens"] = 8000000;
                 sample["observed_at"] = ForecastDemoNow.ToUnixTimeSeconds();
                 AddDemoAccountDetails(sample);
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
@@ -1362,6 +1372,11 @@ internal sealed partial class MeterWindow : Form
             string note = $"{previous} {FormatNumber(before.Value)} · 本期截至 {end}";
             string extra = $"本期开始 {start}" + (incomplete ? " · 部分来源不完整" : " · 当前周期未结束");
             AddCard(title, FormatNumber(current.Value) + " tokens", note, null, extra);
+            var comparison = ReportComparison.Read(period);
+            if (comparison is not null)
+                AddCard(title + " · 已结束自然日对照", comparison.Change,
+                    $"前 {comparison.Days} 天：本期 {FormatNumber(comparison.Current)} · 上期 {FormatNumber(comparison.Previous)}", null,
+                    incomplete ? "部分来源不完整 · 当前日未计入" : "当前日未计入 · 按相同天数对齐");
         }
         AddCard("统计说明", "自然周期比较", "当前周期尚未结束；上期为完整周期", null,
                 "仅覆盖本机可读取记录，不等于账户总量");
