@@ -150,7 +150,7 @@ try
         throw new InvalidOperationException("账户开关未正确覆盖");
     File.WriteAllText(Path.Combine(directory, "preferences.json"), "{\"codex\":true,\"kimi\":false,\"claude\":true}");
     var oldPreferences = AccountPreferences.Load(directory);
-    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy || oldPreferences.ZCode || oldPreferences.Volcengine || oldPreferences.MiMo)
+    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy || oldPreferences.ZCode || oldPreferences.Volcengine || oldPreferences.MiMo || oldPreferences.Qoder)
         throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
     var deepseekPreferences = oldPreferences with { DeepSeek = true, WorkBuddy = true };
     deepseekPreferences.Save(directory);
@@ -161,6 +161,8 @@ try
     if (AccountPreferences.Load(directory) != volcPreferences) throw new InvalidOperationException("火山方舟账户开关保存失败");
     var mimoPreferences = volcPreferences with { MiMo = true }; mimoPreferences.Save(directory);
     if (AccountPreferences.Load(directory) != mimoPreferences) throw new InvalidOperationException("MiMo 账户开关保存失败");
+    var qoderPreferences = mimoPreferences with { Qoder = true }; qoderPreferences.Save(directory);
+    if (AccountPreferences.Load(directory) != qoderPreferences) throw new InvalidOperationException("Qoder 账户开关保存失败");
     if (!VolcengineKeyStore.Valid(new VolcengineKeys("AK-synthetic", "synthetic-secret")) ||
         VolcengineKeyStore.Valid(new VolcengineKeys("model-api-key", "secret")) ||
         VolcengineKeyStore.Valid(new VolcengineKeys("AK-valid", "bad\nsecret")))
@@ -199,6 +201,14 @@ try
         !MiMoNavigation.Allowed("https://account.xiaomi.com/") || MiMoNavigation.Allowed("https://xiaomimimo.com.evil.example/") ||
         MiMoNavigation.Allowed("https://user@platform.xiaomimimo.com/") || MiMoNavigation.Allowed("http://platform.xiaomimimo.com/"))
         throw new InvalidOperationException("MiMo 登录跳转域名过滤错误");
+    WebCookieFilter.Cookie[] qoderCookies = [new("sid", "synthetic", ".qoder.com.cn", "/api"),
+        new("other", "private", ".evilqoder.com.cn", "/"), new("wrong", "private", ".qoder.com.cn", "/account")];
+    if (WebCookieFilter.QoderHeader(qoderCookies) != "sid=synthetic" ||
+        WebCookieFilter.QoderHeader(qoderCookies.Append(qoderCookies[0])) is not null ||
+        WebCookieFilter.QoderHeader([new("sid", "bad\r\nheader", ".qoder.com.cn", "/")]) is not null ||
+        !QoderNavigation.IsQoder("https://qoder.com.cn/account/usage") ||
+        QoderNavigation.Allowed("https://qoder.com.cn.evil.example/") || QoderNavigation.Allowed("http://qoder.com.cn/"))
+        throw new InvalidOperationException("Qoder Cookie 或登录域名过滤错误");
     if (!WorkBuddyNavigation.Allowed("https://www.workbuddy.cn/profile/plans-usage") ||
         !WorkBuddyNavigation.Allowed("https://xui.ptlogin2.qq.com/") || !WorkBuddyNavigation.IsWorkBuddy("https://www.workbuddy.cn/"))
         throw new InvalidOperationException("合法登录网址应可访问");
@@ -402,6 +412,9 @@ try
     } });
     if (!new QuotaAlerts().Evaluate(workbuddy, now).Single().Contains("积分额度"))
         throw new InvalidOperationException("WorkBuddy 提醒应显示积分额度");
+    using var qoderAlert = JsonDocument.Parse("""{"observed_at":1800000000,"other_accounts":{"Qoder CN":{"status":"available","quota":{"value":[{"bucket":"totalQuota","remaining_percent":10}]}}}}""");
+    if (!new QuotaAlerts().Evaluate(qoderAlert.RootElement, now).Single().Contains("账户额度"))
+        throw new InvalidOperationException("Qoder 提醒应显示账户额度");
     using var zcodeAlert = JsonDocument.Parse("""{"observed_at":1800000000,"other_accounts":{"ZCode":{"status":"available","quota":{"value":[{"bucket":"quota","limit_type":"TOKENS_LIMIT","window_minutes":300,"remaining_percent":10},{"bucket":"quota","limit_type":"CREDIT_LIMIT","window_minutes":300,"remaining_percent":15},{"bucket":"mcp","limit_type":"TIME_LIMIT","remaining_percent":5}]}}}}""");
     var zcodeMessages = new QuotaAlerts().Evaluate(zcodeAlert.RootElement, now);
     if (zcodeMessages.Count != 3 || !zcodeMessages.Any(text => text.Contains("MCP 调用")) || !zcodeMessages.Any(text => text.Contains("Token")))

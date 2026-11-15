@@ -58,6 +58,8 @@ internal static class AccountPresentationTests
         Check(Read("volcengine").Reading is { Remaining: 18, Window: "月度" }, "火山方舟月度托盘额度错误");
         sample["other_accounts"]!["MiMo"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"monthTotal","remaining_percent":40}]}}""");
         Check(Read("mimo").Reading is { Remaining: 40, Window: "月度总额" }, "MiMo 托盘额度类型错误");
+        sample["other_accounts"]!["Qoder CN"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"totalQuota","remaining_percent":15}]}}""");
+        Check(Read("qoder").Reading is { Remaining: 15, Window: "账户额度" }, "Qoder 托盘额度类型错误");
         Check(Read(time: now.AddMinutes(31)).Reading is null && Read(time: now.AddMinutes(-6)).Reading is null, "过期或未来快照必须停止显示数字");
         Check(Read(time: now.AddMinutes(31), demo: true).Tooltip.Contains("演示数据"), "演示模式应明确标注");
         sample["account"]!["quota"]!["value"]![1]!["resets_at"]!["epoch_seconds"] = 1799999999;

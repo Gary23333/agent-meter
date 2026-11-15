@@ -1,6 +1,6 @@
 # 隐私、凭据与本地数据
 
-Windows 适配层读取本机会话文件和用量数据库，提取用量指标，不在面板中展示对话内容。应用活动读取器会访问会话时间和项目路径等元数据，但只向界面传递各应用的汇总计数和更新时间，不传递会话标识、项目路径或内容。解析后的用量只缓存在有限的进程内存中，退出时清除。Windows 界面不上传这些历史记录，也不要求注册 Agent Meter 账户。Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek API、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan 和小米 MiMo 查询默认关闭；可在托盘菜单分别调整，选择保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，只包含开关状态。自定义价格、外观、提醒和桌宠设置保存在同一目录；价格文件无法读取时会隐藏金额并提示。额度提醒和重置卡到期提醒默认关闭，阈值和开关保存在本机；仅使用近期且未过重置时间的额度快照，只在当前进程内去重，重启后可能再次提示。桌宠素材随程序内置，动画不连接网络。
+Windows 适配层读取本机会话文件和用量数据库，提取用量指标，不在面板中展示对话内容。应用活动读取器会访问会话时间和项目路径等元数据，但只向界面传递各应用的汇总计数和更新时间，不传递会话标识、项目路径或内容。解析后的用量只缓存在有限的进程内存中，退出时清除。Windows 界面不上传这些历史记录，也不要求注册 Agent Meter 账户。Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek API、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan、小米 MiMo 和 Qoder 查询默认关闭；可在托盘菜单分别调整，选择保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，只包含开关状态。自定义价格、外观、提醒和桌宠设置保存在同一目录；价格文件无法读取时会隐藏金额并提示。额度提醒和重置卡到期提醒默认关闭，阈值和开关保存在本机；仅使用近期且未过重置时间的额度快照，只在当前进程内去重，重启后可能再次提示。桌宠素材随程序内置，动画不连接网络。
 
 第三方重置预测默认关闭。开启后会通过 HTTPS 访问 `willreset.com`、`codex-reset.com` 和 `codexreset.org`，不发送账户凭据或本机会话；公开预测及其历史缓存在 `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`，关闭开关不会自动删除缓存。已发出的请求无法撤回。
 
@@ -30,3 +30,5 @@ WorkBuddy 登录使用 `%LOCALAPPDATA%\AgentMeter\webprofiles\workbuddy` 独立�
 用户开启登录启动时，程序在当前用户的 `Software\Microsoft\Windows\CurrentVersion\Run` 中登记 `AgentMeter.Windows`，内容仅为可执行文件路径和后台启动参数。关闭选项可移除属于当前路径的启动项；与其他路径冲突时不会覆盖或删除。
 
 返回[项目首页](../README.md)。
+
+Qoder 中国区使用 `%LOCALAPPDATA%\AgentMeter\webprofiles\qoder` 独立资料目录保存网站 Cookie 和网页存储，不读取现有浏览器资料。启用后，将匹配只读接口域名与路径的 Cookie 及浏览器标识经本地子进程标准输入发送至 `qoder.com.cn` 的额度接口，不写入命令行或应用日志。登录主窗口和弹窗只允许 Qoder 中国区 HTTPS 域名，网站仍可能加载自身网页资源；部分第三方登录方式可能无法使用。取消登录不会清除资料；「清除本地登录」清理应用内浏览数据，不等于在服务端退出。真实登录和账户尚待验证。

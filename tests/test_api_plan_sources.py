@@ -251,3 +251,24 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class QoderWindowsTests(unittest.TestCase):
+    def test_explicit_session_and_fixed_endpoint(self):
+        from windows import backend
+        from agent_meter import web_sources
+        payload = {"totalQuota": {"quotaSummary": {"usedValue": 20, "limitValue": 100, "remainingValue": 80}}}
+        with mock.patch.object(web_sources, "get_json", return_value=payload) as request:
+            result = backend.qoder_account({"cookie": "synthetic=1", "user_agent": "synthetic-ua"}, NOW)
+        self.assertEqual(result["quota"]["value"][0]["remaining_percent"], 80)
+        self.assertEqual(request.call_args.args[0], "https://qoder.com.cn/api/v2/me/usages/big_model_credits")
+        self.assertEqual(request.call_args.kwargs["headers"]["Cookie"], "synthetic=1")
+        self.assertNotIn("synthetic=1", str(result))
+
+    def test_missing_or_invalid_sessions_do_not_query(self):
+        from windows import backend
+        with mock.patch.object(backend, "collect_qoder_web") as request:
+            for value in (None, {}, {"cookie": "a=1\r\nInjected: x", "user_agent": "ua"},
+                          {"cookie": "a=1", "user_agent": "ua", "extra": 1}):
+                with self.assertRaises(SourceError):
+                    backend.qoder_account(value, NOW)
+            request.assert_not_called()

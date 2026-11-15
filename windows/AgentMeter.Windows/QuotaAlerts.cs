@@ -23,6 +23,7 @@ internal sealed class QuotaAlerts
         Inspect("ZCode", Field(other, "ZCode"), messages, now, threshold);
         Inspect("火山方舟", Field(other, "Volcengine"), messages, now, threshold);
         Inspect("小米 MiMo", Field(other, "MiMo"), messages, now, threshold);
+        Inspect("Qoder CN", Field(other, "Qoder CN"), messages, now, threshold);
         var minimax = Field(other, "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {
@@ -52,7 +53,7 @@ internal sealed class QuotaAlerts
             var minutes = Field(quota, "window_minutes");
             string period = minutes.ValueKind == JsonValueKind.Number && minutes.TryGetInt32(out int duration)
                 ? duration == 300 ? "5 小时" : duration == 10080 ? "7 天" : duration == 43200 ? "月度" : $"{duration} 分钟"
-                : bucket switch { "limit5h" or "5h" => "5 小时", "limit7d" or "week" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", "credits" => "积分额度", "mcp" => "MCP 调用", _ => bucket };
+                : bucket switch { "limit5h" or "5h" => "5 小时", "limit7d" or "week" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", "credits" => "积分额度", "mcp" => "MCP 调用", "totalQuota" => "账户额度", "sharedQuota" => "共享额度", _ => bucket };
             string limitType = Text(quota, "limit_type") switch { "CREDIT_LIMIT" => "Coding Plan", "TOKENS_LIMIT" => "Token", "TIME_LIMIT" => "MCP", _ => "" };
             if (provider == "ZCode" && limitType is "Coding Plan" or "Token") period = limitType + " · " + period;
             string key = provider + ":" + bucket + ":" + limitType + ":" + period;

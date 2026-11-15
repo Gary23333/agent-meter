@@ -53,7 +53,7 @@ internal static class QuotaWindows
             return $"{n:0.#}" + (Text(window, "unit") switch { "hour" => "小时", "day" => "天", "week" => "周", "month" => "月", "minute" => "分钟", _ => "" });
         if (duration == 43200) return "月度";
         if (duration is > 0 and <= 100000) return $"{duration} 分钟";
-        return bucket switch { "monthTotal" => "月度总额", "monthCode" => "月度代码", "credits" => "积分", "mcp" => "MCP 调用", _ => "额度" };
+        return bucket switch { "monthTotal" => "月度总额", "monthCode" => "月度代码", "totalQuota" => "账户额度", "sharedQuota" => "共享额度", "credits" => "积分", "mcp" => "MCP 调用", _ => "额度" };
     }
     static JsonElement Field(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;
     static string Text(JsonElement e, string key) { var value = Field(e, key); return value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : ""; }

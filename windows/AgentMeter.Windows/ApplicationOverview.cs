@@ -40,7 +40,7 @@ internal sealed record ApplicationOverview(string Name, string Quota, string Loc
             ("Kimi Code", "Kimi Code", "Kimi Code", "Kimi Code"), ("MiniMax Code", "MiniMax Code", "MiniMax Code", "MiniMax Code"),
             ("WorkBuddy", "WorkBuddy", "WorkBuddy", "WorkBuddy"), ("ZCode", "ZCode", "ZCode", "ZCode"),
             ("火山方舟", "火山方舟", "火山方舟", "Volcengine"),
-            ("MiMo 平台", "MiMo 平台", "MiMo 平台", "MiMo"),
+            ("MiMo 平台", "MiMo 平台", "MiMo 平台", "MiMo"), ("Qoder CN", "Qoder CN", "Qoder CN", "Qoder CN"),
             ("Gemini CLI", "Gemini CLI", "Gemini CLI", null), ("DeepSeek Harness", "DeepSeek Harness", "DeepSeek Harness", null),
             ("Kimi CLI（旧版）", "Kimi CLI (旧版)", "Kimi CLI（旧版）", null), ("Kimi 桌面端", "Kimi 桌面端", "Kimi 桌面端", null),
             ("OpenCode", "OpenCode", "OpenCode", null), ("MiMo Code", "MiMo Code", "MiMo Code", null),

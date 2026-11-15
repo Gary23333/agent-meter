@@ -14,7 +14,7 @@ $testCases = @(
     'tests.test_reset_forecast.NormalizeTests', 'tests.test_reset_forecast.CombineTests',
     'tests.test_reset_forecast.CountdownTests', 'tests.test_reset_forecast.HistoryTests',
     'tests.test_reset_forecast.CollectTests', 'tests.test_reset_forecast.TransportTests',
-    'tests.test_api_plan_sources.ZCodeTests', 'tests.test_api_plan_sources.VolcengineTests', 'tests.test_api_plan_sources.MimoTests',
+    'tests.test_api_plan_sources.ZCodeTests', 'tests.test_api_plan_sources.VolcengineTests', 'tests.test_api_plan_sources.MimoTests', 'tests.test_api_plan_sources.QoderWindowsTests',
     'tests.test_collection.DerivedTests.test_medals_from_history', 'tests.test_collection.WindowTests'
 )
 & $python -m unittest @testCases -q

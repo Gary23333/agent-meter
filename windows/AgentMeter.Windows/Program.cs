@@ -82,6 +82,7 @@ internal static class Program
             {
                 using var browser = new WorkBuddyBrowser(directory); await browser.SyntheticSmokeAsync();
                 using var mimo = new MiMoBrowser(directory); await mimo.SyntheticSmokeAsync();
+                using var qoder = new QoderBrowser(directory); await qoder.SyntheticSmokeAsync();
             }
             catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException) { Environment.ExitCode = 10; }
             catch (Exception) { Environment.ExitCode = 1; }
@@ -126,7 +127,7 @@ internal sealed partial class MeterContext : ApplicationContext
         {
             var accounts = new ToolStripMenuItem("账户查询");
             var accountItems = new Dictionary<string, ToolStripMenuItem>();
-            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine", "MiMo" })
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine", "MiMo", "Qoder" })
             {
                 var item = new ToolStripMenuItem(provider == "DeepSeek" ? "DeepSeek API 余额" : provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
                 item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
@@ -183,6 +184,13 @@ internal sealed partial class MeterContext : ApplicationContext
                 using var editor = new MiMoLoginDialog(window.MiMoBrowser, window.CancelAccountRequests);
                 if (editor.ShowDialog(window) != DialogResult.OK) return;
                 if (window.SetAccountEnabled("MiMo", !editor.Cleared)) accountItems["MiMo"].Checked = !editor.Cleared;
+            });
+            menu.Items.Add("登录 Qoder 中国区", null, (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new QoderLoginDialog(window.QoderBrowser, window.CancelAccountRequests);
+                if (editor.ShowDialog(window) != DialogResult.OK) return;
+                if (window.SetAccountEnabled("Qoder", !editor.Cleared)) accountItems["Qoder"].Checked = !editor.Cleared;
             });
             var alerts = new ToolStripMenuItem($"低额度提醒（低于 {window.AlertThreshold}%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
@@ -354,6 +362,7 @@ internal sealed partial class MeterWindow : Form
     readonly HistoryWorker historyWorker = new();
     readonly WorkBuddyBrowser workBuddyBrowser = new(AccountPreferences.DefaultDirectory);
     readonly MiMoBrowser mimoBrowser = new(AccountPreferences.DefaultDirectory);
+    readonly QoderBrowser qoderBrowser = new(AccountPreferences.DefaultDirectory);
     readonly QuotaAlerts quotaAlerts = new();
     readonly ResetCardAlerts cardAlerts = new();
     readonly bool demo;
@@ -376,6 +385,7 @@ internal sealed partial class MeterWindow : Form
     public string? CurrentSnapshot => lastSnapshot;
     internal WorkBuddyBrowser WorkBuddyBrowser => workBuddyBrowser;
     internal MiMoBrowser MiMoBrowser => mimoBrowser;
+    internal QoderBrowser QoderBrowser => qoderBrowser;
     public void CancelAccountRequests() => accountCancellation?.Cancel();
     public event Action<string>? SnapshotUpdated;
     public void ShowNotice(string message) { if (!IsDisposed && !Disposing) status.Text = message; }
@@ -526,6 +536,23 @@ internal sealed partial class MeterWindow : Form
         using (var snapshot = JsonDocument.Parse(noQoder.ToJsonString())) Render(snapshot.RootElement);
         if (content.Controls.OfType<RoundedCard>().Any(card => card.Name == "qoder-local-credits"))
             throw new InvalidOperationException("没有本机 Qoder 记录时不能显示零积分");
+        using (var snapshot = JsonDocument.Parse(qoderSnapshot)) Render(snapshot.RootElement);
+        var qoderDemo = JsonNode.Parse(qoderSnapshot)!.AsObject();
+        qoderDemo["other_accounts"]!["Qoder CN"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"totalQuota","remaining_percent":80}]},"credits":{"value":[{"bucket":"totalQuota","remaining":"80"}]}}""");
+        using (var snapshot = JsonDocument.Parse(qoderDemo.ToJsonString())) Render(snapshot.RootElement);
+        var qoderAccountCard = content.Controls.OfType<RoundedCard>().First(card =>
+            card.Controls.OfType<Label>().Any(label => label.Text == "Qoder CN · 账户额度"));
+        if (!qoderAccountCard.Controls.OfType<Label>().Any(label => label.Text.Contains("80 积分")))
+            throw new InvalidOperationException("Qoder 账户额度应显示网站余额");
+        content.ScrollControlIntoView(qoderAccountCard); Application.DoEvents(); SavePreview("aurora-qoder-account");
+        using (var dialog = new QoderLoginDialog(qoderBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        {
+            dialog.Show(this); Application.DoEvents();
+            using var picture = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, "qoder-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
+            dialog.Close();
+        }
         using (var snapshot = JsonDocument.Parse(qoderSnapshot)) Render(snapshot.RootElement);
         content.AutoScrollPosition = Point.Empty;
         Size = new Size(420, 760);
@@ -689,7 +716,7 @@ internal sealed partial class MeterWindow : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); mimoBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); popupTips.Dispose(); }
+        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); mimoBrowser.Dispose(); qoderBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); popupTips.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
     }
@@ -752,7 +779,7 @@ internal sealed partial class MeterWindow : Form
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude,
         "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy,
-        "ZCode" => preferences.ZCode, "Volcengine" => preferences.Volcengine, "MiMo" => preferences.MiMo, _ => false
+        "ZCode" => preferences.ZCode, "Volcengine" => preferences.Volcengine, "MiMo" => preferences.MiMo, "Qoder" => preferences.Qoder, _ => false
     };
     public Task RefreshAfterAccountChange()
     {
@@ -844,7 +871,7 @@ internal sealed partial class MeterWindow : Form
             "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled },
             "DeepSeek" => preferences with { DeepSeek = enabled }, "WorkBuddy" => preferences with { WorkBuddy = enabled },
             "ZCode" => preferences with { ZCode = enabled }, "Volcengine" => preferences with { Volcengine = enabled },
-            "MiMo" => preferences with { MiMo = enabled }, _ => preferences
+            "MiMo" => preferences with { MiMo = enabled }, "Qoder" => preferences with { Qoder = enabled }, _ => preferences
         };
         try { next.Save(AccountPreferences.DefaultDirectory); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -879,6 +906,7 @@ internal sealed partial class MeterWindow : Form
         if (!preferences.ZCode) others["ZCode"] = Disabled();
         if (!preferences.Volcengine) others["Volcengine"] = Disabled();
         if (!preferences.MiMo) others["MiMo"] = Disabled();
+        if (!preferences.Qoder) others["Qoder CN"] = Disabled();
         if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
@@ -937,6 +965,7 @@ internal sealed partial class MeterWindow : Form
                 var forecastTask = forecastEnabled ? RunCollector("--forecast-only", accountCancellation.Token) : null;
                 var workbuddyTask = preferences.WorkBuddy ? WorkBuddyAccountAsync(accountCancellation.Token) : null;
                 var mimoTask = preferences.MiMo ? MiMoAccountAsync(accountCancellation.Token) : null;
+                var qoderTask = preferences.Qoder ? QoderAccountAsync(accountCancellation.Token) : null;
                 Task<string>? deepseekTask = null;
                 Task<string>? zcodeTask = null;
                 Task<string>? volcengineTask = null;
@@ -985,6 +1014,7 @@ internal sealed partial class MeterWindow : Form
                 combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = preferences.ZCode ? "loading" : "disabled" };
                 combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = preferences.Volcengine ? "loading" : "disabled" };
                 combined["other_accounts"]!["MiMo"] = new JsonObject { ["status"] = preferences.MiMo ? "loading" : "disabled" };
+                combined["other_accounts"]!["Qoder CN"] = new JsonObject { ["status"] = preferences.Qoder ? "loading" : "disabled" };
                 ApplyAccountPreferences(combined);
                 string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
@@ -1024,6 +1054,14 @@ internal sealed partial class MeterWindow : Form
                     try { combined["other_accounts"]!["MiMo"] = JsonNode.Parse(await mimoTask); }
                     catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                     { combined["other_accounts"]!["MiMo"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
+                }
+                if (qoderTask is not null)
+                {
+                    try { combined["other_accounts"]!["Qoder CN"] = JsonNode.Parse(await qoderTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["other_accounts"]!["Qoder CN"] = new JsonObject { ["status"] = "error" }; }
                     ApplyAccountPreferences(combined);
                     using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
                 }
@@ -1194,6 +1232,25 @@ internal sealed partial class MeterWindow : Form
             InvalidOperationException or IOException or UnauthorizedAccessException or System.Security.SecurityException or OperationCanceledException)
         { return """{"status":"unavailable","reason":"mimo_session_unavailable"}"""; }
     }
+    async Task<string> QoderAccountAsync(CancellationToken cancellation)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            string? session = await qoderBrowser.SessionInputAsync(timeout.Token).WaitAsync(timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            var task = RunCollector("--qoder-only", timeout.Token, session); session = null;
+            return await task;
+        }
+        catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException)
+        { return """{"status":"unavailable","reason":"qoder_runtime_missing"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && WebViewSafety.IsIsolationFailure(ex))
+        { return """{"status":"unavailable","reason":"qoder_profile_unsafe"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && ex is System.Runtime.InteropServices.COMException or
+            InvalidOperationException or IOException or UnauthorizedAccessException or System.Security.SecurityException or OperationCanceledException)
+        { return """{"status":"unavailable","reason":"qoder_session_unavailable"}"""; }
+    }
     static async Task<string> RunCollector(string mode, CancellationToken shutdown, string? accountInput = null)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "backend", "AgentMeterBackend.exe");
@@ -1311,6 +1368,7 @@ internal sealed partial class MeterWindow : Form
         AddZCodeAccount(GetValue(otherAccounts, "ZCode"), GetValue(localHistories, "ZCode"));
         AddVolcengineAccount(GetValue(otherAccounts, "Volcengine"));
         AddMiMoAccount(GetValue(otherAccounts, "MiMo"));
+        AddQoderAccount(GetValue(otherAccounts, "Qoder CN"));
         AddQoderLocalCredits(GetValue(root, "local_credits"));
         }
         else if (view == View.Applications) AddApplications(root);
@@ -1709,6 +1767,7 @@ internal sealed partial class MeterWindow : Form
         AddGauge("ZCode", GetValue(GetValue(root, "other_accounts"), "ZCode"));
         AddGauge("火山方舟", GetValue(GetValue(root, "other_accounts"), "Volcengine"));
         AddGauge("小米 MiMo", GetValue(GetValue(root, "other_accounts"), "MiMo"));
+        AddGauge("Qoder CN", GetValue(GetValue(root, "other_accounts"), "Qoder CN"));
         var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {
@@ -1759,6 +1818,11 @@ internal sealed partial class MeterWindow : Form
         "history_no_usage_records" => "没有可统计的用量记录",
         "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or "zcode_db_not_found" or "dsh_sessions_not_found" => "未找到本机会话记录",
         "zstd_unavailable" => "部分压缩会话无法读取",
+        "qoder_session_missing" => "请在托盘菜单连接 Qoder 中国区",
+        "qoder_runtime_missing" => "请安装 WebView2 Runtime 后重试",
+        "qoder_profile_unsafe" => "无法确认登录资料隔离，请检查系统策略",
+        "qoder_session_unavailable" or "qoder_session_invalid" => "应用内登录资料不可用，请重新连接",
+        "unsupported_qoder_web_contract" or "invalid_qoder_quota" => "Qoder 账户接口数据暂不可用",
         "unsupported_qoder_usage_schema" => "当前 Qoder 记录格式暂不支持",
         "opencode_v2_partial" => "部分新版记录暂未计入",
         "unsupported_opencode_schema" => "当前 OpenCode 数据格式暂不支持",

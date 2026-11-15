@@ -2,7 +2,7 @@
 
 1. 解压后保留完整文件夹，运行 `AgentMeter.Windows.exe`。
 2. 在 Windows 通知区域找到 Agent Meter 图标；如果没有看到，可展开隐藏图标。
-3. 左键显示或隐藏无边框面板，点击外部或按 Esc 可收起；顶部图钉可固定展开，三个圆点打开更多设置，与托盘右键菜单一致。可在「账户查询」中分别调整读取。MiniMax、DeepSeek 和实验功能 WorkBuddy 默认关闭；开关只影响账户查询，不影响本机历史。
+3. 左键显示或隐藏无边框面板，点击外部或按 Esc 可收起；顶部图钉可固定展开，三个圆点打开更多设置，与托盘右键菜单一致。可在「账户查询」中分别调整读取。MiniMax、DeepSeek、WorkBuddy、智谱、火山方舟、MiMo 和 Qoder 查询默认关闭；开关只影响账户查询，不影响本机历史。
 4. 右键菜单「界面风格」可选择七种配色；当前 Windows 版的材质和动效仍在完善。
 5. 右键菜单「自定义模型价格」可覆盖内置美元价格，单位是每百万 Token。价格估算不是实际账单；损坏的价格文件会导致金额隐藏。
 6. 「低额度提醒」默认关闭；开启后，账户额度低于所选阈值时程序会尝试发送 Windows 通知。托盘菜单「提醒阈值」可选 10%、20%、30% 或 50%，默认 20%；通知显示取决于系统设置。「重置卡到期提醒」另有独立开关，默认关闭；已确认可用的 Codex 重置卡在 3 天内和 1 天内各提醒一次。
@@ -30,11 +30,13 @@
 
 实验功能「登录小米 MiMo 平台」需要 WebView2 Runtime，默认关闭。用户在应用内独立窗口登录后，可查询平台余额和 Token Plan 月度额度；资料保存在 `%LOCALAPPDATA%\AgentMeter\webprofiles\mimo`，不会读取现有浏览器资料。「清除本地登录」清除应用内资料，不会在服务端退出。登录窗口只允许小米 MiMo 和小米账号相关 HTTPS 跳转，部分登录方式可能无法使用；真实登录和账户尚待验证。MiMo 平台账户与本机 MiMo Code 账本分别统计。
 
+实验功能「登录 Qoder 中国区」需要 WebView2 Runtime，默认关闭。登录使用应用独立资料目录，不读取现有浏览器资料；清除本地登录不会在服务端退出。账户额度和本机积分消耗分别显示。登录主窗口及弹窗仅允许 Qoder 中国区 HTTPS 地址，部分登录方式可能无法使用；真实登录及账户尚未验收。
+
 账户积分、Kimi 钱包及 Codex 重置卡现在收在对应账户卡片内。重置卡显示服务报告的总数和按到期顺序排列的明细，超过 3 条可展开；「已到期 · 待刷新」不会自行减少服务报告的总数。钱包与积分仍按各自单位展示，不能合并。
 
 本机会话较多时首次扫描可能较慢。账户额度和本机 Token 分别统计；未提供的数据不会当作零。运行 `AgentMeter.Windows.exe --demo` 可查看虚构演示数据；运行 `AgentMeter.Windows.exe --window` 可用普通任务栏窗口查看真实数据。
 
-Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek 和 WorkBuddy 默认关闭；开关状态保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，不包含凭据。Codex 额度查询使用本机已有的 Codex 安装和登录状态。如果 Claude Code 的本地订阅凭据文件存在，程序会在内存中读取访问令牌并通过 HTTPS 向 Anthropic 用量接口查询额度，不修改或刷新登录；该功能目前仅经模拟测试。Kimi 额度查询只连接已运行的本机 Kimi 服务，目前同样仅经模拟测试。
+Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek、WorkBuddy、智谱、火山方舟、MiMo 和 Qoder 默认关闭；开关状态保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，不包含凭据。Codex 额度查询使用本机已有的 Codex 安装和登录状态。如果 Claude Code 的本地订阅凭据文件存在，程序会在内存中读取访问令牌并通过 HTTPS 向 Anthropic 用量接口查询额度，不修改或刷新登录；该功能目前仅经模拟测试。Kimi 额度查询只连接已运行的本机 Kimi 服务，目前同样仅经模拟测试。
 
 MiniMax 支持通过「管理 MiniMax 账户」添加最多 5 个账户，密钥保存在 Windows 凭据管理器，账户名称和区域保存在本机账户列表。主动开启查询后，密钥通过本地子进程标准输入传递，并通过 HTTPS 发往所选区域的 MiniMax 用量接口。账户列表文件不存在时，也可使用 `MINIMAX_TOKEN_PLAN_KEY` 与 `MINIMAX_REGION` 环境变量；通过界面清空账户后不会自动回退。关闭来源时程序会尝试中止当前账户查询，已发出的请求无法撤回。Windows 界面读取支持的本机历史，不通过该界面上传历史记录。详情见项目首页及 `THIRD_PARTY_NOTICES.md`；依赖许可文本位于 `licenses/`。
 
