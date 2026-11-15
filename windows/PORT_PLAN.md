@@ -44,7 +44,9 @@
 
 - [Alpha 18 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.18) 对应提交 `2a10554`。Windows 构建、隔离注册表启停和后台启动检查通过，ZIP 独立解压校验通过。跨平台 Python、桌宠及 macOS Swift 检查通过；实体设备上的登录启动、多屏与高 DPI 仍需验收。SHA-256：`e9ba169d8a78f75025397e90546b2210fdae52c8e6455edd5a2f815e45256aea`。
 
-- 当前公开 [Alpha 19 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.19) 对应提交 `fe0756d`。Windows 和跨平台检查通过；智谱密钥、固定接口、余额类型、托盘、提醒和无密钥状态以模拟数据验证，账户和设置窗口预览已检查；ZIP 独立解压验证通过。真实智谱账户、多屏及高 DPI 尚待实体设备验收。SHA-256：`6b500bf2922ae74cdc6b6e477f90fef99f11ac15e3cb1aef32c7655761f08280`。
+- [Alpha 19 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.19) 对应提交 `fe0756d`。Windows 和跨平台检查通过；智谱密钥、固定接口、余额类型、托盘、提醒和无密钥状态以模拟数据验证，账户和设置窗口预览已检查；ZIP 独立解压验证通过。真实智谱账户、多屏及高 DPI 尚待实体设备验收。SHA-256：`6b500bf2922ae74cdc6b6e477f90fef99f11ac15e3cb1aef32c7655761f08280`。
+
+- 当前公开 [Alpha 20 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.20) 对应提交 `ffe827c`。同周期费用汇总、未知值与免费价格通过检查；深浅主题、窄弹层和圆角导出按钮实渲染已检查。Windows 与跨平台检查通过，ZIP 独立解压验证通过。SHA-256：`e80f6b648aa8ff7bb6d4221c9c926f60d36cfe5ee1706956a32c433fd555e9a1`。真实新增账户、多屏与高 DPI 仍需实体设备验收。
 
 ## 安全与数据边界
 
