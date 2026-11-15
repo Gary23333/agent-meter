@@ -33,6 +33,12 @@ jobs:
           $env:AGENT_METER_TEST_PET_WINDOW = '1'
           dotnet run --project windows/AccountPreferences.Tests -c Release
           if ($LASTEXITCODE -ne 0) { throw 'Desktop pet smoke test failed' }
+      - name: Test startup preference in isolated registry key
+        shell: pwsh
+        run: |
+          $env:AGENT_METER_TEST_STARTUP_REGISTRY = '1'
+          dotnet run --project windows/AccountPreferences.Tests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated startup registry test failed' }
       - name: Build self-contained application
         shell: pwsh
         run: ./windows/build.ps1
@@ -130,6 +136,15 @@ jobs:
           } finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id }
           }
+      - name: Smoke test background tray startup
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/background-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--background-ui-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Background startup smoke timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Background startup failed' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
       - name: Smoke test isolated WebView profile
         shell: pwsh
         run: |

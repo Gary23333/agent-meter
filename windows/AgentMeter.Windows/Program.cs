@@ -10,6 +10,18 @@ internal static class Program
     static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Length == 1 && args[0] == "--background-ui-smoke")
+        {
+            using var context = new MeterContext(demo: true, windowed: false, background: true);
+            using var check = new System.Windows.Forms.Timer { Interval = 300 };
+            check.Tick += (_, _) => {
+                check.Stop();
+                try { context.SyntheticBackgroundSmoke(); }
+                catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
+                finally { context.ExitThread(); }
+            };
+            check.Start(); Application.Run(context); return;
+        }
         if (args.Length == 1 && args[0] == "--tray-indicator-smoke")
         {
             using var context = new MeterContext(demo: true, windowed: false);
@@ -56,7 +68,7 @@ internal static class Program
         bool demo = args.Contains("--demo");
         using var mutex = new Mutex(true, "Local\\AgentMeterWindows", out bool first);
         if (!first && !demo) return;
-        Application.Run(new MeterContext(demo, args.Contains("--window")));
+        Application.Run(new MeterContext(demo, args.Contains("--window"), args.Contains("--background")));
     }
 
     static void RunWebViewSmoke()
@@ -97,7 +109,7 @@ internal sealed partial class MeterContext : ApplicationContext
     PetPreferences petPreferences;
     PetWindow? pet;
     bool quitting;
-    public MeterContext(bool demo, bool windowed)
+    public MeterContext(bool demo, bool windowed, bool background = false)
     {
         using var iconStream = typeof(Program).Assembly.GetManifestResourceStream("AgentMeter.Icon") ?? throw new InvalidOperationException("icon_missing");
         icon = new Icon(iconStream);
@@ -153,6 +165,7 @@ internal sealed partial class MeterContext : ApplicationContext
             var forecast = new ToolStripMenuItem("第三方重置预测（联网）") { Checked = window.ForecastEnabled };
             forecast.Click += (_, _) => { if (window.SetForecastEnabled(!forecast.Checked)) forecast.Checked = !forecast.Checked; };
             menu.Items.Add(forecast);
+            ConfigureStartupMenu(menu);
         }
         var appearance = new ToolStripMenuItem("界面风格");
         foreach (var themeOption in VisualThemes.All)
@@ -195,7 +208,8 @@ internal sealed partial class MeterContext : ApplicationContext
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
         window.SnapshotUpdated += snapshot => pet?.SetSnapshot(snapshot);
-        ShowPanel();
+        if (!background) ShowPanel();
+        else _ = window.Handle; // 创建隐藏句柄，使后台刷新仍在 Windows UI 消息线程上完成。
         if (petPreferences.Enabled) StartPet();
         _ = window.RefreshData();
     }

@@ -12,6 +12,7 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    StartupTests.Run();
     using (var comparison = JsonDocument.Parse("""{"comparable_days":3,"current_comparable_tokens":150,"previous_comparable_tokens":100}"""))
         if (ReportComparison.Read(comparison.RootElement)?.Change != "+50%") throw new InvalidOperationException("相同天数的报告对照错误");
     using (var zero = JsonDocument.Parse("""{"comparable_days":1,"current_comparable_tokens":5,"previous_comparable_tokens":0}"""))
