@@ -200,6 +200,9 @@ internal sealed partial class MeterContext : ApplicationContext
                 thresholds.DropDownItems.Add(item);
             }
             menu.Items.Add(thresholds);
+            var cardAlerts = new ToolStripMenuItem("重置卡到期提醒（3 天 / 1 天）") { Checked = window.CardAlertsEnabled };
+            cardAlerts.Click += (_, _) => { if (window.SetCardAlertsEnabled(!cardAlerts.Checked)) cardAlerts.Checked = !cardAlerts.Checked; };
+            menu.Items.Add(cardAlerts);
             var forecast = new ToolStripMenuItem("第三方重置预测（联网）") { Checked = window.ForecastEnabled };
             forecast.Click += (_, _) => { if (window.SetForecastEnabled(!forecast.Checked)) forecast.Checked = !forecast.Checked; };
             menu.Items.Add(forecast);
@@ -235,13 +238,15 @@ internal sealed partial class MeterContext : ApplicationContext
         menu.Opening += (_, _) => { TrayMenuStyle.Apply(menu, VisualThemes.Find(window.ThemeId)); window.PopupMenuVisible = true; };
         menu.Closed += (_, _) => window.PopupMenuVisible = false;
         window.MenuRequested += point => menu.Show(window, point);
-        window.QuotaLow += messages =>
+        void ShowAlert(string title, IReadOnlyList<string> messages)
         {
             string summary = string.Join("\n", messages.Take(3)) + (messages.Count > 3 ? $"\n另有 {messages.Count - 3} 项，请打开面板查看。" : "");
             if (summary.Length > 240) summary = summary[..239] + "…";
-            try { tray.ShowBalloonTip(8000, "Agent 额度提醒", summary, ToolTipIcon.Warning); }
+            try { tray.ShowBalloonTip(8000, title, summary, ToolTipIcon.Warning); }
             catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.ComponentModel.Win32Exception) { }
-        };
+        }
+        window.QuotaLow += messages => ShowAlert("Agent 额度提醒", messages);
+        window.CardsExpiring += messages => ShowAlert("Agent 重置卡提醒", messages);
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else if (!window.JustDismissedAtCursor) ShowPanel(true); } };
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
@@ -350,6 +355,7 @@ internal sealed partial class MeterWindow : Form
     readonly WorkBuddyBrowser workBuddyBrowser = new(AccountPreferences.DefaultDirectory);
     readonly MiMoBrowser mimoBrowser = new(AccountPreferences.DefaultDirectory);
     readonly QuotaAlerts quotaAlerts = new();
+    readonly ResetCardAlerts cardAlerts = new();
     readonly bool demo;
     AccountPreferences preferences;
     CancellationTokenSource? accountCancellation;
@@ -357,6 +363,7 @@ internal sealed partial class MeterWindow : Form
     Func<CancellationToken, Task<string>>? syntheticActivityReader;
     bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
     int alertThreshold = 20;
+    bool cardAlertsEnabled;
     bool activityBusy;
     DateTimeOffset lastActivityAttempt = DateTimeOffset.MinValue;
     Size preferredSize;
@@ -378,7 +385,7 @@ internal sealed partial class MeterWindow : Form
         this.demo = demo; popup = !windowed; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
         usagePeriod = demo ? "today" : UsagePeriodPreferences.Load(AccountPreferences.DefaultDirectory);
         var alertSettings = demo ? new AlertSettings(false, 20) : AlertPreferences.LoadSettings(AccountPreferences.DefaultDirectory);
-        alertsEnabled = alertSettings.Enabled; alertThreshold = alertSettings.Threshold;
+        alertsEnabled = alertSettings.Enabled; alertThreshold = alertSettings.Threshold; cardAlertsEnabled = alertSettings.ResetCardsEnabled;
         forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
         theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
         Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Primary;
@@ -479,6 +486,7 @@ internal sealed partial class MeterWindow : Form
             foreach (int threshold in AlertPreferences.Thresholds)
                 alertThresholds.DropDownItems.Add(new ToolStripMenuItem($"低于 {threshold}%") { Checked = threshold == 20 });
             previewMenu.Items.Add(alertThresholds);
+            previewMenu.Items.Add(new ToolStripMenuItem("重置卡到期提醒（3 天 / 1 天）"));
             previewMenu.Items.Add(new ToolStripSeparator()); previewMenu.Items.Add("退出");
             TrayMenuStyle.Apply(previewMenu, VisualThemes.Find(id));
             previewMenu.Show(this, new Point(20, 60)); Application.DoEvents();
@@ -736,11 +744,12 @@ internal sealed partial class MeterWindow : Form
     };
     public Task RefreshAfterAccountChange()
     {
-        quotaAlerts.Clear(); accountCancellation?.Cancel();
+        quotaAlerts.Clear(); cardAlerts.Clear(); accountCancellation?.Cancel();
         return RefreshData();
     }
     public bool AlertsEnabled => alertsEnabled;
     public int AlertThreshold => alertThreshold;
+    public bool CardAlertsEnabled => cardAlertsEnabled;
     public bool ForecastEnabled => forecastEnabled;
     public bool SetForecastEnabled(bool enabled)
     {
@@ -760,9 +769,10 @@ internal sealed partial class MeterWindow : Form
         return true;
     }
     public event Action<IReadOnlyList<string>>? QuotaLow;
+    public event Action<IReadOnlyList<string>>? CardsExpiring;
     public bool SetAlertsEnabled(bool enabled)
     {
-        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(enabled, alertThreshold)); }
+        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(enabled, alertThreshold, cardAlertsEnabled)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { status.Text = "无法保存提醒设置，请检查设置目录权限"; return false; }
         alertsEnabled = enabled; quotaAlerts.Clear();
@@ -777,7 +787,7 @@ internal sealed partial class MeterWindow : Form
     {
         if (!AlertPreferences.ValidThreshold(threshold)) return false;
         if (threshold == alertThreshold) return true;
-        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(alertsEnabled, threshold)); }
+        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(alertsEnabled, threshold, cardAlertsEnabled)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { status.Text = "无法保存提醒设置，请检查设置目录权限"; return false; }
         alertThreshold = threshold; quotaAlerts.Clear();
@@ -788,11 +798,31 @@ internal sealed partial class MeterWindow : Form
         }
         return true;
     }
+    public bool SetCardAlertsEnabled(bool enabled)
+    {
+        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(alertsEnabled, alertThreshold, enabled)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { status.Text = "无法保存提醒设置，请检查设置目录权限"; return false; }
+        cardAlertsEnabled = enabled; cardAlerts.Clear();
+        if (enabled && lastSnapshot is not null)
+        {
+            using var snapshot = JsonDocument.Parse(lastSnapshot);
+            NotifyLowQuota(snapshot.RootElement);
+        }
+        return true;
+    }
     void NotifyLowQuota(JsonElement snapshot)
     {
-        if (!alertsEnabled) return;
-        var messages = quotaAlerts.Evaluate(snapshot, threshold: alertThreshold);
-        if (messages.Count > 0) QuotaLow?.Invoke(messages);
+        if (alertsEnabled)
+        {
+            var messages = quotaAlerts.Evaluate(snapshot, threshold: alertThreshold);
+            if (messages.Count > 0) QuotaLow?.Invoke(messages);
+        }
+        if (cardAlertsEnabled)
+        {
+            var messages = cardAlerts.Evaluate(snapshot);
+            if (messages.Count > 0) CardsExpiring?.Invoke(messages);
+        }
     }
     public bool SetAccountEnabled(string provider, bool enabled)
     {
@@ -811,7 +841,7 @@ internal sealed partial class MeterWindow : Form
             return false;
         }
         preferences = next;
-        quotaAlerts.Clear();
+        quotaAlerts.Clear(); cardAlerts.Clear();
         accountCancellation?.Cancel();
         if (lastSnapshot is not null)
         {
@@ -2086,11 +2116,22 @@ internal sealed class QuotaGauge : Control
         void Ring(Rectangle rect, double remaining, Color normal)
         {
             using var track = new Pen(theme.Border, 5);
-            using var fill = new Pen(remaining < 20 ? (theme.Light ? Color.FromArgb(181, 51, 71) : Color.FromArgb(255, 98, 135)) :
-                remaining < 50 ? (theme.Light ? Color.FromArgb(160, 96, 0) : Color.FromArgb(255, 169, 58)) : normal, 5);
+            Color color = remaining < 20 ? (theme.Light ? Color.FromArgb(181, 51, 71) : Color.FromArgb(255, 98, 135)) :
+                remaining < 50 ? (theme.Light ? Color.FromArgb(160, 96, 0) : Color.FromArgb(255, 169, 58)) : normal;
+            using var fill = new Pen(color, 5);
             fill.StartCap = fill.EndCap = System.Drawing.Drawing2D.LineCap.Round;
             e.Graphics.DrawArc(track, rect, -90, 359);
-            if (remaining > 0) e.Graphics.DrawArc(fill, rect, -90, (float)(3.59 * remaining));
+            if (remaining > 0)
+            {
+                float sweep = (float)(3.59 * remaining);
+                if (theme.Id is "aurora" or "neon" or "prism")
+                {
+                    using var halo = new Pen(Color.FromArgb(22, color), 11) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+                    using var glow = new Pen(Color.FromArgb(45, color), 8) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+                    e.Graphics.DrawArc(halo, rect, -90, sweep); e.Graphics.DrawArc(glow, rect, -90, sweep);
+                }
+                e.Graphics.DrawArc(fill, rect, -90, sweep);
+            }
         }
         int left = Math.Max(0, (Width - 60) / 2);
         var outer = new Rectangle(left, 4, 60, 60); Ring(outer, windows.Primary.Remaining, theme.Accent);

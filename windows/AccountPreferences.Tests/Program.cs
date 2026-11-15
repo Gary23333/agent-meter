@@ -316,6 +316,11 @@ try
     if (AlertPreferences.LoadSettings(directory) != new AlertSettings(false, 20)) throw new InvalidOperationException("损坏的提醒设置应安全关闭");
     try { AlertPreferences.Save(directory, new AlertSettings(true, 40)); throw new InvalidOperationException("不支持的阈值不能保存"); }
     catch (ArgumentException) { }
+    AlertPreferences.Save(directory, new AlertSettings(false, 30, true));
+    AlertPreferences.Save(directory, true);
+    if (AlertPreferences.LoadSettings(directory) != new AlertSettings(true, 30, true)) throw new InvalidOperationException("额度开关不能覆盖到期提醒");
+    File.WriteAllText(Path.Combine(directory, "alerts.json"), "{\"enabled\":true,\"threshold\":20,\"reset_cards_enabled\":\"bad\"}");
+    if (AlertPreferences.LoadSettings(directory) != new AlertSettings(false, 20)) throw new InvalidOperationException("损坏的到期提醒设置应安全关闭");
     if (ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测首次应默认关闭");
     ForecastPreferences.Save(directory, true);
     if (!ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测设置未保存");
@@ -356,6 +361,32 @@ try
         new QuotaAlerts().Evaluate(Snapshot(5, 1800000000), now).Count != 0 ||
         new QuotaAlerts().Evaluate(JsonSerializer.SerializeToElement(new { account = new { status = "available" } }), now).Count != 0)
         throw new InvalidOperationException("过期、未来、缺失或已重置的快照不能提醒");
+    JsonElement CardSnapshot(long observed, params (string Status, long Expiry)[] cards) => JsonSerializer.SerializeToElement(new
+    {
+        observed_at = observed, account = new { status = "available", reset_cards = new { status = "available", value = new {
+            available_count = cards.Length, cards = cards.Select(c => new { status = c.Status, expires_at = new { epoch_seconds = c.Expiry } }).ToArray()
+        } } }
+    });
+    var cardAlerts = new ResetCardAlerts();
+    var expiry = now.ToUnixTimeSeconds() + 2 * 86400;
+    var cardData = CardSnapshot(now.ToUnixTimeSeconds(), ("available", expiry), ("available", expiry),
+                                ("redeemed", expiry), ("available", now.ToUnixTimeSeconds() - 1));
+    if (!cardAlerts.Evaluate(cardData, now).Single().Contains("2 张") || cardAlerts.Evaluate(cardData, now).Count != 0 ||
+        !cardAlerts.Evaluate(CardSnapshot(now.AddDays(1).ToUnixTimeSeconds(), ("available", expiry)), now.AddDays(1)).Single().Contains("1 天") ||
+        cardAlerts.Evaluate(CardSnapshot(now.AddDays(2).ToUnixTimeSeconds(), ("available", expiry)), now.AddDays(2)).Count != 0 ||
+        new ResetCardAlerts().Evaluate(CardSnapshot(now.ToUnixTimeSeconds() - 1801, ("available", expiry)), now).Count != 0)
+        throw new InvalidOperationException("重置卡到期阶段、去重、状态或快照时效错误");
+    var fallbackCard = JsonSerializer.SerializeToElement(new { observed_at = now.ToUnixTimeSeconds(), account = new { status = "available", reset_cards = new { value = new {
+        available_count = 5, next_known_expiry = new { epoch_seconds = expiry }
+    } } } });
+    if (!new ResetCardAlerts().Evaluate(fallbackCard, now).Single().Contains("有重置卡"))
+        throw new InvalidOperationException("仅有最近到期时间时不能推断到期张数");
+    using var disabledCard = JsonDocument.Parse("""{"observed_at":1800000000,"account":{"status":"disabled","reset_cards":{"value":{"available_count":1,"cards":[{"status":"available","expires_at":{"epoch_seconds":1800003600}}]}}}}""");
+    using var failedCards = JsonDocument.Parse("""{"observed_at":1800000000,"account":{"status":"available","reset_cards":{"status":"error","value":{"available_count":1,"cards":[{"status":"available","expires_at":{"epoch_seconds":1800003600}}]}}}}""");
+    if (new ResetCardAlerts().Evaluate(disabledCard.RootElement, now).Count != 0 ||
+        new ResetCardAlerts().Evaluate(failedCards.RootElement, now).Count != 0 ||
+        new ResetCardAlerts().Evaluate(CardSnapshot(now.ToUnixTimeSeconds() + 301, ("available", expiry)), now).Count != 0)
+        throw new InvalidOperationException("关闭账户、读取失败或未来快照不能触发到期提醒");
     var kimi = JsonSerializer.SerializeToElement(new { observed_at = 1800000000L, other_accounts = new Dictionary<string, object> {
         ["Kimi Code"] = new { status = "available", quota = new { value = new[] { new { bucket = "monthTotal", remaining_percent = 10 } } } }
     } });

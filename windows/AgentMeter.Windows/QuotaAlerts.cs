@@ -72,7 +72,7 @@ internal sealed class QuotaAlerts
     static string Text(JsonElement element, string key) { var value = Field(element, key); return value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : ""; }
 }
 
-internal sealed record AlertSettings(bool Enabled, int Threshold);
+internal sealed record AlertSettings(bool Enabled, int Threshold, bool ResetCardsEnabled = false);
 /// <summary>只保存提醒开关和阈值；首次安装默认关闭。</summary>
 internal static class AlertPreferences
 {
@@ -88,12 +88,22 @@ internal static class AlertPreferences
             int threshold = 20;
             if (doc.RootElement.TryGetProperty("threshold", out var saved) &&
                 (saved.ValueKind != JsonValueKind.Number || !saved.TryGetInt32(out threshold) || !ValidThreshold(threshold))) return new(false, 20);
-            return new(enabled.ValueKind == JsonValueKind.True, threshold);
+            bool resetCards = false;
+            if (doc.RootElement.TryGetProperty("reset_cards_enabled", out var cards))
+            {
+                if (cards.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return new(false, 20);
+                resetCards = cards.ValueKind == JsonValueKind.True;
+            }
+            return new(enabled.ValueKind == JsonValueKind.True, threshold, resetCards);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or System.Security.SecurityException) { return new(false, 20); }
     }
     public static bool Load(string directory) => LoadSettings(directory).Enabled;
-    public static void Save(string directory, bool enabled) => Save(directory, new AlertSettings(enabled, LoadSettings(directory).Threshold));
+    public static void Save(string directory, bool enabled)
+    {
+        var current = LoadSettings(directory);
+        Save(directory, current with { Enabled = enabled });
+    }
     public static void Save(string directory, AlertSettings settings)
     {
         if (!ValidThreshold(settings.Threshold)) throw new ArgumentException("提醒阈值无效");
@@ -104,7 +114,7 @@ internal static class AlertPreferences
         {
             using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                created = true; JsonSerializer.Serialize(file, new { enabled = settings.Enabled, threshold = settings.Threshold });
+                created = true; JsonSerializer.Serialize(file, new { enabled = settings.Enabled, threshold = settings.Threshold, reset_cards_enabled = settings.ResetCardsEnabled });
             }
             File.Move(temporary, Path.Combine(directory, "alerts.json"), overwrite: true);
         }
