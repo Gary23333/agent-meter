@@ -636,6 +636,27 @@ class WindowsBackendTests(unittest.TestCase):
             'totals': {'total_tokens': 1000000}, 'groups': [deepseek]}
         self.assertTrue(backend.compact_history(source)['history']['Codex']['estimate']['partial'])
 
+    def test_estimated_cost_is_independent_for_each_period(self):
+        def group(tokens, model='gpt-5.3-codex'):
+            return {'model': model, 'app': 'codex', 'fresh_input': tokens, 'cache_read': 0,
+                    'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': tokens}
+        periods = {
+            'today': {'totals': {'total_tokens': 1000000}, 'groups': [group(1000000)]},
+            '7d': {'totals': {'total_tokens': 2000000}, 'groups': [group(2000000)]},
+            '30d': {'totals': {'total_tokens': 5}, 'groups': [group(5, 'private-unknown-model')]},
+            'all': {'totals': {'total_tokens': 3000000}, 'groups': [group(2000000)]},
+        }
+        source = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'Codex': {
+            'status': 'available', 'value': {'periods': periods}}}}
+        item = backend.compact_history(source)['history']['Codex']
+        self.assertEqual(Decimal(item['estimates']['today']['amount_usd']), Decimal('1.75'))
+        self.assertEqual(Decimal(item['estimates']['7d']['amount_usd']), Decimal('3.5'))
+        self.assertNotIn('30d', item['estimates'])
+        self.assertTrue(item['estimates']['all']['partial'])
+        self.assertFalse(item['estimates']['7d']['partial'])
+        self.assertEqual(item['estimate'], item['estimates']['today'])
+        self.assertNotIn('private-unknown-model', json.dumps(item))
+
     def test_custom_price_overrides_and_corrupt_file_suppresses_estimates(self):
         group = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
                  'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}

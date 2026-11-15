@@ -658,23 +658,32 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
                                     "value": compact_value}
         try:
             estimated = estimate_source_cost(item, table) if table is not None else None
-            cost = (estimated or {}).get("value", {}).get("periods", {}).get("today", {})
-            today = periods.get("today", {})
-            today_total = today.get("totals", {}).get("total_tokens") if isinstance(today, dict) else None
-            groups = today.get("groups") if isinstance(today, dict) else None
-            amount = Decimal(str(cost.get("amount")))
-            if (isinstance(today_total, int) and not isinstance(today_total, bool) and today_total > 0
-                    and isinstance(groups, list) and groups and amount.is_finite() and amount >= 0):
+        except (TypeError, ValueError, KeyError, InvalidOperation, OverflowError):
+            # 价格估算失败不影响本机用量显示，也不把未知价格当作零。
+            estimated = None
+        estimates = {}
+        for period in ("today", "7d", "30d", "all"):
+            try:
+                cost = (estimated or {}).get("value", {}).get("periods", {}).get(period, {})
+                bucket = periods.get(period, {})
+                total = bucket.get("totals", {}).get("total_tokens") if isinstance(bucket, dict) else None
+                groups = bucket.get("groups") if isinstance(bucket, dict) else None
+                amount = Decimal(str(cost.get("amount")))
+                if not (isinstance(total, int) and not isinstance(total, bool) and total > 0 and
+                        isinstance(groups, list) and groups and amount.is_finite() and amount >= 0):
+                    continue
                 grouped = sum(row.get("total_tokens", 0) for row in groups if isinstance(row, dict)
                               and isinstance(row.get("total_tokens"), int) and not isinstance(row.get("total_tokens"), bool))
                 peak_missing = any(table.peak_multipliers.get(table.match(model), 1) != 1
                                    for model in cost.get("unsplit_models", []))
-                compact["history"][name]["estimate"] = {"amount_usd": format(amount, "f"),
+                estimates[period] = {"amount_usd": format(amount, "f"),
                     "partial": bool(item.get("status") == "partial" or cost.get("unmatched_models") or
-                                    grouped != today_total or peak_missing)}
-        except (TypeError, ValueError, KeyError, InvalidOperation, OverflowError):
-            # 价格估算失败不影响本机用量显示，也不把未知价格当作零。
-            pass
+                                    grouped != total or peak_missing)}
+            except (TypeError, ValueError, KeyError, InvalidOperation, OverflowError):
+                continue
+        if estimates:
+            compact["history"][name]["estimates"] = estimates
+            if "today" in estimates: compact["history"][name]["estimate"] = estimates["today"]
     compact["daily_trend"] = recent_daily_trend(result)
     compact["calendar_report"] = calendar_report(result)
     try:

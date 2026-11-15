@@ -461,6 +461,8 @@ internal sealed partial class MeterWindow : Form
             selector.PerformClick(); Application.DoEvents();
             if (usagePeriod != period || !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Name == "usage-total" && label.Text == expected))
                 throw new InvalidOperationException("用量周期切换或汇总错误：" + period);
+            if (period == "7d" && !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text.Contains("近 7 天 API 等价估算 $12.3")))
+                throw new InvalidOperationException("用量周期费用未切换");
             if (period == "7d") SavePreview("aurora-usage-period-seven-days");
         }
         SetView(View.Applications);
@@ -714,6 +716,7 @@ internal sealed partial class MeterWindow : Form
                     daily.Add(new JsonObject { ["date"] = new DateOnly(2026, 10, 16).AddDays(index).ToString("yyyy-MM-dd"),
                         ["tokens"] = demoDailyThousands[index] * 1000 });
                 sample["history"]!["Codex"]!["value"]!["daily_trend"] = new JsonObject { ["days"] = daily, ["incomplete"] = false };
+                sample["history"]!["Codex"]!["estimates"] = JsonNode.Parse("""{"today":{"amount_usd":"2.464","partial":false},"7d":{"amount_usd":"12.3","partial":false},"30d":{"amount_usd":"35.8","partial":true},"all":{"amount_usd":"120.9","partial":true}}""");
                 sample["other_accounts"]!["DeepSeek API"] = JsonNode.Parse("""{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}""");
                 sample["forecast"] = ForecastDemo();
                 sample["observed_at"] = ForecastDemoNow.ToUnixTimeSeconds();
@@ -1084,13 +1087,14 @@ internal sealed partial class MeterWindow : Form
                     string detail = GetString(item.Value, "reason", "") == "opencode_v2_unread" ? "新版记录未计入" : "部分记录未读取";
                     if (extra is null) note += " · " + detail; else extra += " · " + detail;
                 }
-                var estimate = GetValue(item.Value, "estimate");
+                var estimate = GetValue(GetValue(item.Value, "estimates"), usagePeriod);
+                if (usagePeriod == "today" && estimate.ValueKind != JsonValueKind.Object) estimate = GetValue(item.Value, "estimate");
                 string rawAmount = GetString(estimate, "amount_usd", "");
                 string? costNote = null;
                 if (decimal.TryParse(rawAmount, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var amount) && amount >= 0)
                 {
                     string display = amount is > 0 and < 0.0001m ? "<$0.0001" : $"${amount:0.####}";
-                    costNote = $"今日 API 等价估算 {display} · 非账单" + (GetValue(estimate, "partial").ValueKind == JsonValueKind.True ? " · 不完整" : "");
+                    costNote = $"{UsagePeriodLabel} API 等价估算 {display} · 非账单" + (GetValue(estimate, "partial").ValueKind == JsonValueKind.True ? " · 不完整" : "");
                 }
                 AddCard(item.Name, dayTokens.HasValue ? FormatNumber(dayTokens.Value) + " " + UsagePeriodLabel : "暂无数据", note, null, extra, costNote);
             }
