@@ -30,7 +30,7 @@ The panel previews use fictional data on an isolated Windows runner. The default
 - **Tray remaining percentage** — choose a provider, the lowest valid window, or the brand icon. Unknown, expired and disabled readings are excluded; a tooltip identifies the source and period. Selection adds no account queries.
 - **Unified account details** — balances, wallets, supported plan names and Codex reset-credit expiry tiles appear within the relevant account card. Expired details do not rewrite provider-reported totals.
 - **Account switches** — enable or disable Codex, Kimi, Claude, MiniMax and DeepSeek account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials; MiniMax, DeepSeek and WorkBuddy are off by default.
-- **Low-quota alerts** — optionally enable Windows notifications below 20% remaining; repeat alerts for the same window are suppressed. Alerts default to off, and actual notification display still needs device testing.
+- **Low-quota alerts** — optionally enable Windows notifications below a selectable 10%, 20%, 30%, or 50% threshold (20% by default); stale data and repeat alerts for the same window are suppressed. Alerts default to off, and actual notification display still needs device testing.
 - **Desktop pet (in development)** — includes the upstream Mochi and Bit sprite packs, hidden by default. Users can show, switch and drag them from the tray menu; animations respond to low quota and recent local updates. Transparency and interaction still need device testing, and the upstream 3D characters and full interactions are not yet ported.
 - **Appearance** — choose from seven named palettes and card styles in the tray menu; the choice is remembered. The Windows port does not yet reproduce all macOS materials or animations, and visual review is ongoing.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
@@ -81,7 +81,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.23](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.23), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
+Download [Windows v0.1.0-alpha.23](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.23), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy and MiMo require a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
 
 ### Build from source
 

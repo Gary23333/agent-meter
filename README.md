@@ -26,7 +26,7 @@
 ## 三步开始
 
 1. 从 [Alpha 23 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.23) 下载 `AgentMeter-Windows-x64.zip`。
-2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；WorkBuddy 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
+2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；WorkBuddy 和小米 MiMo 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
 当前支持 Windows x64，开发验证环境为 Windows build 26300；其他系统版本与 ARM64 尚待验证。预览版未签名，发布页附 SHA-256 校验文件。账户数据依赖对应 Agent 的本地安装与登录状态，首次扫描大量历史记录可能较慢。

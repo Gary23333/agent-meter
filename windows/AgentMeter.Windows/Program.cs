@@ -184,9 +184,22 @@ internal sealed partial class MeterContext : ApplicationContext
                 if (editor.ShowDialog(window) != DialogResult.OK) return;
                 if (window.SetAccountEnabled("MiMo", !editor.Cleared)) accountItems["MiMo"].Checked = !editor.Cleared;
             });
-            var alerts = new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = window.AlertsEnabled };
+            var alerts = new ToolStripMenuItem($"低额度提醒（低于 {window.AlertThreshold}%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
             menu.Items.Add(alerts);
+            var thresholds = new ToolStripMenuItem("提醒阈值");
+            foreach (int threshold in AlertPreferences.Thresholds)
+            {
+                var item = new ToolStripMenuItem($"低于 {threshold}%") { Checked = threshold == window.AlertThreshold };
+                item.Click += (_, _) =>
+                {
+                    if (!window.SetAlertThreshold(threshold)) return;
+                    foreach (ToolStripMenuItem choice in thresholds.DropDownItems) choice.Checked = ReferenceEquals(choice, item);
+                    alerts.Text = $"低额度提醒（低于 {threshold}%）";
+                };
+                thresholds.DropDownItems.Add(item);
+            }
+            menu.Items.Add(thresholds);
             var forecast = new ToolStripMenuItem("第三方重置预测（联网）") { Checked = window.ForecastEnabled };
             forecast.Click += (_, _) => { if (window.SetForecastEnabled(!forecast.Checked)) forecast.Checked = !forecast.Checked; };
             menu.Items.Add(forecast);
@@ -343,6 +356,7 @@ internal sealed partial class MeterWindow : Form
     CancellationTokenSource? activityCancellation;
     Func<CancellationToken, Task<string>>? syntheticActivityReader;
     bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
+    int alertThreshold = 20;
     bool activityBusy;
     DateTimeOffset lastActivityAttempt = DateTimeOffset.MinValue;
     Size preferredSize;
@@ -363,7 +377,8 @@ internal sealed partial class MeterWindow : Form
     {
         this.demo = demo; popup = !windowed; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
         usagePeriod = demo ? "today" : UsagePeriodPreferences.Load(AccountPreferences.DefaultDirectory);
-        alertsEnabled = !demo && AlertPreferences.Load(AccountPreferences.DefaultDirectory);
+        var alertSettings = demo ? new AlertSettings(false, 20) : AlertPreferences.LoadSettings(AccountPreferences.DefaultDirectory);
+        alertsEnabled = alertSettings.Enabled; alertThreshold = alertSettings.Threshold;
         forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
         theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
         Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Primary;
@@ -459,7 +474,11 @@ internal sealed partial class MeterWindow : Form
             using var previewMenu = new ContextMenuStrip { Font = Font };
             previewMenu.Items.Add("刷新数据");
             var branch = new ToolStripMenuItem("界面风格"); branch.DropDownItems.Add(new ToolStripMenuItem("极光") { Checked = true });
-            previewMenu.Items.Add(branch); previewMenu.Items.Add(new ToolStripMenuItem("低额度提醒") { Checked = true });
+            previewMenu.Items.Add(branch); previewMenu.Items.Add(new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = true });
+            var alertThresholds = new ToolStripMenuItem("提醒阈值");
+            foreach (int threshold in AlertPreferences.Thresholds)
+                alertThresholds.DropDownItems.Add(new ToolStripMenuItem($"低于 {threshold}%") { Checked = threshold == 20 });
+            previewMenu.Items.Add(alertThresholds);
             previewMenu.Items.Add(new ToolStripSeparator()); previewMenu.Items.Add("退出");
             TrayMenuStyle.Apply(previewMenu, VisualThemes.Find(id));
             previewMenu.Show(this, new Point(20, 60)); Application.DoEvents();
@@ -721,6 +740,7 @@ internal sealed partial class MeterWindow : Form
         return RefreshData();
     }
     public bool AlertsEnabled => alertsEnabled;
+    public int AlertThreshold => alertThreshold;
     public bool ForecastEnabled => forecastEnabled;
     public bool SetForecastEnabled(bool enabled)
     {
@@ -742,7 +762,7 @@ internal sealed partial class MeterWindow : Form
     public event Action<IReadOnlyList<string>>? QuotaLow;
     public bool SetAlertsEnabled(bool enabled)
     {
-        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, enabled); }
+        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(enabled, alertThreshold)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { status.Text = "无法保存提醒设置，请检查设置目录权限"; return false; }
         alertsEnabled = enabled; quotaAlerts.Clear();
@@ -753,10 +773,25 @@ internal sealed partial class MeterWindow : Form
         }
         return true;
     }
+    public bool SetAlertThreshold(int threshold)
+    {
+        if (!AlertPreferences.ValidThreshold(threshold)) return false;
+        if (threshold == alertThreshold) return true;
+        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(alertsEnabled, threshold)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { status.Text = "无法保存提醒设置，请检查设置目录权限"; return false; }
+        alertThreshold = threshold; quotaAlerts.Clear();
+        if (alertsEnabled && lastSnapshot is not null)
+        {
+            using var snapshot = JsonDocument.Parse(lastSnapshot);
+            NotifyLowQuota(snapshot.RootElement);
+        }
+        return true;
+    }
     void NotifyLowQuota(JsonElement snapshot)
     {
         if (!alertsEnabled) return;
-        var messages = quotaAlerts.Evaluate(snapshot);
+        var messages = quotaAlerts.Evaluate(snapshot, threshold: alertThreshold);
         if (messages.Count > 0) QuotaLow?.Invoke(messages);
     }
     public bool SetAccountEnabled(string provider, bool enabled)
@@ -982,7 +1017,7 @@ internal sealed partial class MeterWindow : Form
                     catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                     { combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = "error" }; }
                     ApplyAccountPreferences(combined);
-                    using var workbuddySnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(workbuddySnapshot.RootElement);
+                    using var workbuddySnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(workbuddySnapshot.RootElement); NotifyLowQuota(workbuddySnapshot.RootElement);
                 }
                 if (forecastTask is not null)
                 {

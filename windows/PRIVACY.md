@@ -1,6 +1,6 @@
 # 隐私、凭据与本地数据
 
-Windows 适配层读取本机会话文件和用量数据库，提取用量指标，不在面板中展示对话内容。应用活动读取器会访问会话时间和项目路径等元数据，但只向界面传递各应用的汇总计数和更新时间，不传递会话标识、项目路径或内容。解析后的用量只缓存在有限的进程内存中，退出时清除。Windows 界面不上传这些历史记录，也不要求注册 Agent Meter 账户。Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek API、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan 和小米 MiMo 查询默认关闭；可在托盘菜单分别调整，选择保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，只包含开关状态。自定义价格、外观、提醒和桌宠设置保存在同一目录；价格文件无法读取时会隐藏金额并提示。额度提醒只在当前进程内去重，重启后可能再次提示。桌宠素材随程序内置，动画不连接网络。
+Windows 适配层读取本机会话文件和用量数据库，提取用量指标，不在面板中展示对话内容。应用活动读取器会访问会话时间和项目路径等元数据，但只向界面传递各应用的汇总计数和更新时间，不传递会话标识、项目路径或内容。解析后的用量只缓存在有限的进程内存中，退出时清除。Windows 界面不上传这些历史记录，也不要求注册 Agent Meter 账户。Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek API、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan 和小米 MiMo 查询默认关闭；可在托盘菜单分别调整，选择保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，只包含开关状态。自定义价格、外观、提醒和桌宠设置保存在同一目录；价格文件无法读取时会隐藏金额并提示。额度提醒默认关闭，阈值和开关保存在本机；仅使用近期且未过重置时间的额度快照，只在当前进程内去重，重启后可能再次提示。桌宠素材随程序内置，动画不连接网络。
 
 第三方重置预测默认关闭。开启后会通过 HTTPS 访问 `willreset.com`、`codex-reset.com` 和 `codexreset.org`，不发送账户凭据或本机会话；公开预测及其历史缓存在 `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`，关闭开关不会自动删除缓存。已发出的请求无法撤回。
 

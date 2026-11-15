@@ -308,6 +308,14 @@ try
     if (AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒首次应默认关闭");
     AlertPreferences.Save(directory, true);
     if (!AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒设置未保存");
+    File.WriteAllText(Path.Combine(directory, "alerts.json"), "{\"enabled\":true}");
+    if (AlertPreferences.LoadSettings(directory) != new AlertSettings(true, 20)) throw new InvalidOperationException("旧版提醒设置应保留开关并使用默认阈值");
+    AlertPreferences.Save(directory, new AlertSettings(true, 30));
+    if (AlertPreferences.LoadSettings(directory) != new AlertSettings(true, 30)) throw new InvalidOperationException("提醒阈值未保存");
+    File.WriteAllText(Path.Combine(directory, "alerts.json"), "{\"enabled\":true,\"threshold\":40}");
+    if (AlertPreferences.LoadSettings(directory) != new AlertSettings(false, 20)) throw new InvalidOperationException("损坏的提醒设置应安全关闭");
+    try { AlertPreferences.Save(directory, new AlertSettings(true, 40)); throw new InvalidOperationException("不支持的阈值不能保存"); }
+    catch (ArgumentException) { }
     if (ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测首次应默认关闭");
     ForecastPreferences.Save(directory, true);
     if (!ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测设置未保存");
@@ -320,39 +328,54 @@ try
     File.WriteAllText(Path.Combine(directory, "pet-settings.json"), "broken");
     if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("损坏的桌宠设置应默认隐藏");
     var alerts = new QuotaAlerts();
-    JsonElement Snapshot(double remaining, long reset, string status = "available") => JsonSerializer.SerializeToElement(new
+    JsonElement Snapshot(double remaining, long reset, string status = "available", long observed = 1800000000) => JsonSerializer.SerializeToElement(new
     {
+        observed_at = observed,
         account = new { status, quota = new { value = new[] { new { bucket = "primary", window_minutes = 300,
             remaining_percent = remaining, resets_at = new { epoch_seconds = reset } } } } }
     });
     var now = DateTimeOffset.FromUnixTimeSeconds(1800000000);
-    if (alerts.Evaluate(Snapshot(20, 100), now).Count != 0 || alerts.Evaluate(Snapshot(19, 100), now).Count != 1 ||
-        alerts.Evaluate(Snapshot(15, 100), now).Count != 0 || alerts.Evaluate(Snapshot(15, 101), now.AddMinutes(1)).Count != 0 ||
-        alerts.Evaluate(Snapshot(15, 101), now.AddMinutes(16)).Count != 1)
+    if (alerts.Evaluate(Snapshot(20, 1800003600), now).Count != 0 || alerts.Evaluate(Snapshot(19, 1800003600), now).Count != 1 ||
+        alerts.Evaluate(Snapshot(15, 1800003600), now).Count != 0 || alerts.Evaluate(Snapshot(15, 1800003601), now.AddMinutes(1)).Count != 0 ||
+        alerts.Evaluate(Snapshot(15, 1800003601), now.AddMinutes(16)).Count != 1)
         throw new InvalidOperationException("低额度提醒阈值、去重或重置周期错误");
-    if (alerts.Evaluate(Snapshot(35, 101), now.AddMinutes(17)).Count != 0 || alerts.Evaluate(Snapshot(10, 101), now.AddMinutes(17)).Count != 1 ||
-        alerts.Evaluate(Snapshot(10, 102, "disabled"), now.AddMinutes(17)).Count != 0)
+    if (alerts.Evaluate(Snapshot(35, 1800003601), now.AddMinutes(17)).Count != 0 || alerts.Evaluate(Snapshot(10, 1800003601), now.AddMinutes(17)).Count != 1 ||
+        alerts.Evaluate(Snapshot(10, 1800003602, "disabled"), now.AddMinutes(17)).Count != 0)
         throw new InvalidOperationException("额度恢复或关闭来源后的提醒错误");
-    var kimi = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+    var thresholdAlerts = new QuotaAlerts();
+    if (thresholdAlerts.Evaluate(Snapshot(30, 1800003600), now, 30).Count != 0 ||
+        thresholdAlerts.Evaluate(Snapshot(29, 1800003600), now, 30).Count != 1 ||
+        thresholdAlerts.Evaluate(Snapshot(40, 1800003600), now, 30).Count != 0 ||
+        thresholdAlerts.Evaluate(Snapshot(29, 1800003600), now, 30).Count != 1 ||
+        new QuotaAlerts().Evaluate(Snapshot(9, 1800003600), now, 10).Count != 1 ||
+        new QuotaAlerts().Evaluate(Snapshot(49, 1800003600), now, 50).Count != 1 ||
+        new QuotaAlerts().Evaluate(Snapshot(9, 1800003600), now, 40).Count != 0)
+        throw new InvalidOperationException("自定义阈值、边界或恢复后重新提醒错误");
+    if (new QuotaAlerts().Evaluate(Snapshot(5, 1800003600, observed: 1799998199), now).Count != 0 ||
+        new QuotaAlerts().Evaluate(Snapshot(5, 1800003600, observed: 1800000301), now).Count != 0 ||
+        new QuotaAlerts().Evaluate(Snapshot(5, 1800000000), now).Count != 0 ||
+        new QuotaAlerts().Evaluate(JsonSerializer.SerializeToElement(new { account = new { status = "available" } }), now).Count != 0)
+        throw new InvalidOperationException("过期、未来、缺失或已重置的快照不能提醒");
+    var kimi = JsonSerializer.SerializeToElement(new { observed_at = 1800000000L, other_accounts = new Dictionary<string, object> {
         ["Kimi Code"] = new { status = "available", quota = new { value = new[] { new { bucket = "monthTotal", remaining_percent = 10 } } } }
     } });
     if (!new QuotaAlerts().Evaluate(kimi, now).Single().Contains("月度总额"))
         throw new InvalidOperationException("Kimi 月度额度提醒应显示中文名称");
-    var minimax = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+    var minimax = JsonSerializer.SerializeToElement(new { observed_at = 1800000000L, other_accounts = new Dictionary<string, object> {
         ["MiniMax Code"] = new { status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 10 } } } }
     } });
     if (!new QuotaAlerts().Evaluate(minimax, now).Single().Contains("5 小时"))
         throw new InvalidOperationException("MiniMax 额度提醒应显示中文周期");
-    var workbuddy = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+    var workbuddy = JsonSerializer.SerializeToElement(new { observed_at = 1800000000L, other_accounts = new Dictionary<string, object> {
         ["WorkBuddy"] = new { status = "available", quota = new { value = new[] { new { bucket = "credits", remaining_percent = 10 } } } }
     } });
     if (!new QuotaAlerts().Evaluate(workbuddy, now).Single().Contains("积分额度"))
         throw new InvalidOperationException("WorkBuddy 提醒应显示积分额度");
-    using var zcodeAlert = JsonDocument.Parse("""{"other_accounts":{"ZCode":{"status":"available","quota":{"value":[{"bucket":"quota","limit_type":"TOKENS_LIMIT","window_minutes":300,"remaining_percent":10},{"bucket":"quota","limit_type":"CREDIT_LIMIT","window_minutes":300,"remaining_percent":15},{"bucket":"mcp","limit_type":"TIME_LIMIT","remaining_percent":5}]}}}}""");
+    using var zcodeAlert = JsonDocument.Parse("""{"observed_at":1800000000,"other_accounts":{"ZCode":{"status":"available","quota":{"value":[{"bucket":"quota","limit_type":"TOKENS_LIMIT","window_minutes":300,"remaining_percent":10},{"bucket":"quota","limit_type":"CREDIT_LIMIT","window_minutes":300,"remaining_percent":15},{"bucket":"mcp","limit_type":"TIME_LIMIT","remaining_percent":5}]}}}}""");
     var zcodeMessages = new QuotaAlerts().Evaluate(zcodeAlert.RootElement, now);
     if (zcodeMessages.Count != 3 || !zcodeMessages.Any(text => text.Contains("MCP 调用")) || !zcodeMessages.Any(text => text.Contains("Token")))
         throw new InvalidOperationException("智谱不同额度类型的提醒不能互相覆盖");
-    var multiMiniMax = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+    var multiMiniMax = JsonSerializer.SerializeToElement(new { observed_at = 1800000000L, other_accounts = new Dictionary<string, object> {
         ["MiniMax Code"] = new[] {
             new { label = "甲", status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 10 } } } },
             new { label = "乙", status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 15 } } } }
