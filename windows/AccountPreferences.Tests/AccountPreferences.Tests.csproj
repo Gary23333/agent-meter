@@ -43,6 +43,8 @@
     <Compile Include="..\AgentMeter.Windows\WorkBuddyNavigation.cs" Link="WorkBuddyNavigation.cs" />
     <Compile Include="..\AgentMeter.Windows\MiMoNavigation.cs" Link="MiMoNavigation.cs" />
     <Compile Include="..\AgentMeter.Windows\QoderNavigation.cs" Link="QoderNavigation.cs" />
+    <Compile Include="..\AgentMeter.Windows\TraeHeaderFilter.cs" Link="TraeHeaderFilter.cs" />
+    <Compile Include="..\AgentMeter.Windows\TraeNavigation.cs" Link="TraeNavigation.cs" />
     <Compile Include="..\AgentMeter.Windows\WebViewSafety.cs" Link="WebViewSafety.cs" />
     <Compile Include="..\AgentMeter.Windows\SpritePet.cs" Link="SpritePet.cs" />
     <Compile Include="..\AgentMeter.Windows\PetState.cs" Link="PetState.cs" />

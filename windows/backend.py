@@ -34,7 +34,7 @@ from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
 from windows.forecast import forecast_summary
 from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, save_ledger, track_windows
 from agent_meter.deepseek import collect_deepseek
-from agent_meter.web_sources import collect_workbuddy, collect_qoder_web
+from agent_meter.web_sources import collect_workbuddy, collect_qoder_web, collect_trae
 from agent_meter.zcode import collect_zcode
 from agent_meter.volcengine import collect_volcengine
 from agent_meter.mimo import collect_mimo
@@ -135,6 +135,25 @@ def workbuddy_balance(session, now):
     source = collect_workbuddy(session, now, timeout=12)
     return {"status": source["status"], "quota": source["metrics"]["quota"],
             "credits": source["metrics"]["credits"], "subscription": source.get("subscription")}
+
+
+def trae_account(session, now):
+    """只接收独立登录窗口捕获的授权头，不读取其他浏览器或本机客户端登录。"""
+    if session is None:
+        raise SourceError("trae_session_missing")
+    if not isinstance(session, dict) or set(session) != {"token", "user_agent", "device_id"}:
+        raise SourceError("trae_session_invalid")
+    token, user_agent, device_id = session["token"], session["user_agent"], session["device_id"]
+    if (not isinstance(token, str) or not 20 <= len(token) <= 4096 or
+            any(not (c.isascii() and (c.isalnum() or c in "._-")) for c in token) or
+            not isinstance(user_agent, str) or not 0 < len(user_agent) <= 1024 or
+            any(not ' ' <= c <= '~' for c in user_agent) or
+            (device_id is not None and (not isinstance(device_id, str) or not 0 < len(device_id) <= 256 or
+                                        any(not '!' <= c <= '~' for c in device_id)))):
+        raise SourceError("trae_session_invalid")
+    source = collect_trae({"token": token, "user_agent": user_agent, "device_id": device_id}, now, timeout=12, strict_usage=True)
+    return {"status": source["status"], "reason": source.get("reason"),
+            "quota": source["metrics"]["quota"], "credits": source["metrics"]["credits"]}
 
 
 def qoder_account(session, now):
@@ -816,6 +835,7 @@ def main():
     parser.add_argument("--workbuddy-only", action="store_true", help="使用标准输入中的应用专用会话查询 WorkBuddy")
     parser.add_argument("--mimo-only", action="store_true", help="使用标准输入中的应用专用会话查询小米 MiMo")
     parser.add_argument("--qoder-only", action="store_true", help="使用标准输入中的应用专用会话查询 Qoder 中国区")
+    parser.add_argument("--trae-only", action="store_true", help="使用应用专用会话查询 TRAE 中国区")
     parser.add_argument("--activity-only", action="store_true", help="只读取本机活动汇总，不查询账户")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
@@ -826,7 +846,7 @@ def main():
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
     if args.activity_only:
-        if (args.qoder_only or args.mimo_only or args.workbuddy_only or args.deepseek_only or args.zcode_only or args.volcengine_only or args.cards_update or args.forecast_only or args.history_worker
+        if (args.trae_only or args.qoder_only or args.mimo_only or args.workbuddy_only or args.deepseek_only or args.zcode_only or args.volcengine_only or args.cards_update or args.forecast_only or args.history_worker
                 or args.account_only or args.local_only or args.account_input or args.enable_minimax_account
                 or any(getattr(args, "disable_" + provider + "_account") for provider in ("codex", "kimi", "claude"))):
             raise SystemExit(2)
@@ -839,8 +859,8 @@ def main():
             result = {"status": "error", "apps": [], "sources": {}}
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
         return
-    if args.workbuddy_only or args.mimo_only or args.qoder_only:
-        if sum((args.workbuddy_only, args.mimo_only, args.qoder_only)) != 1:
+    if args.workbuddy_only or args.mimo_only or args.qoder_only or args.trae_only:
+        if sum((args.workbuddy_only, args.mimo_only, args.qoder_only, args.trae_only)) != 1:
             raise SystemExit(2)
         if args.volcengine_only or args.zcode_only or args.deepseek_only or args.cards_update or args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
             raise SystemExit(2)
@@ -855,7 +875,7 @@ def main():
             session = data["session"]
         except (ValueError, TypeError, RecursionError):
             raise SystemExit(2) from None
-        fetch = qoder_account if args.qoder_only else mimo_account if args.mimo_only else workbuddy_balance
+        fetch = trae_account if args.trae_only else qoder_account if args.qoder_only else mimo_account if args.mimo_only else workbuddy_balance
         print(json.dumps(guarded(lambda: fetch(session, time.time())), ensure_ascii=False))
         return
     if args.volcengine_only:

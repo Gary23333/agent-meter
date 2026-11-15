@@ -185,7 +185,7 @@ def collect_workbuddy(session, now, timeout=15):
     return normalize_workbuddy(payload, now)
 
 
-def normalize_trae(payload, now, token=None):
+def normalize_trae(payload, now, token=None, *, strict_usage=False):
     packs = None
     if isinstance(payload, dict):
         packs = payload.get("user_entitlement_pack_list", payload.get("userEntitlementPackList"))
@@ -193,6 +193,7 @@ def normalize_trae(payload, now, token=None):
         raise SourceError("unsupported_trae_contract")
     limit = used = 0.0
     active = 0
+    missing_usage = False
     for pack in packs:
         if not isinstance(pack, dict):
             raise SourceError("invalid_trae_pack")
@@ -207,6 +208,9 @@ def normalize_trae(payload, now, token=None):
                 continue
             raise SourceError("invalid_trae_pack")
         pack_limit = number(raw_limit)
+        if strict_usage and pack_limit > 0 and raw_used is None:
+            missing_usage = True
+            continue
         pack_used = 0 if raw_used is None else number(raw_used)
         if pack_limit == 0 and pack_used == 0:
             continue
@@ -215,6 +219,11 @@ def normalize_trae(payload, now, token=None):
         used += pack_used
     out = source("trae_cn", "account", now)
     out["account_key"] = account_key("trae_cn", token) if token else None
+    if missing_usage:
+        # 缺少已用量时不能把剩余额度推断成满额，Windows 界面保留不完整状态。
+        out["status"] = "partial"
+        out["reason"] = "trae_usage_incomplete"
+        return out
     if active == 0 or limit <= 0:
         out["metrics"]["credits"] = metric(reason="trae_no_credit_packs")
         return out
@@ -227,7 +236,7 @@ def normalize_trae(payload, now, token=None):
     return out
 
 
-def collect_trae(session, now, timeout=15):
+def collect_trae(session, now, timeout=15, *, strict_usage=False):
     token = require(session, "token")
     if token.lower().startswith("cloud-ide-jwt "):
         token = token[len("cloud-ide-jwt "):].strip()
@@ -235,4 +244,4 @@ def collect_trae(session, now, timeout=15):
                "User-Agent": session.get("user_agent") or SAFARI_UA}
     if session.get("device_id"):
         headers["X-Device-Id"] = session["device_id"]
-    return normalize_trae(post_json(TRAE_URL, {}, timeout=timeout, headers=headers), now, token)
+    return normalize_trae(post_json(TRAE_URL, {}, timeout=timeout, headers=headers), now, token, strict_usage=strict_usage)

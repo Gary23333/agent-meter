@@ -161,11 +161,12 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path -LiteralPath './windows/dist/AgentMeter/licenses/WebView2-SDK-LICENSE.txt')) { throw 'WebView2 SDK license missing' }
-          $webview = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--webview-smoke' -WindowStyle Hidden -PassThru
+          $webviewErrors = "$env:RUNNER_TEMP/webview-smoke-errors.txt"
+          $webview = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--webview-smoke' -WindowStyle Hidden -RedirectStandardError $webviewErrors -PassThru
           try {
             if (-not $webview.WaitForExit(90000)) { throw 'WebView2 profile smoke test timed out' }
             if ($webview.ExitCode -eq 10) { Write-Warning 'WebView2 Runtime is unavailable; isolated profile smoke test skipped.' }
-            elseif ($webview.ExitCode -ne 0) { throw "WebView2 profile smoke test failed ($($webview.ExitCode))" }
+            elseif ($webview.ExitCode -ne 0) { Get-Content -LiteralPath $webviewErrors; throw "WebView2 profile smoke test failed ($($webview.ExitCode))" }
           } finally { if (-not $webview.HasExited) { Stop-Process -Id $webview.Id } }
       - name: Smoke test activity refresh lifecycle with synthetic data
         shell: pwsh
@@ -197,7 +198,7 @@ jobs:
         shell: pwsh
         run: |
           $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -PassThru -Wait
-          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 78) { throw 'Demo preview generation failed' }
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 80) { throw 'Demo preview generation failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: AgentMeter-demo-previews

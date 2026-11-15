@@ -26,7 +26,7 @@
 ## 三步开始
 
 1. 从 [Alpha 28 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.28) 下载 `AgentMeter-Windows-x64.zip`。
-2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；WorkBuddy、小米 MiMo 和 Qoder 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
+2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；WorkBuddy、小米 MiMo、Qoder 和 TRAE 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
 当前支持 Windows x64，开发验证环境为 Windows build 26300；其他系统版本与 ARM64 尚待验证。预览版未签名，发布页附 SHA-256 校验文件。账户数据依赖对应 Agent 的本地安装与登录状态，首次扫描大量历史记录可能较慢。
@@ -101,6 +101,7 @@
 | 小米 MiMo 平台 | 实验性独立网页登录与余额／Token Plan，默认关闭（模拟验证） | 不直接提供本机历史 |
 | MiMo Code、DevECo | 暂不支持 | 本机用量数据库 |
 | Qoder CN | 实验性独立网页登录与账户额度，默认关闭（模拟验证） | 本机积分消耗，不是 Token 或账户余额 |
+| TRAE CN | 实验性独立网页登录与账户额度，默认关闭（模拟验证） | 暂不支持 |
 
 Codex 账户和部分本机账本已有真实数据核对；其他新增账户接入目前以模拟测试为主。OpenCode 压缩记录和无法识别的数据会标记为不完整；Windows 版尚未完成所有上游数据源、账户隔离、3D 桌宠和动效。逐项证据与待验收内容见[移植计划](windows/PORT_PLAN.md)。
 
@@ -117,8 +118,8 @@ API 等价估算使用上游内置价格快照或本机自定义美元价格，�
 ## 隐私与数据
 
 - 本机历史只在本机处理，界面使用汇总指标，不上传会话记录，也不要求注册 Agent Meter 账户。
-- Codex、Kimi、Claude 查询默认开启；MiniMax、DeepSeek、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan、小米 MiMo、Qoder、第三方预测、通知和桌宠默认关闭。账户开关不影响本机账本读取。
-- 启用账户查询时会联系对应服务。Codex 使用已有登录，Claude 使用已有本地订阅凭据；MiniMax、DeepSeek、智谱 Coding Plan 密钥及火山方舟 AccessKey 对保存在 Windows 凭据管理器。WorkBuddy、小米 MiMo 和 Qoder 分别使用独立的 WebView2 登录目录。
+- Codex、Kimi、Claude 查询默认开启；MiniMax、DeepSeek、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan、小米 MiMo、Qoder、TRAE、第三方预测、通知和桌宠默认关闭。账户开关不影响本机账本读取。
+- 启用账户查询时会联系对应服务。Codex 使用已有登录，Claude 使用已有本地订阅凭据；MiniMax、DeepSeek、智谱 Coding Plan 密钥及火山方舟 AccessKey 对保存在 Windows 凭据管理器。WorkBuddy、小米 MiMo、Qoder 和 TRAE 分别使用独立的 WebView2 登录目录。TRAE 启用后会在应用内后台打开官网页面以尝试更新短期凭据。
 - Windows 界面尚未开放自动领取或兑换积分。托盘来源设置只保存模式，切换或更新图标不额外联网。
 
 凭据传递方式、网络域名、本地缓存、删除与退出登录的区别，见[隐私与本地数据说明](windows/PRIVACY.md)。安全问题请按 [SECURITY.md](SECURITY.md) 反馈。

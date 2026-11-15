@@ -20,6 +20,7 @@ internal sealed record ProviderStyle(string DisplayName, string Initial, Color C
             ("DEEPSEEK HARNESS", "DeepSeek Harness", "D", Color.FromArgb(76, 122, 225)),
             ("DEEPSEEK API", "DeepSeek API", "D", Color.FromArgb(76, 122, 225)),
             ("QODER CN", "Qoder CN", "Q", Color.FromArgb(106, 112, 218)),
+            ("TRAE CN", "TRAE CN", "T", Color.FromArgb(43, 184, 140)),
             ("OPENCODE", "OpenCode", "O", Color.FromArgb(126, 100, 215)),
             ("MIMO CODE", "MiMo Code", "M", Color.FromArgb(223, 133, 48)),
             ("MIMO 平台", "MiMo 平台", "M", Color.FromArgb(223, 133, 48)),
@@ -79,6 +80,11 @@ internal sealed class ProviderMark : Control
             e.Graphics.DrawArc(pen, 9, 8, 18, 20, 55, 255);
             e.Graphics.DrawArc(pen, 16, 6, 13, 16, 70, 175);
             e.Graphics.DrawLine(pen, 26, 8, 26, 14); e.Graphics.DrawLine(pen, 23, 11, 29, 11);
+        }
+        else if (provider.DisplayName.StartsWith("TRAE", StringComparison.OrdinalIgnoreCase))
+        {
+            e.Graphics.DrawPolygon(pen, [new PointF(18, 8), new PointF(28, 26), new PointF(8, 26)]);
+            e.Graphics.DrawLine(pen, 13, 22, 23, 22);
         }
         else if (provider.DisplayName.StartsWith("Qoder", StringComparison.OrdinalIgnoreCase))
         {

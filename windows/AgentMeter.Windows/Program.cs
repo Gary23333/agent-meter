@@ -83,9 +83,10 @@ internal static class Program
                 using var browser = new WorkBuddyBrowser(directory); await browser.SyntheticSmokeAsync();
                 using var mimo = new MiMoBrowser(directory); await mimo.SyntheticSmokeAsync();
                 using var qoder = new QoderBrowser(directory); await qoder.SyntheticSmokeAsync();
+                using var trae = new TraeBrowser(directory); await trae.SyntheticSmokeAsync();
             }
             catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException) { Environment.ExitCode = 10; }
-            catch (Exception) { Environment.ExitCode = 1; }
+            catch (Exception error) { Console.Error.WriteLine($"隔离 WebView 检查失败：{error.GetType().Name}: {error.Message}"); Environment.ExitCode = 1; }
             finally { pump.Close(); }
         };
         Application.Run(pump);
@@ -139,7 +140,7 @@ internal sealed partial class MeterContext : ApplicationContext
             menu.Items.Add(refreshInterval);
             var accounts = new ToolStripMenuItem("账户查询");
             var accountItems = new Dictionary<string, ToolStripMenuItem>();
-            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine", "MiMo", "Qoder" })
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine", "MiMo", "Qoder", "Trae" })
             {
                 var item = new ToolStripMenuItem(provider == "DeepSeek" ? "DeepSeek API 余额" : provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
                 item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
@@ -203,6 +204,15 @@ internal sealed partial class MeterContext : ApplicationContext
                 using var editor = new QoderLoginDialog(window.QoderBrowser, window.CancelAccountRequests);
                 if (editor.ShowDialog(window) != DialogResult.OK) return;
                 if (window.SetAccountEnabled("Qoder", !editor.Cleared)) accountItems["Qoder"].Checked = !editor.Cleared;
+            });
+            menu.Items.Add("登录 TRAE 中国区", null, (_, _) =>
+            {
+                ShowPanel(true);
+                window.TraeBrowser.BeginLogin();
+                using var editor = new TraeLoginDialog(window.TraeBrowser, window.CancelAccountRequests);
+                if (editor.ShowDialog(window) != DialogResult.OK)
+                { if (!window.AccountEnabled("Trae")) window.TraeBrowser.Suspend(); return; }
+                if (window.SetAccountEnabled("Trae", !editor.Cleared)) accountItems["Trae"].Checked = !editor.Cleared;
             });
             var alerts = new ToolStripMenuItem($"低额度提醒（低于 {window.AlertThreshold}%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
@@ -377,6 +387,7 @@ internal sealed partial class MeterWindow : Form
     readonly WorkBuddyBrowser workBuddyBrowser = new(AccountPreferences.DefaultDirectory);
     readonly MiMoBrowser mimoBrowser = new(AccountPreferences.DefaultDirectory);
     readonly QoderBrowser qoderBrowser = new(AccountPreferences.DefaultDirectory);
+    readonly TraeBrowser traeBrowser = new(AccountPreferences.DefaultDirectory);
     readonly QuotaAlerts quotaAlerts = new();
     readonly ResetCardAlerts cardAlerts = new();
     readonly bool demo;
@@ -401,6 +412,7 @@ internal sealed partial class MeterWindow : Form
     internal WorkBuddyBrowser WorkBuddyBrowser => workBuddyBrowser;
     internal MiMoBrowser MiMoBrowser => mimoBrowser;
     internal QoderBrowser QoderBrowser => qoderBrowser;
+    internal TraeBrowser TraeBrowser => traeBrowser;
     public void CancelAccountRequests() => accountCancellation?.Cancel();
     public event Action<string>? SnapshotUpdated;
     public void ShowNotice(string message) { if (!IsDisposed && !Disposing) status.Text = message; }
@@ -584,6 +596,22 @@ internal sealed partial class MeterWindow : Form
             picture.Save(Path.Combine(directory, "qoder-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
             dialog.Close();
         }
+        var traeDemo = JsonNode.Parse(qoderSnapshot)!.AsObject();
+        traeDemo["other_accounts"]!["TRAE CN"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"credits","remaining_percent":75}]},"credits":{"value":{"balance":"75","total":"100"}}}""");
+        using (var snapshot = JsonDocument.Parse(traeDemo.ToJsonString())) Render(snapshot.RootElement);
+        var traeAccountCard = content.Controls.OfType<RoundedCard>().First(card =>
+            card.Controls.OfType<Label>().Any(label => label.Text == "TRAE CN · 账户额度"));
+        if (!traeAccountCard.Controls.OfType<Label>().Any(label => label.Text.Contains("75 积分")))
+            throw new InvalidOperationException("TRAE 账户额度应显示网站余额");
+        content.ScrollControlIntoView(traeAccountCard); Application.DoEvents(); SavePreview("aurora-trae-account");
+        using (var dialog = new TraeLoginDialog(traeBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        {
+            dialog.Show(this); Application.DoEvents();
+            using var picture = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, "trae-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
+            dialog.Close();
+        }
         using (var snapshot = JsonDocument.Parse(qoderSnapshot)) Render(snapshot.RootElement);
         content.AutoScrollPosition = Point.Empty;
         Size = new Size(420, 760);
@@ -764,7 +792,7 @@ internal sealed partial class MeterWindow : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); mimoBrowser.Dispose(); qoderBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); popupTips.Dispose(); }
+        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); mimoBrowser.Dispose(); qoderBrowser.Dispose(); traeBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); popupTips.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
     }
@@ -828,7 +856,7 @@ internal sealed partial class MeterWindow : Form
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude,
         "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy,
-        "ZCode" => preferences.ZCode, "Volcengine" => preferences.Volcengine, "MiMo" => preferences.MiMo, "Qoder" => preferences.Qoder, _ => false
+        "ZCode" => preferences.ZCode, "Volcengine" => preferences.Volcengine, "MiMo" => preferences.MiMo, "Qoder" => preferences.Qoder, "Trae" => preferences.Trae, _ => false
     };
     public Task RefreshAfterAccountChange()
     {
@@ -932,7 +960,7 @@ internal sealed partial class MeterWindow : Form
             "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled },
             "DeepSeek" => preferences with { DeepSeek = enabled }, "WorkBuddy" => preferences with { WorkBuddy = enabled },
             "ZCode" => preferences with { ZCode = enabled }, "Volcengine" => preferences with { Volcengine = enabled },
-            "MiMo" => preferences with { MiMo = enabled }, "Qoder" => preferences with { Qoder = enabled }, _ => preferences
+            "MiMo" => preferences with { MiMo = enabled }, "Qoder" => preferences with { Qoder = enabled }, "Trae" => preferences with { Trae = enabled }, _ => preferences
         };
         try { next.Save(AccountPreferences.DefaultDirectory); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -941,6 +969,7 @@ internal sealed partial class MeterWindow : Form
             return false;
         }
         preferences = next;
+        if (provider == "Trae" && !enabled) traeBrowser.Suspend();
         quotaAlerts.Clear(); cardAlerts.Clear();
         accountCancellation?.Cancel();
         if (lastSnapshot is not null)
@@ -968,6 +997,7 @@ internal sealed partial class MeterWindow : Form
         if (!preferences.Volcengine) others["Volcengine"] = Disabled();
         if (!preferences.MiMo) others["MiMo"] = Disabled();
         if (!preferences.Qoder) others["Qoder CN"] = Disabled();
+        if (!preferences.Trae) others["TRAE CN"] = Disabled();
         if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
@@ -1027,6 +1057,7 @@ internal sealed partial class MeterWindow : Form
                 var workbuddyTask = preferences.WorkBuddy ? WorkBuddyAccountAsync(accountCancellation.Token) : null;
                 var mimoTask = preferences.MiMo ? MiMoAccountAsync(accountCancellation.Token) : null;
                 var qoderTask = preferences.Qoder ? QoderAccountAsync(accountCancellation.Token) : null;
+                var traeTask = preferences.Trae ? TraeAccountAsync(accountCancellation.Token) : null;
                 Task<string>? deepseekTask = null;
                 Task<string>? zcodeTask = null;
                 Task<string>? volcengineTask = null;
@@ -1076,6 +1107,7 @@ internal sealed partial class MeterWindow : Form
                 combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = preferences.Volcengine ? "loading" : "disabled" };
                 combined["other_accounts"]!["MiMo"] = new JsonObject { ["status"] = preferences.MiMo ? "loading" : "disabled" };
                 combined["other_accounts"]!["Qoder CN"] = new JsonObject { ["status"] = preferences.Qoder ? "loading" : "disabled" };
+                combined["other_accounts"]!["TRAE CN"] = new JsonObject { ["status"] = preferences.Trae ? "loading" : "disabled" };
                 ApplyAccountPreferences(combined);
                 string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
@@ -1123,6 +1155,14 @@ internal sealed partial class MeterWindow : Form
                     try { combined["other_accounts"]!["Qoder CN"] = JsonNode.Parse(await qoderTask); }
                     catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                     { combined["other_accounts"]!["Qoder CN"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
+                }
+                if (traeTask is not null)
+                {
+                    try { combined["other_accounts"]!["TRAE CN"] = JsonNode.Parse(await traeTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["other_accounts"]!["TRAE CN"] = new JsonObject { ["status"] = "error" }; }
                     ApplyAccountPreferences(combined);
                     using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
                 }
@@ -1312,6 +1352,25 @@ internal sealed partial class MeterWindow : Form
             InvalidOperationException or IOException or UnauthorizedAccessException or System.Security.SecurityException or OperationCanceledException)
         { return """{"status":"unavailable","reason":"qoder_session_unavailable"}"""; }
     }
+    async Task<string> TraeAccountAsync(CancellationToken cancellation)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            string? session = await traeBrowser.SessionInputAsync(timeout.Token).WaitAsync(timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            var task = RunCollector("--trae-only", timeout.Token, session); session = null;
+            return await task;
+        }
+        catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException)
+        { return """{"status":"unavailable","reason":"trae_runtime_missing"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && WebViewSafety.IsIsolationFailure(ex))
+        { return """{"status":"unavailable","reason":"trae_profile_unsafe"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && ex is System.Runtime.InteropServices.COMException or
+            InvalidOperationException or IOException or UnauthorizedAccessException or System.Security.SecurityException or OperationCanceledException)
+        { return """{"status":"unavailable","reason":"trae_session_unavailable"}"""; }
+    }
     static async Task<string> RunCollector(string mode, CancellationToken shutdown, string? accountInput = null)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "backend", "AgentMeterBackend.exe");
@@ -1430,6 +1489,7 @@ internal sealed partial class MeterWindow : Form
         AddVolcengineAccount(GetValue(otherAccounts, "Volcengine"));
         AddMiMoAccount(GetValue(otherAccounts, "MiMo"));
         AddQoderAccount(GetValue(otherAccounts, "Qoder CN"));
+        AddTraeAccount(GetValue(otherAccounts, "TRAE CN"));
         AddQoderLocalCredits(GetValue(root, "local_credits"));
         }
         else if (view == View.Applications) AddApplications(root);
@@ -1829,6 +1889,7 @@ internal sealed partial class MeterWindow : Form
         AddGauge("火山方舟", GetValue(GetValue(root, "other_accounts"), "Volcengine"));
         AddGauge("小米 MiMo", GetValue(GetValue(root, "other_accounts"), "MiMo"));
         AddGauge("Qoder CN", GetValue(GetValue(root, "other_accounts"), "Qoder CN"));
+        AddGauge("TRAE CN", GetValue(GetValue(root, "other_accounts"), "TRAE CN"));
         var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {
@@ -1879,6 +1940,7 @@ internal sealed partial class MeterWindow : Form
         "cli_not_available" => "未找到 Codex；请安装并登录后刷新",
         "rpc_timeout" => "账户查询超时，请稍后重试",
         "rpc_disconnected" => "Codex 服务未连接，请检查登录状态",
+        "not_authenticated" => "账户登录已失效，请重新连接",
         "kimi_server_not_running" => "未发现运行中的 Kimi 本地服务",
         "kimi_server_token_invalid" => "Kimi 本地服务凭据不可用",
         "claude_token_expired" => "Claude Code 登录已过期，请在 Claude Code 中重新登录",
@@ -1892,6 +1954,11 @@ internal sealed partial class MeterWindow : Form
         "history_no_usage_records" => "没有可统计的用量记录",
         "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or "zcode_db_not_found" or "dsh_sessions_not_found" => "未找到本机会话记录",
         "zstd_unavailable" => "部分压缩会话无法读取",
+        "trae_session_missing" => "请在托盘菜单连接 TRAE 中国区",
+        "trae_runtime_missing" => "请安装 WebView2 Runtime 后重试",
+        "trae_profile_unsafe" => "无法确认登录资料隔离，请检查系统策略",
+        "trae_session_unavailable" or "trae_session_invalid" => "应用内登录资料不可用，请重新连接",
+        "unsupported_trae_contract" or "invalid_trae_pack" => "TRAE 账户接口数据暂不可用",
         "qoder_session_missing" => "请在托盘菜单连接 Qoder 中国区",
         "qoder_runtime_missing" => "请安装 WebView2 Runtime 后重试",
         "qoder_profile_unsafe" => "无法确认登录资料隔离，请检查系统策略",

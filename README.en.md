@@ -29,7 +29,7 @@ The panel previews use fictional data on an isolated Windows runner. The default
 - **Local usage export** — export available per-source Token summaries for four periods as JSON or CSV. Missing values remain null or blank; credentials, sessions and paths are excluded. Local credits and cost estimates are not included.
 - **Tray remaining percentage** — choose a provider, the lowest valid window, or the brand icon. Unknown, expired and disabled readings are excluded; a tooltip identifies the source and period. Selection adds no account queries.
 - **Unified account details** — balances, wallets, supported plan names and Codex reset-credit expiry tiles appear within the relevant account card. Expired details do not rewrite provider-reported totals.
-- **Account switches** — enable or disable supported account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials; MiniMax, DeepSeek, WorkBuddy, ZCode, Volcengine, MiMo and Qoder are off by default.
+- **Account switches** — enable or disable supported account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials; MiniMax, DeepSeek, WorkBuddy, ZCode, Volcengine, MiMo, Qoder and TRAE are off by default.
 - **Low-quota alerts** — optionally enable Windows notifications below a selectable 10%, 20%, 30%, or 50% threshold (20% by default); stale data and repeat alerts for the same window are suppressed. Alerts default to off, and actual notification display still needs device testing. A separate opt-in alerts for available Codex reset cards within three days and one day of expiry.
 - **Desktop pet (in development)** — includes the upstream Mochi and Bit sprite packs, hidden by default. Users can show, switch and drag them from the tray menu; animations respond to low quota and recent local updates. Transparency and interaction still need device testing, and the upstream 3D characters and full interactions are not yet ported.
 - **Appearance** — choose from seven named palettes and card styles in the tray menu; the choice is remembered. The Windows port does not yet reproduce all macOS materials or animations, and visual review is ongoing.
@@ -60,14 +60,17 @@ The table describes the current `main` branch. Check the release notes for the e
 | Claude Code | Existing local subscription credential (synthetic validation) | Local project sessions |
 | Gemini CLI | Not yet | Local chat sessions |
 | WorkBuddy | Experimental opt-in web login and credit lookup (synthetic validation) | Local project sessions |
-| ZCode | Not yet | Local CLI usage database |
+| ZCode / Zhipu Coding Plan | Explicit key, opt-in (synthetic validation) | Local CLI usage database |
+| Volcengine Coding Plan | Explicit AccessKey, opt-in (synthetic validation) | Not yet |
 | DeepSeek Harness | Not yet | Local session logs, including supported compressed logs |
 | DeepSeek API | API balance, explicit key and opt-in (synthetic validation) | No direct local history; DeepSeek Harness is separate |
 | Kimi Code / legacy Kimi CLI | Existing Kimi Code local server (synthetic validation) | Local session logs |
 | OpenCode | Not yet | Local v1 / v2 assistant messages, deduplicated by ID; some compaction usage remains incomplete |
 | MiniMax Code | Up to five separate accounts or an environment-variable key, explicitly enabled (synthetic validation) | Local usage database |
+| MiMo platform | Experimental isolated sign-in and Token Plan, opt-in (synthetic validation) | No direct local history |
 | MiMo Code, DevECo | Not yet | Local usage databases |
 | Qoder CN | Experimental isolated sign-in and quota, opt-in (synthetic tests) | Local credits consumed, not token usage or account balance |
+| TRAE CN | Experimental isolated sign-in and quota, opt-in (synthetic tests) | Not yet |
 
 The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers have synthetic Windows tests; they have not been validated against real installations on this Windows machine. OpenCode v2 compaction and unsupported records are flagged as incomplete. The application reports only data it can read. A provider or account may omit fields or use an unsupported format. Local history is limited to records on this computer; it is not necessarily the same as account-wide usage, invoices, or remaining plan quota. Period boundaries currently use **Asia/Shanghai**. Credits from different services are not combined. Qoder account quota and local consumption are displayed separately.
 
@@ -81,7 +84,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.28](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.28), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy, MiMo and Qoder require a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
+Download [Windows v0.1.0-alpha.28](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.28), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy, MiMo, Qoder and TRAE require a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
 
 ### Build from source
 
@@ -148,3 +151,5 @@ Issues and contributions are welcome. Please report Windows version, app version
 ## License
 
 [MIT](LICENSE), with original attribution to Gary23333. Third-party components retain their own licenses.
+
+TRAE CN is experimental and off by default. Its isolated WebView observes authorization headers sent to the fixed TRAE API without reading request bodies; the short-lived credential remains in process memory and is sent only to the read-only quota endpoint. When enabled, a background TRAE page may be loaded to recapture it. Disabling the source stops the background page and discards the in-memory credential, while clearing local login data does not log out on the server. Real sign-in and renewal remain unverified.
