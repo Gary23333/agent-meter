@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 27 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.27) 对应提交 `f78bd1d`；Windows 和跨平台检查通过，隔离环境检查了 Qoder 本机积分卡片、缺失记录和窄窗口，便携包通过模拟账本校验；真实 Qoder 本机数据仍待验收。SHA-256：`d6de27ba393dc3a7c752884490399291295fd152c8add894fc6f2e133c4d2e01`。
+
 - [Alpha 26 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.26) 对应提交 `7ce5bdc`；Windows 和跨平台检查通过。独立提醒开关、到期阶段、过期快照和旧设置兼容经过模拟检查，托盘菜单与深色额度环演示已核对；通知实际显示仍待实体设备验收。SHA-256：`ce22f6dfc45dbc5304acde2802592b9eb34c85a0cc371f3ce9a0d12a3aaab7a8`。
 
 - [Alpha 25 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.25) 对应提交 `5a0786e`；Windows 和跨平台检查通过。解压包在隔离的模拟账本中验证了 OpenCode v1/v2 去重、活动汇总和隐私字段，真实 OpenCode 安装仍待验收。SHA-256：`74a539a107125090a8d868ff60e5ca750f7496cde0056fdc6a6539ea9d411a9e`。
