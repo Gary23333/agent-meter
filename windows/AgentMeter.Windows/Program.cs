@@ -2311,7 +2311,10 @@ internal sealed class QuotaGauge : Control
         using var small = new Font(Font.FontFamily, 7.5F);
         using var accountNameFont = new Font(Font.FontFamily, 8F);
         TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(left + 12, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(e.Graphics, provider, provider.StartsWith("MiniMax · ", StringComparison.Ordinal) ? accountNameFont : Font,
+        const string accountPrefix = "MiniMax · ";
+        bool namedAccount = provider.StartsWith(accountPrefix, StringComparison.Ordinal);
+        string displayName = namedAccount ? provider[accountPrefix.Length..] + " · MiniMax" : provider;
+        TextRenderer.DrawText(e.Graphics, displayName, namedAccount ? accountNameFont : Font,
             new Rectangle(0, 66, Width, 19), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
         string shortName = windows.Primary.Label == "5 小时" ? "5h" : windows.Primary.Label == "7 天" ? "7d" : windows.Primary.Label;
         string periods = $"{shortName} {windows.Primary.Remaining:0.#}" + (windows.Secondary is null ? "%" : $" / 7d {windows.Secondary.Remaining:0.#}");
