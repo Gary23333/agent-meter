@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 28 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.28) 对应提交 `a5b1af3`；Windows 和跨平台检查通过。Qoder 独立登录资料、Cookie 过滤和模拟账户接口通过隔离测试，账户卡片、多账户分页和刷新菜单演示已检查；真实 Qoder 登录、系统通知、多屏及高 DPI 尚待验收。SHA-256：`4002341fbec7135c18383a862e0906e10b988b2cf5d15c2c456f70ab0df6b15c`。
+
 - [Alpha 27 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.27) 对应提交 `f78bd1d`；Windows 和跨平台检查通过，隔离环境检查了 Qoder 本机积分卡片、缺失记录和窄窗口，便携包通过模拟账本校验；真实 Qoder 本机数据仍待验收。SHA-256：`d6de27ba393dc3a7c752884490399291295fd152c8add894fc6f2e133c4d2e01`。
 
 - [Alpha 26 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.26) 对应提交 `7ce5bdc`；Windows 和跨平台检查通过。独立提醒开关、到期阶段、过期快照和旧设置兼容经过模拟检查，托盘菜单与深色额度环演示已核对；通知实际显示仍待实体设备验收。SHA-256：`ce22f6dfc45dbc5304acde2802592b9eb34c85a0cc371f3ce9a0d12a3aaab7a8`。
@@ -60,7 +62,7 @@
 
 - [Alpha 22 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.22) 对应提交 `e8fd83c`。Windows 与跨平台检查通过；胶囊筛选、重置卡和收藏展开在隔离构建机检查，深浅主题圆角实渲染已核对，ZIP 独立解压通过。SHA-256：`3895d9596ddbc7b2e0a974af3d868f65008200bdc67522106769fec74bce74ea`。真实账户、多屏与高 DPI 仍需实体设备验收。
 
-- 当前公开 [Alpha 23 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.23) 对应提交 `1bcb8f4`。Windows 和跨平台检查通过；MiMo Cookie 过滤、独立 WebView2 资料、模拟接口与错误状态已检查，账户和登录窗口预览已核对，ZIP 独立解压通过。SHA-256：`9f1da5f30b1899e6f14707bf5de77ff24a1012c026225d073b6bbce2f47268dc`。真实小米登录和账户、多屏及高 DPI 尚待实体设备验收。
+- 此前公开的 [Alpha 23 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.23) 对应提交 `1bcb8f4`。Windows 和跨平台检查通过；MiMo Cookie 过滤、独立 WebView2 资料、模拟接口与错误状态已检查，账户和登录窗口预览已核对，ZIP 独立解压通过。SHA-256：`9f1da5f30b1899e6f14707bf5de77ff24a1012c026225d073b6bbce2f47268dc`。真实小米登录和账户、多屏及高 DPI 尚待实体设备验收。
 
 ## 安全与数据边界
 
