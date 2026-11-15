@@ -612,6 +612,11 @@ internal sealed partial class MeterWindow : Form
             picture.Save(Path.Combine(directory, "trae-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
             dialog.Close();
         }
+        traeDemo["other_accounts"]!["TRAE CN"] = JsonNode.Parse("""{"status":"partial","reason":"trae_usage_incomplete","quota":{"value":null},"credits":{"value":null}}""");
+        using (var snapshot = JsonDocument.Parse(traeDemo.ToJsonString())) Render(snapshot.RootElement);
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())
+            .Any(label => label.Text == "部分额度未提供使用情况"))
+            throw new InvalidOperationException("TRAE 未提供用量时不能显示满额");
         using (var snapshot = JsonDocument.Parse(qoderSnapshot)) Render(snapshot.RootElement);
         content.AutoScrollPosition = Point.Empty;
         Size = new Size(420, 760);
