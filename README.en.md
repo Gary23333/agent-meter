@@ -21,6 +21,7 @@ The panel previews use fictional data on an isolated Windows runner. The default
 ## What it does
 
 - **Tray flyout** — a compact borderless panel with no taskbar window button. Click the tray icon to toggle, click outside or press Esc to dismiss, or pin it temporarily. The top menu and tray context menu share the same settings.
+- **ZCode Coding Plan quota** — opt in with an API key stored in Windows Credential Manager. Account quota, MCP allowance and local ZCode tokens remain separate; tested with synthetic data only.
 - **Optional login startup** — register a per-user startup entry from the tray menu; the panel stays hidden on launch. Windows startup settings can still disable it.
 - **Usage periods** — switch today, 7 days, 30 days or all time; Token totals and available API-equivalent estimates follow the selection. The period choice is stored locally.
 - **Local usage export** — export available per-source Token summaries for four periods as JSON or CSV. Missing values remain null or blank; credentials, sessions and paths are excluded. Local credits and cost estimates are not included.
@@ -78,7 +79,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.18](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.18), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
+Download [Windows v0.1.0-alpha.19](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.19), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
 
 ### Build from source
 

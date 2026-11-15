@@ -7,7 +7,7 @@
 | 功能或界面 | Windows 当前状态 | 后续验收 |
 | --- | --- | --- |
 | 托盘入口、余量与交互 | 无边框弹层、外部点击及 Esc 收起、固定与更多菜单；数字图标可选来源或自动最低余量，过期数据回退；细滚动轨道独立裁剪并验证拖动 | 实机验证隐藏图标、菜单、圆角阴影、退出清理、多屏和高 DPI；继续打磨小尺寸表现 |
-| 账户额度 | Codex 已在本机实测；Kimi 本地服务、Claude Code 凭据、MiniMax 和 DeepSeek API 余额通过模拟测试；已加入默认关闭的 WorkBuddy 独立网页登录及积分查询 | 验证托盘开关交互及真实 Windows 账户和 WorkBuddy 登录；继续适配 Qoder、TRAE、即梦及其他原项目来源 |
+| 账户额度 | Codex 已在本机实测；Kimi 本地服务、Claude Code 凭据、MiniMax 和 DeepSeek API 余额通过模拟测试；已加入默认关闭的 WorkBuddy 独立网页登录及积分查询，以及主动输入密钥的智谱 Coding Plan 额度（模拟验证） | 验证托盘开关交互及真实 Windows 账户和 WorkBuddy 登录；继续适配 Qoder、TRAE、即梦及其他原项目来源 |
 | 应用和本机消耗 | 多个本地账本、四个统计周期、模型排行、趋势及近 24 小时应用活动汇总已接入；额度、本机 Token、活动来源状态按应用汇总，并支持筛选和展开。应用页可见时单独刷新本机活动；Qoder 积分独立计量 | 验证应用概览、定时刷新、趋势与排行界面；完善客户端路径、项目归因、历史导入和重复计数规则 |
 | 模型与计费 | 使用上游内置价格和固定回退汇率，展示逐账本的今日美元 API 等价估算；支持本机自定义美元价格 | 验证实际账本和价格编辑界面；移植模型目录同步、更多周期、峰谷与汇率设置 |
 | 七套主题与卡片 | 七种配色、连续胶囊导航和服务语义图形已接入；账户页保留双周期仪表，其他页使用紧凑头部。账户时钟可见时按分钟更新。钱包、积分、套餐和 Codex 重置卡到期明细整合进对应卡片；本机汇总和逐日趋势明确未按账户区分 | 对照上游逐套实机检查与完善材质、动效、账户卡片、多账户归因和自适应布局；仍未达到完整视觉一致 |
@@ -42,7 +42,9 @@
 
 - [Alpha 17 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.17) 对应提交 `e11aff9`。自然日对照、跨月及零值边界通过测试，深浅主题和窄弹层演示已检查，ZIP 独立解压校验通过。Windows 构建和跨平台 Python、桌宠检查通过，该次 macOS Swift 检查因后续提交取消，Alpha 18 跨平台检查通过；真实设备验收仍未完成。SHA-256：`37c157d0d12421b49dbabf9eed3c9baf17dd04bc9f2f9dd8d3931987897703ce`。
 
-- 当前公开 [Alpha 18 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.18) 对应提交 `2a10554`。Windows 构建、隔离注册表启停和后台启动检查通过，ZIP 独立解压校验通过。跨平台 Python、桌宠及 macOS Swift 检查通过；实体设备上的登录启动、多屏与高 DPI 仍需验收。SHA-256：`e9ba169d8a78f75025397e90546b2210fdae52c8e6455edd5a2f815e45256aea`。
+- [Alpha 18 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.18) 对应提交 `2a10554`。Windows 构建、隔离注册表启停和后台启动检查通过，ZIP 独立解压校验通过。跨平台 Python、桌宠及 macOS Swift 检查通过；实体设备上的登录启动、多屏与高 DPI 仍需验收。SHA-256：`e9ba169d8a78f75025397e90546b2210fdae52c8e6455edd5a2f815e45256aea`。
+
+- 当前公开 [Alpha 19 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.19) 对应提交 `fe0756d`。Windows 和跨平台检查通过；智谱密钥、固定接口、余额类型、托盘、提醒和无密钥状态以模拟数据验证，账户和设置窗口预览已检查；ZIP 独立解压验证通过。真实智谱账户、多屏及高 DPI 尚待实体设备验收。SHA-256：`6b500bf2922ae74cdc6b6e477f90fef99f11ac15e3cb1aef32c7655761f08280`。
 
 ## 安全与数据边界
 
