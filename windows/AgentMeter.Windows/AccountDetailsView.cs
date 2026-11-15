@@ -62,7 +62,7 @@ internal sealed partial class MeterWindow
             {
                 var credit = resets.Cards[index];
                 int row = index / 3, column = index % 3;
-                var tile = new RoundedCard(theme) { Name = "account-reset-tile", Top = top + row * 82, Height = 74, BackColor = Card };
+                var tile = new RoundedCard(theme) { Name = "account-reset-tile", Top = top + row * 82, Height = 74, BackColor = Card, ClipCorners = true };
                 var state = new Label { Text = credit.Status switch { "redeeming" => "兑换中", "redeemed" => "已兑换", "unknown" => "状态未明", _ => "账户标为可用" },
                     Left = 8, Top = 7, Height = 18, ForeColor = Muted, Font = new Font(Font.FontFamily, 8), AutoEllipsis = true };
                 var date = new Label { Text = credit.Expires?.LocalDateTime.ToString("MM 月 dd 日") ?? "日期未知", Left = 8, Top = 26, Height = 23,

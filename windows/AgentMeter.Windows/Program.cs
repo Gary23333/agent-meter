@@ -1873,6 +1873,8 @@ internal sealed class RoundedCard : Panel
 {
     readonly VisualTheme theme;
     readonly Color? providerColor;
+    bool clipCorners;
+    public bool ClipCorners { get => clipCorners; set { clipCorners = value; ApplyClip(); } }
     public RoundedCard(VisualTheme theme, Color? providerColor = null) { this.theme = theme; this.providerColor = providerColor; DoubleBuffered = true; }
     static Color Mix(Color original, Color tint, double weight) => Color.FromArgb(
         (int)Math.Round(original.R * (1 - weight) + tint.R * weight),
@@ -1881,7 +1883,17 @@ internal sealed class RoundedCard : Panel
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        ApplyClip();
         Invalidate();
+    }
+    void ApplyClip()
+    {
+        if (!clipCorners || Width < 28 || Height < 28) return;
+        using var shape = new System.Drawing.Drawing2D.GraphicsPath();
+        int r = 28, w = Width, h = Height;
+        shape.AddArc(0, 0, r, r, 180, 90); shape.AddArc(w - r, 0, r, r, 270, 90);
+        shape.AddArc(w - r, h - r, r, r, 0, 90); shape.AddArc(0, h - r, r, r, 90, 90); shape.CloseFigure();
+        var previous = Region; Region = new Region(shape); previous?.Dispose();
     }
     protected override void OnPaintBackground(PaintEventArgs e)
     {
