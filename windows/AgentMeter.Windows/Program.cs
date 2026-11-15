@@ -1532,9 +1532,9 @@ internal sealed partial class MeterWindow : Form
         box.Controls.Add(new Label { Text = $"{sources} 个本机账本相加" + (partial ? " · 含不完整来源" : ""), AutoSize = true, ForeColor = Muted, Location = new Point(16, 82) });
         if (complete && total > 0)
         {
-            var bar = new BreakdownBar(parts, theme) { Location = new Point(16, 116), Height = 9 };
+            var bar = new BreakdownBar(parts, theme) { Location = new Point(16, 116), Height = 9, AccessibleName = UsagePeriodLabel + "用量构成：输入、输出、缓存读取、缓存写入和未拆分" };
             box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(bar);
-            var legend = new FlowLayoutPanel { Location = new Point(16, 137), Height = 48, WrapContents = true };
+            var legend = new FlowLayoutPanel { Location = new Point(16, 137), Height = 48, WrapContents = true, BackColor = Color.Transparent };
             string[] labels = ["输入", "输出", "缓存读取", "缓存写入", "未拆分"];
             for (int i = 0; i < labels.Length; i++)
                 legend.Controls.Add(new Label { Text = "● " + labels[i], AutoSize = true, Font = new Font(Font.FontFamily, 8F), ForeColor = BreakdownBar.ColorsFor(theme)[i], Margin = new Padding(0, 0, 8, 0) });
@@ -1854,6 +1854,7 @@ internal sealed class DailyChart : Control
     public DailyChart(IReadOnlyList<(string Date, double Tokens)> points, VisualTheme theme)
     {
         this.points = points; this.theme = theme; DoubleBuffered = true; AccessibleRole = AccessibleRole.Graphic;
+        SetStyle(ControlStyles.SupportsTransparentBackColor, true); BackColor = Color.Transparent;
         AccessibleName = "最近七个自然日 Token：" + string.Join("，", points.Select(p => $"{p.Date} {p.Tokens:0}"));
     }
     protected override void OnPaint(PaintEventArgs e)
