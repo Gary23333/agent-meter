@@ -12,6 +12,12 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    var usagePreferencesDirectory = Path.Combine(directory, "usage-period");
+    if (UsagePeriodPreferences.Load(usagePreferencesDirectory) != "today") throw new InvalidOperationException("默认用量周期错误");
+    UsagePeriodPreferences.Save(usagePreferencesDirectory, "30d");
+    if (UsagePeriodPreferences.Load(usagePreferencesDirectory) != "30d") throw new InvalidOperationException("用量周期未保存");
+    File.WriteAllText(Path.Combine(usagePreferencesDirectory, "usage-view.json"), "invalid");
+    if (UsagePeriodPreferences.Load(usagePreferencesDirectory) != "today") throw new InvalidOperationException("损坏的周期设置应回退今日");
     var clock = DateTimeOffset.FromUnixTimeSeconds(1800000000);
     if (QuotaResetClock.Short(1800003660, clock) != "1 小时 1 分后" ||
         QuotaResetClock.Short(1800000000, clock) != "已到时间 · 待刷新" ||

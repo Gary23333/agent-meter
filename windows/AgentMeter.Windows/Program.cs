@@ -308,6 +308,8 @@ internal sealed partial class MeterWindow : Form
     Size preferredSize;
     View view = View.Accounts;
     ApplicationFilter applicationFilter = ApplicationFilter.All;
+    string usagePeriod = "today";
+    string UsagePeriodLabel => usagePeriod switch { "7d" => "近 7 天", "30d" => "近 30 天", "all" => "累计", _ => "今日" };
     readonly HashSet<string> expandedApplications = new(StringComparer.Ordinal);
     string? lastSnapshot;
     public string? CurrentSnapshot => lastSnapshot;
@@ -319,6 +321,7 @@ internal sealed partial class MeterWindow : Form
     public MeterWindow(bool demo, bool windowed)
     {
         this.demo = demo; popup = !windowed; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
+        usagePeriod = demo ? "today" : UsagePeriodPreferences.Load(AccountPreferences.DefaultDirectory);
         alertsEnabled = !demo && AlertPreferences.Load(AccountPreferences.DefaultDirectory);
         forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
         theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
@@ -452,6 +455,14 @@ internal sealed partial class MeterWindow : Form
         content.ScrollControlIntoView(usageExport); Application.DoEvents(); SavePreview("aurora-usage-export-narrow");
         using (var snapshot = JsonDocument.Parse(lastSnapshot!))
             if (!UsageDataExport.Json(snapshot.RootElement, demo: true).Contains("\"demo\": true")) throw new InvalidOperationException("演示汇总导出缺少标识");
+        foreach (var (period, expected) in new[] { ("7d", "8.5M"), ("30d", "28.2M"), ("all", "105.8M"), ("today", "1.77M") })
+        {
+            var selector = content.Controls.OfType<NavigationStrip>().SelectMany(strip => strip.Controls.OfType<NavigationTab>()).Single(button => button.Name == "usage-period-" + period);
+            selector.PerformClick(); Application.DoEvents();
+            if (usagePeriod != period || !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Name == "usage-total" && label.Text == expected))
+                throw new InvalidOperationException("用量周期切换或汇总错误：" + period);
+            if (period == "7d") SavePreview("aurora-usage-period-seven-days");
+        }
         SetView(View.Applications);
         var expandApp = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
             .FirstOrDefault(button => button.Name == "app-expand-Codex") ?? throw new InvalidOperationException("application_card_missing");
@@ -1042,7 +1053,7 @@ internal sealed partial class MeterWindow : Form
         else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)
         {
-        AddHeading("本机 Token", "只统计本设备可读取的会话记录");
+        AddUsagePeriodSelector();
         var history = GetValue(root, "history");
         if (history.ValueKind == JsonValueKind.Object)
         {
@@ -1060,7 +1071,7 @@ internal sealed partial class MeterWindow : Form
                 if (IsAbsent(item.Value)) continue;
                 visible++;
                 var periods = GetValue(GetValue(item.Value, "value"), "periods");
-                var today = GetValue(GetValue(periods, "today"), "totals"); var all = GetValue(GetValue(periods, "all"), "totals");
+                var today = GetValue(GetValue(periods, usagePeriod), "totals"); var all = GetValue(GetValue(periods, "all"), "totals");
                 var week = GetValue(GetValue(periods, "7d"), "totals"); var month = GetValue(GetValue(periods, "30d"), "totals");
                 double? dayTokens = GetNumber(today, "total_tokens"), allTokens = GetNumber(all, "total_tokens");
                 double? weekTokens = GetNumber(week, "total_tokens"), monthTokens = GetNumber(month, "total_tokens");
@@ -1081,7 +1092,7 @@ internal sealed partial class MeterWindow : Form
                     string display = amount is > 0 and < 0.0001m ? "<$0.0001" : $"${amount:0.####}";
                     costNote = $"今日 API 等价估算 {display} · 非账单" + (GetValue(estimate, "partial").ValueKind == JsonValueKind.True ? " · 不完整" : "");
                 }
-                AddCard(item.Name, dayTokens.HasValue ? FormatNumber(dayTokens.Value) + " 今日" : "暂无数据", note, null, extra, costNote);
+                AddCard(item.Name, dayTokens.HasValue ? FormatNumber(dayTokens.Value) + " " + UsagePeriodLabel : "暂无数据", note, null, extra, costNote);
             }
             if (visible == 0) AddCard("本机记录", "暂无数据", "未发现支持的会话记录", null);
             AddModelRanking(history);
@@ -1095,7 +1106,7 @@ internal sealed partial class MeterWindow : Form
                 if (IsAbsent(item.Value) || GetString(item.Value, "reason", "") == "history_no_usage_records") continue;
                 if (!headingShown) { AddHeading("本机积分", "独立计量，不等于账户余额"); headingShown = true; }
                 var periods = GetValue(GetValue(item.Value, "value"), "periods");
-                var today = GetValue(GetValue(periods, "today"), "totals");
+                var today = GetValue(GetValue(periods, usagePeriod), "totals");
                 var all = GetValue(GetValue(periods, "all"), "totals");
                 var week = GetValue(GetValue(periods, "7d"), "totals");
                 var month = GetValue(GetValue(periods, "30d"), "totals");
@@ -1103,7 +1114,7 @@ internal sealed partial class MeterWindow : Form
                 string allCredits = GetString(all, "credits", "");
                 string billed = GetString(all, "billable_credits", "");
                 string weekly = GetString(week, "credits", "—"), monthly = GetString(month, "credits", "—");
-                AddCard(item.Name + " · 本机积分消耗", todayCredits == "" ? "暂无数据" : todayCredits + " 今日",
+                AddCard(item.Name + " · 本机积分消耗", todayCredits == "" ? "暂无数据" : todayCredits + " " + UsagePeriodLabel,
                         allCredits == "" ? Reason(item.Value) : $"近 7 天 {weekly} · 近 30 天 {monthly}", null,
                         allCredits == "" ? null : $"累计 {allCredits} · 计费 {billed}");
             }
@@ -1498,9 +1509,10 @@ internal sealed partial class MeterWindow : Form
         {
             string status = GetString(item.Value, "status", "");
             if (status is "error" or "partial" || (status == "unavailable" && !IsAbsent(item.Value))) partial = true;
-            var totals = GetValue(GetValue(GetValue(GetValue(item.Value, "value"), "periods"), "today"), "totals");
+            if (status is not ("available" or "partial")) continue;
+            var totals = GetValue(GetValue(GetValue(GetValue(item.Value, "value"), "periods"), usagePeriod), "totals");
             var amount = GetNumber(totals, "total_tokens");
-            if (!amount.HasValue || amount.Value < 0) continue;
+            if (!amount.HasValue || !double.IsFinite(amount.Value) || amount.Value < 0) continue;
             total += amount.Value; sources++;
             double[] values = [GetNumber(totals, "fresh_input") ?? 0,
                 (GetNumber(totals, "output") ?? 0) + (GetNumber(totals, "reasoning") ?? 0),
@@ -1511,8 +1523,8 @@ internal sealed partial class MeterWindow : Form
         }
         if (sources == 0) return;
         var box = new RoundedCard(theme) { Height = 190, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new Label { Text = "今日 Token 总量", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) });
-        box.Controls.Add(new Label { Text = FormatNumber(total), AutoSize = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) });
+        box.Controls.Add(new Label { Text = UsagePeriodLabel + " Token 总量", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) });
+        box.Controls.Add(new Label { Name = "usage-total", Text = FormatNumber(total), AutoSize = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) });
         box.Controls.Add(new Label { Text = $"{sources} 个本机账本相加" + (partial ? " · 含不完整来源" : ""), AutoSize = true, ForeColor = Muted, Location = new Point(16, 82) });
         if (complete && total > 0)
         {
@@ -1524,7 +1536,7 @@ internal sealed partial class MeterWindow : Form
                 legend.Controls.Add(new Label { Text = "● " + labels[i], AutoSize = true, Font = new Font(Font.FontFamily, 8F), ForeColor = BreakdownBar.ColorsFor(theme)[i], Margin = new Padding(0, 0, 8, 0) });
             box.Resize += (_, _) => legend.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(legend);
         }
-        else box.Controls.Add(new Label { Text = "部分来源未提供完整拆分", AutoSize = true, ForeColor = Muted, Location = new Point(16, 125) });
+        else box.Controls.Add(new Label { Text = total == 0 && complete ? "本周期暂无 Token 消耗" : "部分来源未提供完整拆分", AutoSize = true, ForeColor = Muted, Location = new Point(16, 125) });
         StyleCard(box); content.Controls.Add(box);
     }
     void AddDailyTrend(JsonElement trend)
