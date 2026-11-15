@@ -142,11 +142,17 @@ try
         throw new InvalidOperationException("账户开关未正确覆盖");
     File.WriteAllText(Path.Combine(directory, "preferences.json"), "{\"codex\":true,\"kimi\":false,\"claude\":true}");
     var oldPreferences = AccountPreferences.Load(directory);
-    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy)
+    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy || oldPreferences.ZCode)
         throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
     var deepseekPreferences = oldPreferences with { DeepSeek = true, WorkBuddy = true };
     deepseekPreferences.Save(directory);
     if (AccountPreferences.Load(directory) != deepseekPreferences) throw new InvalidOperationException("DeepSeek 开关保存失败");
+    var zcodePreferences = deepseekPreferences with { ZCode = true }; zcodePreferences.Save(directory);
+    if (AccountPreferences.Load(directory) != zcodePreferences) throw new InvalidOperationException("智谱账户开关保存失败");
+    if (!ZCodeKeyStore.IsValid("synthetic-key") || ZCodeKeyStore.IsValid("bad key") || ZCodeKeyStore.IsValid("bad\nkey"))
+        throw new InvalidOperationException("智谱密钥格式校验失败");
+    using (var input = JsonDocument.Parse(ZCodeKeyStore.Input("bad key")))
+        if (input.RootElement.GetProperty("key").ValueKind != JsonValueKind.Null) throw new InvalidOperationException("无效密钥不能传给后端");
     if (!DeepSeekKeyStore.IsValid("sk-synthetic") || DeepSeekKeyStore.IsValid("bad key") || DeepSeekKeyStore.IsValid("bad\nkey"))
         throw new InvalidOperationException("DeepSeek 密钥格式校验失败");
     using (var secretInput = JsonDocument.Parse(DeepSeekKeyStore.Input("bad key")))
@@ -310,6 +316,10 @@ try
     } });
     if (!new QuotaAlerts().Evaluate(workbuddy, now).Single().Contains("积分额度"))
         throw new InvalidOperationException("WorkBuddy 提醒应显示积分额度");
+    using var zcodeAlert = JsonDocument.Parse("""{"other_accounts":{"ZCode":{"status":"available","quota":{"value":[{"bucket":"quota","limit_type":"TOKENS_LIMIT","window_minutes":300,"remaining_percent":10},{"bucket":"quota","limit_type":"CREDIT_LIMIT","window_minutes":300,"remaining_percent":15},{"bucket":"mcp","limit_type":"TIME_LIMIT","remaining_percent":5}]}}}}""");
+    var zcodeMessages = new QuotaAlerts().Evaluate(zcodeAlert.RootElement, now);
+    if (zcodeMessages.Count != 3 || !zcodeMessages.Any(text => text.Contains("MCP 调用")) || !zcodeMessages.Any(text => text.Contains("Token")))
+        throw new InvalidOperationException("智谱不同额度类型的提醒不能互相覆盖");
     var multiMiniMax = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
         ["MiniMax Code"] = new[] {
             new { label = "甲", status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 10 } } } },

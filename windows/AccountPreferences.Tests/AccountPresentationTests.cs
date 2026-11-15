@@ -51,6 +51,8 @@ internal static class AccountPresentationTests
         Check(Read("codex").Reading is { Remaining: 41, Window: "7 天" }, "托盘应覆盖长期额度");
         Check(Read("claude").Reading is { Remaining: 12, Window: "7 天 Opus", Partial: true }, "模型专属窗口不可遗漏");
         Check(Read("kimi").Reading is null && Read("workbuddy").Reading is null && Read("brand").Reading is null && Read("invalid").Reading is null, "未知、关闭和品牌模式不能伪造额度");
+        sample["other_accounts"]!["ZCode"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"mcp","remaining_percent":8}]}}""");
+        Check(Read("zcode").Reading is { Remaining: 8, Window: "MCP 调用" }, "智谱托盘额度和 MCP 类型错误");
         Check(Read(time: now.AddMinutes(31)).Reading is null && Read(time: now.AddMinutes(-6)).Reading is null, "过期或未来快照必须停止显示数字");
         Check(Read(time: now.AddMinutes(31), demo: true).Tooltip.Contains("演示数据"), "演示模式应明确标注");
         sample["account"]!["quota"]!["value"]![1]!["resets_at"]!["epoch_seconds"] = 1799999999;

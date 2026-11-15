@@ -122,7 +122,7 @@ internal sealed partial class MeterContext : ApplicationContext
         {
             var accounts = new ToolStripMenuItem("账户查询");
             var accountItems = new Dictionary<string, ToolStripMenuItem>();
-            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy" })
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode" })
             {
                 var item = new ToolStripMenuItem(provider == "DeepSeek" ? "DeepSeek API 余额" : provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
                 item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
@@ -150,6 +150,13 @@ internal sealed partial class MeterContext : ApplicationContext
                 if (editor.ShowDialog(window) != DialogResult.OK) return;
                 bool enabled = !editor.Deleted;
                 if (window.SetAccountEnabled("DeepSeek", enabled)) accountItems["DeepSeek"].Checked = enabled;
+            });
+            menu.Items.Add("设置智谱 Coding Plan 密钥", null, (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new ZCodeKeyDialog();
+                if (editor.ShowDialog(window) != DialogResult.OK) return;
+                if (window.SetAccountEnabled("ZCode", !editor.Deleted)) accountItems["ZCode"].Checked = !editor.Deleted;
             });
             menu.Items.Add("登录 WorkBuddy", null, (_, _) =>
             {
@@ -479,6 +486,16 @@ internal sealed partial class MeterWindow : Form
                 throw new InvalidOperationException("用量周期费用未切换");
             if (period == "7d") SavePreview("aurora-usage-period-seven-days");
         }
+        string fullUsageSnapshot = lastSnapshot!;
+        var missingUsage = JsonNode.Parse(fullUsageSnapshot)!;
+        missingUsage["history"] = JsonNode.Parse("""{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":10}}}}}}""");
+        usagePeriod = "7d";
+        using (var snapshot = JsonDocument.Parse(missingUsage.ToJsonString())) Render(snapshot.RootElement);
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "暂无数据"))
+            throw new InvalidOperationException("缺失的用量周期不能显示为零");
+        SavePreview("aurora-usage-period-unknown");
+        usagePeriod = "today";
+        using (var snapshot = JsonDocument.Parse(fullUsageSnapshot)) Render(snapshot.RootElement);
         SetView(View.Report);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "+25%"))
             throw new InvalidOperationException("报告已结束自然日对照缺失");
@@ -562,6 +579,20 @@ internal sealed partial class MeterWindow : Form
             picture.Save(Path.Combine(directory, "workbuddy-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
             dialog.Close();
         }
+        var zcode = JsonNode.Parse(lastSnapshot!)!.AsObject();
+        zcode["other_accounts"] = JsonNode.Parse("""{"ZCode":{"status":"available","subscription":{"plan":"GLM Coding Pro"},"quota":{"value":[{"bucket":"quota","limit_type":"CREDIT_LIMIT","window_minutes":300,"remaining_percent":72},{"bucket":"quota","limit_type":"CREDIT_LIMIT","window_minutes":10080,"remaining_percent":50},{"bucket":"mcp","limit_type":"TIME_LIMIT","remaining_percent":20}]}}}""");
+        using (var snapshot = JsonDocument.Parse(zcode.ToJsonString())) Render(snapshot.RootElement);
+        SetView(View.Accounts); SavePreview("aurora-zcode-narrow");
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "MCP 调用额度"))
+            throw new InvalidOperationException("智谱额度卡片缺少 MCP 调用窗口");
+        using (var dialog = new ZCodeKeyDialog { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        {
+            dialog.Show(); Application.DoEvents();
+            using var picture = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, "zcode-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
+            dialog.Close();
+        }
         Hide();
     }
     protected override void Dispose(bool disposing)
@@ -628,7 +659,7 @@ internal sealed partial class MeterWindow : Form
     public bool AccountEnabled(string provider) => provider switch
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude,
-        "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy, _ => false
+        "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy, "ZCode" => preferences.ZCode, _ => false
     };
     public Task RefreshAfterAccountChange()
     {
@@ -680,7 +711,8 @@ internal sealed partial class MeterWindow : Form
         {
             "Codex" => preferences with { Codex = enabled }, "Kimi" => preferences with { Kimi = enabled },
             "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled },
-            "DeepSeek" => preferences with { DeepSeek = enabled }, "WorkBuddy" => preferences with { WorkBuddy = enabled }, _ => preferences
+            "DeepSeek" => preferences with { DeepSeek = enabled }, "WorkBuddy" => preferences with { WorkBuddy = enabled },
+            "ZCode" => preferences with { ZCode = enabled }, _ => preferences
         };
         try { next.Save(AccountPreferences.DefaultDirectory); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -712,6 +744,7 @@ internal sealed partial class MeterWindow : Form
         if (!preferences.MiniMax) others["MiniMax Code"] = Disabled();
         if (!preferences.DeepSeek) others["DeepSeek API"] = Disabled();
         if (!preferences.WorkBuddy) others["WorkBuddy"] = Disabled();
+        if (!preferences.ZCode) others["ZCode"] = Disabled();
         if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
@@ -770,6 +803,15 @@ internal sealed partial class MeterWindow : Form
                 var forecastTask = forecastEnabled ? RunCollector("--forecast-only", accountCancellation.Token) : null;
                 var workbuddyTask = preferences.WorkBuddy ? WorkBuddyAccountAsync(accountCancellation.Token) : null;
                 Task<string>? deepseekTask = null;
+                Task<string>? zcodeTask = null;
+                if (preferences.ZCode)
+                {
+                    string? key = null;
+                    try { key = ZCodeKeyStore.Read(); }
+                    catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+                    string? secretInput = ZCodeKeyStore.Input(key); key = null;
+                    zcodeTask = RunCollector("--zcode-only", accountCancellation.Token, secretInput); secretInput = null;
+                }
                 if (preferences.DeepSeek)
                 {
                     string? key = null;
@@ -796,6 +838,7 @@ internal sealed partial class MeterWindow : Form
                 if (combined["other_accounts"] is not JsonObject) combined["other_accounts"] = new JsonObject();
                 combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = preferences.DeepSeek ? "loading" : "disabled" };
                 combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = preferences.WorkBuddy ? "loading" : "disabled" };
+                combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = preferences.ZCode ? "loading" : "disabled" };
                 ApplyAccountPreferences(combined);
                 string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
@@ -813,6 +856,14 @@ internal sealed partial class MeterWindow : Form
                     { combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = "error" }; }
                     ApplyAccountPreferences(combined);
                     using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement);
+                }
+                if (zcodeTask is not null)
+                {
+                    try { combined["other_accounts"]!["ZCode"] = JsonNode.Parse(await zcodeTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
                 }
                 try
                 {
@@ -1076,6 +1127,7 @@ internal sealed partial class MeterWindow : Form
         else AddMiniMaxAccount(minimaxAccount, "");
         AddDeepSeekBalance(GetValue(otherAccounts, "DeepSeek API"));
         AddWorkBuddyAccount(GetValue(otherAccounts, "WorkBuddy"), GetValue(localHistories, "WorkBuddy"));
+        AddZCodeAccount(GetValue(otherAccounts, "ZCode"), GetValue(localHistories, "ZCode"));
         }
         else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)
@@ -1472,6 +1524,7 @@ internal sealed partial class MeterWindow : Form
         AddGauge("Kimi", GetValue(GetValue(root, "other_accounts"), "Kimi Code"));
         AddGauge("Claude", GetValue(GetValue(root, "other_accounts"), "Claude Code"));
         AddGauge("WorkBuddy", GetValue(GetValue(root, "other_accounts"), "WorkBuddy"));
+        AddGauge("ZCode", GetValue(GetValue(root, "other_accounts"), "ZCode"));
         var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {
@@ -1545,7 +1598,7 @@ internal sealed partial class MeterWindow : Form
             if (status is not ("available" or "partial")) continue;
             var totals = GetValue(GetValue(GetValue(GetValue(item.Value, "value"), "periods"), usagePeriod), "totals");
             var amount = GetNumber(totals, "total_tokens");
-            if (!amount.HasValue || !double.IsFinite(amount.Value) || amount.Value < 0) continue;
+            if (!amount.HasValue || !double.IsFinite(amount.Value) || amount.Value < 0) { partial = true; continue; }
             total += amount.Value; sources++;
             double[] values = [GetNumber(totals, "fresh_input") ?? 0,
                 (GetNumber(totals, "output") ?? 0) + (GetNumber(totals, "reasoning") ?? 0),
@@ -1554,7 +1607,11 @@ internal sealed partial class MeterWindow : Form
             if (Math.Abs(values.Sum() - amount.Value) > 0.5) complete = false;
             for (int i = 0; i < parts.Length; i++) parts[i] += values[i];
         }
-        if (sources == 0) return;
+        if (sources == 0)
+        {
+            AddCard(UsagePeriodLabel + " Token 总量", "暂无数据", partial ? "部分来源读取失败或未提供该周期" : "没有可读取的本机用量汇总", null);
+            return;
+        }
         var box = new RoundedCard(theme) { Height = 190, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         box.Controls.Add(new Label { Text = UsagePeriodLabel + " Token 总量", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) });
         box.Controls.Add(new Label { Name = "usage-total", Text = FormatNumber(total), AutoSize = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) });

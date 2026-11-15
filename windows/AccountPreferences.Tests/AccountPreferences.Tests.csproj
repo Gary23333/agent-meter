@@ -34,6 +34,7 @@
     <Compile Include="..\AgentMeter.Windows\MiniMaxAccountInput.cs" Link="MiniMaxAccountInput.cs" />
     <Compile Include="..\AgentMeter.Windows\CardInput.cs" Link="CardInput.cs" />
     <Compile Include="..\AgentMeter.Windows\DeepSeekKeyStore.cs" Link="DeepSeekKeyStore.cs" />
+    <Compile Include="..\AgentMeter.Windows\ZCodeKeyStore.cs" Link="ZCodeKeyStore.cs" />
     <Compile Include="..\AgentMeter.Windows\WebCookieFilter.cs" Link="WebCookieFilter.cs" />
     <Compile Include="..\AgentMeter.Windows\WorkBuddyNavigation.cs" Link="WorkBuddyNavigation.cs" />
     <Compile Include="..\AgentMeter.Windows\WebViewSafety.cs" Link="WebViewSafety.cs" />

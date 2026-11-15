@@ -68,6 +68,10 @@ jobs:
           $deepseek = '{"key":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --deepseek-only | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $deepseek.reason -ne 'deepseek_credential_not_connected') { throw 'DeepSeek opt-in check failed' }
           $env:DEEPSEEK_API_KEY = ''
+          $env:ZCODE_API_KEY = 'synthetic-ambient-key-not-used'
+          $zcode = '{"key":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --zcode-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $zcode.reason -ne 'zcode_credential_not_connected') { throw 'ZCode opt-in check failed' }
+          $env:ZCODE_API_KEY = ''
           $workbuddy = '{"session":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --workbuddy-only | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $workbuddy.reason -ne 'workbuddy_session_missing') { throw 'WorkBuddy opt-in check failed' }
           $fixture = @'
@@ -185,7 +189,7 @@ jobs:
         shell: pwsh
         run: |
           $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -PassThru -Wait
-          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 66) { throw 'Demo preview generation failed' }
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 69) { throw 'Demo preview generation failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: AgentMeter-demo-previews

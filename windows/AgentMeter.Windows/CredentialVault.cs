@@ -40,7 +40,7 @@ internal static class CredentialVault
 
     static string Target(string provider, Guid id)
     {
-        if (provider is not ("minimax" or "deepseek" or "test")) throw new ArgumentException("不支持的凭据来源", nameof(provider));
+        if (provider is not ("minimax" or "deepseek" or "zcode" or "test")) throw new ArgumentException("不支持的凭据来源", nameof(provider));
         if (id == Guid.Empty) throw new ArgumentException("凭据标识无效", nameof(id));
         return $"AgentMeter/{provider}/{id:N}";
     }

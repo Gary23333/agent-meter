@@ -24,6 +24,30 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_zcode_requires_explicit_key_and_filters_account_metadata(self):
+        payload = {'code': 200, 'success': True, 'data': {'level': 'pro', 'limits': [
+            {'type': 'CREDIT_LIMIT', 'unit': 3, 'number': 5, 'usage': 100, 'remaining': 75},
+            {'type': 'TIME_LIMIT', 'usage': 100, 'remaining': 20}]}}
+        with patch.dict('os.environ', {'ZCODE_API_KEY': 'ambient-secret'}), \
+             patch('agent_meter.zcode.get_json', return_value=payload) as request:
+            with self.assertRaises(SourceError): backend.zcode_quota(None, 1800000000)
+            request.assert_not_called()
+            result = backend.zcode_quota('synthetic-secret', 1800000000)
+            self.assertEqual(request.call_args.args[0], 'https://open.bigmodel.cn/api/monitor/usage/quota/limit')
+            self.assertEqual(request.call_args.args[1], 'synthetic-secret')
+            self.assertEqual(result['quota']['value'][0]['remaining_percent'], 75)
+            self.assertEqual(result['subscription']['plan'], 'GLM Coding Pro')
+            self.assertNotIn('synthetic-secret', json.dumps(result))
+            self.assertNotIn('ambient-secret', json.dumps(result))
+            with self.assertRaises(SourceError): backend.zcode_quota('bad key', 1800000000)
+
+    def test_zcode_subprocess_missing_key_is_offline(self):
+        env = dict(os.environ, ZCODE_API_KEY='synthetic-ambient-secret')
+        result = subprocess.run([sys.executable, '-m', 'windows.backend', '--zcode-only'], input='{"key":null}',
+                                text=True, encoding='utf-8', capture_output=True, timeout=15, check=True, env=env)
+        self.assertEqual(json.loads(result.stdout)['reason'], 'zcode_credential_not_connected')
+        self.assertNotIn('synthetic-ambient-secret', result.stdout + result.stderr)
+
     def test_workbuddy_uses_only_explicit_session_and_fixed_endpoint(self):
         payload = {'code': 0, 'data': {'SubscriptionPackageName': '模拟套餐', 'Packages': [
             {'CapacityUnit': 'credits', 'CycleTotalCapacity': '100', 'CycleRemainCapacity': '25', 'CycleFrozenCapacity': '0'}]}}
