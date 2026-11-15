@@ -515,6 +515,18 @@ internal sealed partial class MeterWindow : Form
         content.AutoScrollPosition = new Point(0, 230); Application.DoEvents();
         if (content.AutoScrollPosition.Y == 0) throw new InvalidOperationException("account_local_scroll_failed");
         SavePreview("aurora-account-local-scrolled");
+        var qoderCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "qoder-local-credits");
+        if (!qoderCard.Controls.OfType<Label>().Any(label => label.Text.Contains("非账户余额")))
+            throw new InvalidOperationException("Qoder 本机积分需要标明不等于账户余额");
+        if (!qoderCard.Controls.OfType<Label>().Any(label => label.Text == "今日 12.5"))
+            throw new InvalidOperationException("Qoder 本机积分应显示今日记录");
+        content.ScrollControlIntoView(qoderCard); Application.DoEvents(); SavePreview("aurora-qoder-local");
+        string qoderSnapshot = lastSnapshot!;
+        var noQoder = JsonNode.Parse(qoderSnapshot)!.AsObject(); noQoder.Remove("local_credits");
+        using (var snapshot = JsonDocument.Parse(noQoder.ToJsonString())) Render(snapshot.RootElement);
+        if (content.Controls.OfType<RoundedCard>().Any(card => card.Name == "qoder-local-credits"))
+            throw new InvalidOperationException("没有本机 Qoder 记录时不能显示零积分");
+        using (var snapshot = JsonDocument.Parse(qoderSnapshot)) Render(snapshot.RootElement);
         content.AutoScrollPosition = Point.Empty;
         Size = new Size(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
@@ -1299,6 +1311,7 @@ internal sealed partial class MeterWindow : Form
         AddZCodeAccount(GetValue(otherAccounts, "ZCode"), GetValue(localHistories, "ZCode"));
         AddVolcengineAccount(GetValue(otherAccounts, "Volcengine"));
         AddMiMoAccount(GetValue(otherAccounts, "MiMo"));
+        AddQoderLocalCredits(GetValue(root, "local_credits"));
         }
         else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)

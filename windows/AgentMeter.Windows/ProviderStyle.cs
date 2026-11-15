@@ -19,6 +19,7 @@ internal sealed record ProviderStyle(string DisplayName, string Initial, Color C
             ("GEMINI CLI", "Gemini CLI", "G", Color.FromArgb(73, 128, 215)),
             ("DEEPSEEK HARNESS", "DeepSeek Harness", "D", Color.FromArgb(76, 122, 225)),
             ("DEEPSEEK API", "DeepSeek API", "D", Color.FromArgb(76, 122, 225)),
+            ("QODER CN", "Qoder CN", "Q", Color.FromArgb(106, 112, 218)),
             ("OPENCODE", "OpenCode", "O", Color.FromArgb(126, 100, 215)),
             ("MIMO CODE", "MiMo Code", "M", Color.FromArgb(223, 133, 48)),
             ("MIMO 平台", "MiMo 平台", "M", Color.FromArgb(223, 133, 48)),
@@ -78,6 +79,13 @@ internal sealed class ProviderMark : Control
             e.Graphics.DrawArc(pen, 9, 8, 18, 20, 55, 255);
             e.Graphics.DrawArc(pen, 16, 6, 13, 16, 70, 175);
             e.Graphics.DrawLine(pen, 26, 8, 26, 14); e.Graphics.DrawLine(pen, 23, 11, 29, 11);
+        }
+        else if (provider.DisplayName.StartsWith("Qoder", StringComparison.OrdinalIgnoreCase))
+        {
+            PointF[] outline = [new(18, 7), new(28, 12), new(28, 24), new(18, 29), new(8, 24), new(8, 12), new(18, 7)];
+            e.Graphics.DrawLines(pen, outline);
+            e.Graphics.DrawLines(pen, [new PointF(8, 12), new PointF(18, 18), new PointF(28, 12)]);
+            e.Graphics.DrawLine(pen, 18, 18, 18, 29);
         }
         else drawn = false;
         e.Graphics.Restore(saved);
