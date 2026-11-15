@@ -10,11 +10,11 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.20) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.21) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 20**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 21**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 20 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.20) 下载 `AgentMeter-Windows-x64.zip`。
+1. 从 [Alpha 21 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.21) 下载 `AgentMeter-Windows-x64.zip`。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；WorkBuddy 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -74,6 +74,7 @@
 ![重置预测，虚构演示数据](windows/assets/forecast-preview.png)
 ![收集册，虚构演示数据](windows/assets/collection-preview.png)
 ![智谱 Coding Plan 额度，虚构演示数据](windows/assets/zcode-preview.png)
+![火山方舟 Coding Plan 额度，虚构演示数据](windows/assets/volcengine-preview.png)
 ![DeepSeek API 余额，虚构演示数据](windows/assets/deepseek-preview.png)
 ![WorkBuddy 积分，虚构演示数据](windows/assets/workbuddy-preview.png)
 
@@ -88,6 +89,7 @@
 | Gemini CLI | 暂不支持 | 本地聊天会话 |
 | WorkBuddy | 实验性网页登录与积分查询，默认关闭（模拟验证） | 本地项目会话 |
 | ZCode / 智谱 Coding Plan | 用户主动添加密钥后查询，默认关闭（模拟验证） | 本地 CLI 用量数据库 |
+| 火山方舟 Coding Plan | 用户主动添加 AccessKey 对后查询，默认关闭（模拟验证） | 暂不支持 |
 | DeepSeek Harness | 暂不支持 | 本机会话日志，包含受支持的压缩日志 |
 | DeepSeek API | API 余额，主动添加密钥并启用（模拟验证） | 不直接提供本机历史；DeepSeek Harness 另列 |
 | Kimi Code / 旧版 Kimi CLI | Kimi Code 已运行本地服务（模拟验证） | 本机会话日志 |
@@ -111,8 +113,8 @@ API 等价估算使用上游内置价格快照或本机自定义美元价格，�
 ## 隐私与数据
 
 - 本机历史只在本机处理，界面使用汇总指标，不上传会话记录，也不要求注册 Agent Meter 账户。
-- Codex、Kimi、Claude 查询默认开启；MiniMax、DeepSeek、WorkBuddy、智谱 Coding Plan、第三方预测、通知和桌宠默认关闭。账户开关不影响本机账本读取。
-- 启用账户查询时会联系对应服务。Codex 使用已有登录，Claude 使用已有本地订阅凭据；MiniMax、DeepSeek 和智谱 Coding Plan 密钥保存在 Windows 凭据管理器。WorkBuddy 使用独立的 WebView2 登录目录。
+- Codex、Kimi、Claude 查询默认开启；MiniMax、DeepSeek、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan、第三方预测、通知和桌宠默认关闭。账户开关不影响本机账本读取。
+- 启用账户查询时会联系对应服务。Codex 使用已有登录，Claude 使用已有本地订阅凭据；MiniMax、DeepSeek、智谱 Coding Plan 密钥及火山方舟 AccessKey 对保存在 Windows 凭据管理器。WorkBuddy 使用独立的 WebView2 登录目录。
 - Windows 界面尚未开放自动领取或兑换积分。托盘来源设置只保存模式，切换或更新图标不额外联网。
 
 凭据传递方式、网络域名、本地缓存、删除与退出登录的区别，见[隐私与本地数据说明](windows/PRIVACY.md)。安全问题请按 [SECURITY.md](SECURITY.md) 反馈。
