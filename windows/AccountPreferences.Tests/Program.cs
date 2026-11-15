@@ -206,6 +206,7 @@ try
     if (WebCookieFilter.QoderHeader(qoderCookies) != "sid=synthetic" ||
         WebCookieFilter.QoderHeader(qoderCookies.Append(qoderCookies[0])) is not null ||
         WebCookieFilter.QoderHeader([new("sid", "bad\r\nheader", ".qoder.com.cn", "/")]) is not null ||
+        WebCookieFilter.QoderHeader([new("bad\\name", "value", ".qoder.com.cn", "/")]) is not null ||
         !QoderNavigation.IsQoder("https://qoder.com.cn/account/usage") ||
         QoderNavigation.Allowed("https://qoder.com.cn.evil.example/") || QoderNavigation.Allowed("http://qoder.com.cn/"))
         throw new InvalidOperationException("Qoder Cookie 或登录域名过滤错误");

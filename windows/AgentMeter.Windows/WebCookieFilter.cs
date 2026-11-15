@@ -42,7 +42,7 @@ internal static class WebCookieFilter
             if (string.IsNullOrEmpty(path) || path[0] != '/' || !endpointPath.StartsWith(path, StringComparison.Ordinal) ||
                 (path.Length > 1 && !path.EndsWith('/') && endpointPath.Length > path.Length && endpointPath[path.Length] != '/')) continue;
             if (cookie.Name.Length is < 1 or > 256 || cookie.Value.Length > 4096 || !seen.Add(cookie.Name) ||
-                cookie.Name.Any(c => c > 126 || c < 33 || "()<>@,;:\"/[]?={} \t".Contains(c)) ||
+                cookie.Name.Any(c => c > 126 || c < 33 || c == '\\' || "()<>@,;:\"/[]?={} \t".Contains(c)) ||
                 cookie.Value.Any(c => c < 33 || c > 126 || c is ';' or ',' or '\\' or '"')) return null;
             string part = cookie.Name + "=" + cookie.Value;
             length += part.Length + (pieces.Count == 0 ? 0 : 2);

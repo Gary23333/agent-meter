@@ -1859,7 +1859,12 @@ internal sealed partial class MeterWindow : Form
     void AddGauge(string provider, JsonElement account)
     {
         var windows = QuotaWindows.Select(account);
-        if (windows is not null) gauges.Controls.Add(new QuotaGauge(provider, windows, theme, demo ? ForecastDemoNow : null));
+        if (windows is not null)
+        {
+            var gauge = new QuotaGauge(provider, windows, theme, demo ? ForecastDemoNow : null);
+            popupTips.SetToolTip(gauge, provider);
+            gauges.Controls.Add(gauge);
+        }
     }
     static string FormatNumber(double n) => n >= 1_000_000_000 ? $"{n / 1_000_000_000:0.##}B" : n >= 1_000_000 ? $"{n / 1_000_000:0.##}M" : n >= 1_000 ? $"{n / 1_000:0.##}K" : $"{n:0}";
     static JsonElement GetValue(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;
@@ -2304,8 +2309,10 @@ internal sealed class QuotaGauge : Control
                 theme.Light ? Color.FromArgb(103, 75, 159) : Color.FromArgb(178, 145, 255));
         using var valueFont = new Font(Font.FontFamily, 9F, FontStyle.Bold);
         using var small = new Font(Font.FontFamily, 7.5F);
+        using var accountNameFont = new Font(Font.FontFamily, 8F);
         TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(left + 12, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 66, Width, 19), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(e.Graphics, provider, provider.StartsWith("MiniMax · ", StringComparison.Ordinal) ? accountNameFont : Font,
+            new Rectangle(0, 66, Width, 19), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
         string shortName = windows.Primary.Label == "5 小时" ? "5h" : windows.Primary.Label == "7 天" ? "7d" : windows.Primary.Label;
         string periods = $"{shortName} {windows.Primary.Remaining:0.#}" + (windows.Secondary is null ? "%" : $" / 7d {windows.Secondary.Remaining:0.#}");
         TextRenderer.DrawText(e.Graphics, periods, small, new Rectangle(0, 84, Width, 16), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
