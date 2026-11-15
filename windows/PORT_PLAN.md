@@ -48,7 +48,9 @@
 
 - [Alpha 20 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.20) 对应提交 `ffe827c`。同周期费用汇总、未知值与免费价格通过检查；深浅主题、窄弹层和圆角导出按钮实渲染已检查。Windows 与跨平台检查通过，ZIP 独立解压验证通过。SHA-256：`e80f6b648aa8ff7bb6d4221c9c926f60d36cfe5ee1706956a32c433fd555e9a1`。真实新增账户、多屏与高 DPI 仍需实体设备验收。
 
-- 当前公开 [Alpha 21 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.21) 对应提交 `1085ebe`。Windows 与跨平台检查通过；火山方舟签名、缺失凭据离线、窗口及额度展示以模拟数据验证，ZIP 独立解压通过。SHA-256：`8ba09f77d9aab6512fb12fbd8cc8469dc71281d225bec13afc13f2ca44b636d7`。真实账户及权限、多屏和高 DPI 尚待实体设备验收。
+- [Alpha 21 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.21) 对应提交 `1085ebe`。Windows 与跨平台检查通过；火山方舟签名、缺失凭据离线、窗口及额度展示以模拟数据验证，ZIP 独立解压通过。SHA-256：`8ba09f77d9aab6512fb12fbd8cc8469dc71281d225bec13afc13f2ca44b636d7`。真实账户及权限、多屏和高 DPI 尚待实体设备验收。
+
+- 当前公开 [Alpha 22 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.22) 对应提交 `e8fd83c`。Windows 与跨平台检查通过；胶囊筛选、重置卡和收藏展开在隔离构建机检查，深浅主题圆角实渲染已核对，ZIP 独立解压通过。SHA-256：`3895d9596ddbc7b2e0a974af3d868f65008200bdc67522106769fec74bce74ea`。真实账户、多屏与高 DPI 仍需实体设备验收。
 
 ## 安全与数据边界
 
