@@ -10,11 +10,11 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.16) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.17) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 16**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 17**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 16 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.16) 下载 `AgentMeter-Windows-x64.zip`。
+1. 从 [Alpha 17 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.17) 下载 `AgentMeter-Windows-x64.zip`。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；WorkBuddy 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -49,7 +49,7 @@
 | 账户 | 各服务剩余额度、周期重置时间、可用的套餐与余额，以及独立标注的本机统计 |
 | 应用 | 工具覆盖情况、近期有更新的活动记录；支持筛选和展开数据来源 |
 | 用量 | 今日、近 7 天、近 30 天和累计 Token，7 日模型排行、自然日趋势及所选周期 API 等价估算；支持导出 JSON / CSV 汇总 |
-| 报告 | 本周、上周、本月和上月汇总，导出 Markdown 或随主题变化的 PNG 分享图 |
+| 报告 | 本周、上周、本月和上月汇总；比较已结束的相同自然日，导出 Markdown 或 PNG 分享图 |
 | 预测 | 主动开启后查看第三方 24 / 48 小时预测、上游加权中位数、明确时间窗口与历史事件 |
 | 收集 | 本机用量徽章、5 小时和 7 天额度窗口的掉落卡片；更多类别仍在移植 |
 
