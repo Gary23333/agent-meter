@@ -331,6 +331,13 @@ try
     if (AlertPreferences.LoadSettings(directory) != new AlertSettings(true, 30, true)) throw new InvalidOperationException("额度开关不能覆盖到期提醒");
     File.WriteAllText(Path.Combine(directory, "alerts.json"), "{\"enabled\":true,\"threshold\":20,\"reset_cards_enabled\":\"bad\"}");
     if (AlertPreferences.LoadSettings(directory) != new AlertSettings(false, 20)) throw new InvalidOperationException("损坏的到期提醒设置应安全关闭");
+    if (RefreshIntervalPreferences.Load(directory) != 15) throw new InvalidOperationException("默认刷新间隔应为 15 分钟");
+    RefreshIntervalPreferences.Save(directory, 30);
+    if (RefreshIntervalPreferences.Load(directory) != 30) throw new InvalidOperationException("刷新间隔未保存");
+    try { RefreshIntervalPreferences.Save(directory, 7); throw new InvalidOperationException("不支持的刷新间隔不能保存"); }
+    catch (ArgumentException) { }
+    File.WriteAllText(Path.Combine(directory, "refresh.json"), "{\"minutes\":true}");
+    if (RefreshIntervalPreferences.Load(directory) != 15) throw new InvalidOperationException("无效刷新设置应使用默认值");
     if (ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测首次应默认关闭");
     ForecastPreferences.Save(directory, true);
     if (!ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测设置未保存");

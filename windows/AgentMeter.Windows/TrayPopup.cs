@@ -35,6 +35,7 @@ internal sealed partial class MeterWindow
         menuAction.Click += (_, _) => MenuRequested?.Invoke(new Point(menuAction.Left, menuAction.Bottom + 6));
         popupTips.SetToolTip(pinAction, "固定面板 · 点击外部不收起"); popupTips.SetToolTip(menuAction, "账户、外观及更多设置");
         popupTips.SetToolTip(refresh, "刷新用量");
+        popupTips.SetToolTip(gaugePrevious, "上一组账户额度"); popupTips.SetToolTip(gaugeNext, "下一组账户额度");
         header.Controls.AddRange([pinAction, menuAction]);
         header.Resize += (_, _) => LayoutPopupActions();
         ApplyPopupTheme(); LayoutPopupActions();
@@ -50,6 +51,8 @@ internal sealed partial class MeterWindow
         pinAction.Theme = menuAction.Theme = theme;
         navigationStrip.BackColor = Card;
         if (refresh is PopupAction action) action.Theme = theme;
+        gaugePrevious.BackColor = gaugeNext.BackColor = Background;
+        gaugePrevious.ForeColor = gaugeNext.ForeColor = Muted;
         if (appMark is not null) appMark.BackColor = Background;
         ApplyNativePopupFrame();
         Invalidate();

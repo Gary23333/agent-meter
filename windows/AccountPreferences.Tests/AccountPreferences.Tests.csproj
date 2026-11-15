@@ -22,6 +22,7 @@
     <Compile Include="..\AgentMeter.Windows\TrayIndicatorIcon.cs" Link="TrayIndicatorIcon.cs" />
     <Compile Include="..\AgentMeter.Windows\ApplicationOverview.cs" Link="ApplicationOverview.cs" />
     <Compile Include="..\AgentMeter.Windows\ActivityRefreshPolicy.cs" Link="ActivityRefreshPolicy.cs" />
+    <Compile Include="..\AgentMeter.Windows\RefreshIntervalPreferences.cs" Link="RefreshIntervalPreferences.cs" />
     <Compile Include="..\AgentMeter.Windows\PriceOverrides.cs" Link="PriceOverrides.cs" />
     <Compile Include="..\AgentMeter.Windows\QuotaAlerts.cs" Link="QuotaAlerts.cs" />
     <Compile Include="..\AgentMeter.Windows\ResetCardAlerts.cs" Link="ResetCardAlerts.cs" />

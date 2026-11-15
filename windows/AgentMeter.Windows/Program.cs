@@ -125,6 +125,18 @@ internal sealed partial class MeterContext : ApplicationContext
         menu.Items.Add("刷新数据", null, async (_, _) => await window.RefreshData());
         if (!demo)
         {
+            var refreshInterval = new ToolStripMenuItem("刷新间隔（账户与本机）");
+            foreach (int minutes in RefreshIntervalPreferences.Choices)
+            {
+                var item = new ToolStripMenuItem($"{minutes} 分钟") { Checked = minutes == window.RefreshIntervalMinutes };
+                item.Click += (_, _) =>
+                {
+                    if (!window.SetRefreshInterval(minutes)) return;
+                    foreach (ToolStripMenuItem choice in refreshInterval.DropDownItems) choice.Checked = ReferenceEquals(choice, item);
+                };
+                refreshInterval.DropDownItems.Add(item);
+            }
+            menu.Items.Add(refreshInterval);
             var accounts = new ToolStripMenuItem("账户查询");
             var accountItems = new Dictionary<string, ToolStripMenuItem>();
             foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine", "MiMo", "Qoder" })
@@ -356,6 +368,8 @@ internal sealed partial class MeterWindow : Form
     readonly NavigationTab accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
     readonly Font tabRegular = new("Microsoft YaHei UI", 9F, FontStyle.Bold), tabCompact = new("Microsoft YaHei UI", 8F, FontStyle.Bold);
     readonly FlowLayoutPanel gauges = new();
+    readonly Button gaugePrevious = new(), gaugeNext = new();
+    int gaugePage;
     readonly System.Windows.Forms.Timer timer = new();
     readonly System.Windows.Forms.Timer activityTimer = new();
     readonly CancellationTokenSource shutdown = new();
@@ -372,6 +386,7 @@ internal sealed partial class MeterWindow : Form
     Func<CancellationToken, Task<string>>? syntheticActivityReader;
     bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
     int alertThreshold = 20;
+    int refreshIntervalMinutes = 15;
     bool cardAlertsEnabled;
     bool activityBusy;
     DateTimeOffset lastActivityAttempt = DateTimeOffset.MinValue;
@@ -394,6 +409,7 @@ internal sealed partial class MeterWindow : Form
     {
         this.demo = demo; popup = !windowed; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
         usagePeriod = demo ? "today" : UsagePeriodPreferences.Load(AccountPreferences.DefaultDirectory);
+        refreshIntervalMinutes = demo ? 15 : RefreshIntervalPreferences.Load(AccountPreferences.DefaultDirectory);
         var alertSettings = demo ? new AlertSettings(false, 20) : AlertPreferences.LoadSettings(AccountPreferences.DefaultDirectory);
         alertsEnabled = alertSettings.Enabled; alertThreshold = alertSettings.Threshold; cardAlertsEnabled = alertSettings.ResetCardsEnabled;
         forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
@@ -417,9 +433,19 @@ internal sealed partial class MeterWindow : Form
         }
         gauges.Location = new Point(16, 72); gauges.Size = new Size(406, 116);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-        gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
+        gauges.WrapContents = false; gauges.AutoScroll = false; gauges.BackColor = Background;
         gauges.Resize += (_, _) => LayoutGauges();
         header.Controls.Add(gauges);
+        foreach (var button in new[] { gaugePrevious, gaugeNext })
+        {
+            button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderSize = 0; button.BackColor = Background;
+            button.ForeColor = Muted; button.Font = new Font(Font.FontFamily, 14F, FontStyle.Bold); button.Size = new Size(16, 32);
+        }
+        gaugePrevious.Text = "‹"; gaugePrevious.AccessibleName = "上一组账户额度";
+        gaugeNext.Text = "›"; gaugeNext.AccessibleName = "下一组账户额度";
+        gaugePrevious.Click += (_, _) => { gaugePage--; LayoutGauges(); };
+        gaugeNext.Click += (_, _) => { gaugePage++; LayoutGauges(); };
+        header.Controls.AddRange([gaugePrevious, gaugeNext]);
         accountTab.Text = "账户额度"; applicationsTab.Text = "应用";
         usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测"; collectionTab.Text = "收集";
         accountTab.Click += (_, _) => SetView(View.Accounts); applicationsTab.Click += (_, _) => SetView(View.Applications);
@@ -448,7 +474,7 @@ internal sealed partial class MeterWindow : Form
         content.MouseWheel += (_, _) => { if (IsHandleCreated) BeginInvoke(() => scrollRail.Invalidate()); };
         Controls.Add(contentViewport); Controls.Add(status); Controls.Add(header);
         InitializePopup();
-        timer.Interval = 15 * 60 * 1000; timer.Tick += async (_, _) => await RefreshData(); timer.Start();
+        timer.Interval = refreshIntervalMinutes * 60 * 1000; timer.Tick += async (_, _) => await RefreshData(); timer.Start();
         activityTimer.Interval = 60 * 1000;
         activityTimer.Tick += async (_, _) => await RefreshActivityIfNeeded();
         if (!demo) activityTimer.Start();
@@ -490,6 +516,10 @@ internal sealed partial class MeterWindow : Form
         {
             using var previewMenu = new ContextMenuStrip { Font = Font };
             previewMenu.Items.Add("刷新数据");
+            var refreshPreview = new ToolStripMenuItem("刷新间隔（账户与本机）");
+            foreach (int minutes in RefreshIntervalPreferences.Choices)
+                refreshPreview.DropDownItems.Add(new ToolStripMenuItem($"{minutes} 分钟") { Checked = minutes == 15 });
+            previewMenu.Items.Add(refreshPreview);
             var branch = new ToolStripMenuItem("界面风格"); branch.DropDownItems.Add(new ToolStripMenuItem("极光") { Checked = true });
             previewMenu.Items.Add(branch); previewMenu.Items.Add(new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = true });
             var alertThresholds = new ToolStripMenuItem("提醒阈值");
@@ -635,7 +665,7 @@ internal sealed partial class MeterWindow : Form
         collapse.PerformClick(); Application.DoEvents();
         if (showAllQuotaCards || HasCard("八分饱")) throw new InvalidOperationException("card_collapse_failed");
         RenderAccountDetailsPreviews(SavePreview);
-        // 多账户需要横向滚动；额外预览用于检查滚动条是否挤压仪表。
+        // 多账户分页；避免系统滚动条挤压额度环。
         var many = JsonNode.Parse(lastSnapshot!)!.AsObject();
         var accounts = new JsonArray();
         for (int index = 1; index <= 5; index++)
@@ -644,6 +674,14 @@ internal sealed partial class MeterWindow : Form
         many["other_accounts"]!["MiniMax Code"] = accounts;
         using (var snapshot = JsonDocument.Parse(many.ToJsonString())) Render(snapshot.RootElement);
         SetView(View.Accounts); SavePreview("aurora-many-accounts-narrow");
+        if (gauges.AutoScroll || !gaugeNext.Visible || !gaugeNext.Enabled || gaugePage != 0)
+            throw new InvalidOperationException("多账户额度分页不可用");
+        gaugeNext.PerformClick(); Application.DoEvents();
+        if (gaugePage != 1 || !gaugePrevious.Enabled || gauges.Controls.OfType<QuotaGauge>().Count(item => item.Visible) > 4)
+            throw new InvalidOperationException("下一组账户额度未正确切换");
+        SavePreview("aurora-many-accounts-next");
+        gaugePrevious.PerformClick();
+        if (gaugePage != 0) throw new InvalidOperationException("上一组账户额度未正确切换");
         // 仅在隔离演示预览中显示虚构余额，不读取或保存凭据。
         var deepseek = JsonNode.Parse(lastSnapshot!)!.AsObject();
         deepseek["account"] = new JsonObject { ["status"] = "disabled" };
@@ -712,6 +750,9 @@ internal sealed partial class MeterWindow : Form
             picture.Save(Path.Combine(directory, "mimo-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
             dialog.Close();
         }
+        if (!SetRefreshInterval(5) || timer.Interval != 5 * 60 * 1000 || SetRefreshInterval(7) ||
+            !SetRefreshInterval(15) || timer.Interval != 15 * 60 * 1000)
+            throw new InvalidOperationException("刷新间隔未正确应用到计时器");
         Hide();
     }
     protected override void Dispose(bool disposing)
@@ -728,6 +769,7 @@ internal sealed partial class MeterWindow : Form
         }
         gauges.Visible = view == View.Accounts;
         header.Height = view == View.Accounts ? 234 : 118;
+        LayoutGauges();
         subtitle.Text = view switch { View.Accounts => "账户额度与本机消耗", View.Applications => "应用覆盖与近期活动",
             View.Usage => "本机账本 · Token 与模型", View.Report => "自然周与自然月 · 用量报告",
             View.Forecast => "Codex 全局重置 · 第三方预测", _ => "额度卡片与本机成就" };
@@ -787,6 +829,18 @@ internal sealed partial class MeterWindow : Form
         return RefreshData();
     }
     public bool AlertsEnabled => alertsEnabled;
+    public int RefreshIntervalMinutes => refreshIntervalMinutes;
+    public bool SetRefreshInterval(int minutes)
+    {
+        if (!RefreshIntervalPreferences.Valid(minutes)) return false;
+        if (minutes == refreshIntervalMinutes) return true;
+        try { if (!demo) RefreshIntervalPreferences.Save(AccountPreferences.DefaultDirectory, minutes); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { status.Text = "无法保存刷新设置，请检查设置目录权限"; return false; }
+        refreshIntervalMinutes = minutes; timer.Stop(); timer.Interval = minutes * 60 * 1000; timer.Start();
+        status.Text = $"刷新间隔已设为 {minutes} 分钟";
+        return true;
+    }
     public int AlertThreshold => alertThreshold;
     public bool CardAlertsEnabled => cardAlertsEnabled;
     public bool ForecastEnabled => forecastEnabled;
@@ -1781,11 +1835,19 @@ internal sealed partial class MeterWindow : Form
     void LayoutGauges()
     {
         var items = gauges.Controls.OfType<QuotaGauge>().ToArray();
-        bool scroll = items.Length > 4;
-        if (gauges.AutoScroll != scroll) gauges.AutoScroll = scroll;
+        int pages = Math.Max(1, (items.Length + 3) / 4);
+        gaugePage = Math.Clamp(gaugePage, 0, pages - 1);
+        gaugePrevious.Visible = gaugeNext.Visible = view == View.Accounts && pages > 1;
+        gaugePrevious.Enabled = gaugePage > 0; gaugeNext.Enabled = gaugePage + 1 < pages;
+        gaugePrevious.Location = new Point(0, 110); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 16), 110);
         if (items.Length == 0) return;
-        int width = items.Length <= 4 ? Math.Clamp(gauges.ClientSize.Width / items.Length - 7, 70, 95) : 95;
-        foreach (var item in items) item.Width = width;
+        int shown = Math.Min(4, items.Length - gaugePage * 4);
+        int width = Math.Clamp(gauges.ClientSize.Width / Math.Max(1, shown) - 7, 70, 95);
+        for (int index = 0; index < items.Length; index++)
+        {
+            items[index].Visible = index / 4 == gaugePage;
+            items[index].Width = width;
+        }
     }
     void AddGauge(string provider, JsonElement account)
     {
