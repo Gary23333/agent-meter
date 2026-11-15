@@ -1900,7 +1900,15 @@ internal sealed class RoundedCard : Panel
         if (ClientRectangle.Width <= 0 || ClientRectangle.Height <= 0) return;
         Color start = providerColor.HasValue ? Mix(theme.Card, providerColor.Value, theme.Light ? .07 : .11) : theme.Card;
         Color end = providerColor.HasValue ? Mix(theme.CardEnd, providerColor.Value, theme.Light ? .025 : .035) : theme.CardEnd;
-        e.Graphics.Clear(Parent?.BackColor ?? theme.Background);
+        if (clipCorners && Parent is RoundedCard parent)
+        {
+            // 子卡片的边角延续父卡片的渐变，而不是填充一块纯色矩形。
+            var state = e.Graphics.Save();
+            e.Graphics.TranslateTransform(-Left, -Top);
+            InvokePaintBackground(parent, e);
+            e.Graphics.Restore(state);
+        }
+        else e.Graphics.Clear(Parent?.BackColor ?? theme.Background);
         if (Width < 28 || Height < 28) return;
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         using var shape = new System.Drawing.Drawing2D.GraphicsPath();
