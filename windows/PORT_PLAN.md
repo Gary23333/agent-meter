@@ -7,7 +7,7 @@
 | 功能或界面 | Windows 当前状态 | 后续验收 |
 | --- | --- | --- |
 | 托盘入口、余量与交互 | 无边框弹层、外部点击及 Esc 收起、固定与更多菜单；数字图标可选来源或自动最低余量，过期数据回退；细滚动轨道独立裁剪并验证拖动 | 实机验证隐藏图标、菜单、圆角阴影、退出清理、多屏和高 DPI；继续打磨小尺寸表现 |
-| 账户额度 | Codex 已在本机实测；Kimi 本地服务、Claude Code 凭据、MiniMax 和 DeepSeek API 余额通过模拟测试；已加入默认关闭的 WorkBuddy 独立网页登录及积分查询，以及主动输入密钥的智谱和火山方舟 Coding Plan 额度（模拟验证） | 验证托盘开关交互及真实 Windows 账户和 WorkBuddy 登录；继续适配 Qoder、TRAE、即梦及其他原项目来源 |
+| 账户额度 | Codex 已在本机实测；Kimi 本地服务、Claude Code 凭据、MiniMax 和 DeepSeek API 余额通过模拟测试；已加入默认关闭的 WorkBuddy 独立网页登录及积分查询，主动输入密钥的智谱和火山方舟 Coding Plan 额度，以及独立网页登录的 MiMo 平台余额和套餐（模拟验证） | 验证托盘开关交互及真实 Windows 账户和 WorkBuddy 登录；继续适配 Qoder、TRAE、即梦及其他原项目来源 |
 | 应用和本机消耗 | 多个本地账本、四个统计周期、模型排行、趋势及近 24 小时应用活动汇总已接入；额度、本机 Token、活动来源状态按应用汇总，并支持筛选和展开。应用页可见时单独刷新本机活动；Qoder 积分独立计量 | 验证应用概览、定时刷新、趋势与排行界面；完善客户端路径、项目归因、历史导入和重复计数规则 |
 | 模型与计费 | 使用上游内置价格和固定回退汇率，展示逐账本的今日美元 API 等价估算；支持本机自定义美元价格 | 验证实际账本和价格编辑界面；移植模型目录同步、更多周期、峰谷与汇率设置 |
 | 七套主题与卡片 | 七种配色、连续胶囊导航和服务语义图形已接入；账户页保留双周期仪表，其他页使用紧凑头部。账户时钟可见时按分钟更新。钱包、积分、套餐和 Codex 重置卡到期明细整合进对应卡片；本机汇总和逐日趋势明确未按账户区分 | 对照上游逐套实机检查与完善材质、动效、账户卡片、多账户归因和自适应布局；仍未达到完整视觉一致 |
@@ -50,7 +50,9 @@
 
 - [Alpha 21 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.21) 对应提交 `1085ebe`。Windows 与跨平台检查通过；火山方舟签名、缺失凭据离线、窗口及额度展示以模拟数据验证，ZIP 独立解压通过。SHA-256：`8ba09f77d9aab6512fb12fbd8cc8469dc71281d225bec13afc13f2ca44b636d7`。真实账户及权限、多屏和高 DPI 尚待实体设备验收。
 
-- 当前公开 [Alpha 22 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.22) 对应提交 `e8fd83c`。Windows 与跨平台检查通过；胶囊筛选、重置卡和收藏展开在隔离构建机检查，深浅主题圆角实渲染已核对，ZIP 独立解压通过。SHA-256：`3895d9596ddbc7b2e0a974af3d868f65008200bdc67522106769fec74bce74ea`。真实账户、多屏与高 DPI 仍需实体设备验收。
+- [Alpha 22 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.22) 对应提交 `e8fd83c`。Windows 与跨平台检查通过；胶囊筛选、重置卡和收藏展开在隔离构建机检查，深浅主题圆角实渲染已核对，ZIP 独立解压通过。SHA-256：`3895d9596ddbc7b2e0a974af3d868f65008200bdc67522106769fec74bce74ea`。真实账户、多屏与高 DPI 仍需实体设备验收。
+
+- 当前公开 [Alpha 23 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.23) 对应提交 `1bcb8f4`。Windows 和跨平台检查通过；MiMo Cookie 过滤、独立 WebView2 资料、模拟接口与错误状态已检查，账户和登录窗口预览已核对，ZIP 独立解压通过。SHA-256：`9f1da5f30b1899e6f14707bf5de77ff24a1012c026225d073b6bbce2f47268dc`。真实小米登录和账户、多屏及高 DPI 尚待实体设备验收。
 
 ## 安全与数据边界
 

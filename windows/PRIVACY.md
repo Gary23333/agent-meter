@@ -1,6 +1,6 @@
 # 隐私、凭据与本地数据
 
-Windows 适配层读取本机会话文件和用量数据库，提取用量指标，不在面板中展示对话内容。应用活动读取器会访问会话时间和项目路径等元数据，但只向界面传递各应用的汇总计数和更新时间，不传递会话标识、项目路径或内容。解析后的用量只缓存在有限的进程内存中，退出时清除。Windows 界面不上传这些历史记录，也不要求注册 Agent Meter 账户。Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek API、WorkBuddy、智谱 Coding Plan 和火山方舟 Coding Plan 查询默认关闭；可在托盘菜单分别调整，选择保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，只包含开关状态。自定义价格、外观、提醒和桌宠设置保存在同一目录；价格文件无法读取时会隐藏金额并提示。额度提醒只在当前进程内去重，重启后可能再次提示。桌宠素材随程序内置，动画不连接网络。
+Windows 适配层读取本机会话文件和用量数据库，提取用量指标，不在面板中展示对话内容。应用活动读取器会访问会话时间和项目路径等元数据，但只向界面传递各应用的汇总计数和更新时间，不传递会话标识、项目路径或内容。解析后的用量只缓存在有限的进程内存中，退出时清除。Windows 界面不上传这些历史记录，也不要求注册 Agent Meter 账户。Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek API、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan 和小米 MiMo 查询默认关闭；可在托盘菜单分别调整，选择保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，只包含开关状态。自定义价格、外观、提醒和桌宠设置保存在同一目录；价格文件无法读取时会隐藏金额并提示。额度提醒只在当前进程内去重，重启后可能再次提示。桌宠素材随程序内置，动画不连接网络。
 
 第三方重置预测默认关闭。开启后会通过 HTTPS 访问 `willreset.com`、`codex-reset.com` 和 `codexreset.org`，不发送账户凭据或本机会话；公开预测及其历史缓存在 `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`，关闭开关不会自动删除缓存。已发出的请求无法撤回。
 
@@ -20,6 +20,8 @@ WorkBuddy 登录使用 `%LOCALAPPDATA%\AgentMeter\webprofiles\workbuddy` 独立�
 智谱 Coding Plan 密钥由用户输入并保存在 Windows 凭据管理器；启用查询时经本地子进程标准输入发送到 `open.bigmodel.cn` 的 HTTPS 用量接口，不读取环境变量、浏览器或桌面登录，也不写入命令行或应用日志。
 
 火山方舟 Coding Plan 使用用户输入的 AccessKey 对，作为一条凭据保存在 Windows 凭据管理器；启用时经本地子进程标准输入传递，签名请求 `open.volcengineapi.com` 的 `GetCodingPlanUsage`，不调用模型、不读取环境变量或浏览器登录。AccessKey 权限由火山引擎控制，应使用仅有相应查询权限的凭据；删除选项仅删除本机凭据，不在服务端吊销。
+
+小米 MiMo 使用 `%LOCALAPPDATA%\AgentMeter\webprofiles\mimo` 独立资料目录保存网站 Cookie 和网页存储；不读取现有浏览器资料。启用后，仅筛选平台用量接口所需的 Cookie，经本地子进程标准输入发送至 `platform.xiaomimimo.com` 的 HTTPS 余额与 Token Plan 接口，不写入命令行或应用日志。登录窗口仅允许 MiMo、小米账号相关域名的 HTTPS 跳转；网站可能加载自身网页资源。取消登录不清除资料；「清除本地登录」清理应用内浏览数据，不等于服务端退出登录。真实账号和部分登录方式尚未验证。
 
 用户主动导出的 JSON / CSV 只包含固定来源名称、周期、数据完整状态与本机 Token 汇总；不包含账户快照、凭据、会话、路径、本机积分或金额估算。导出后文件由用户保存在选定位置；未知值保留为空或 null。
 
