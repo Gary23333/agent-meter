@@ -8,7 +8,7 @@ internal sealed record TrayIndicator(TrayReading? Reading, string Tooltip)
     public static readonly (string Id, string Label)[] Choices = [
         ("lowest", "最低余量（自动）"), ("codex", "Codex"), ("claude", "Claude Code"), ("kimi", "Kimi Code"),
         ("minimax", "MiniMax（最低账户）"), ("workbuddy", "WorkBuddy"), ("zcode", "智谱 Coding Plan"),
-        ("volcengine", "火山方舟 Coding Plan"), ("brand", "仅显示应用图标") ];
+        ("volcengine", "火山方舟 Coding Plan"), ("mimo", "小米 MiMo Token Plan"), ("brand", "仅显示应用图标") ];
     public static bool IsChoice(string mode) => Choices.Any(choice => choice.Id == mode);
     public string IconKey => Reading is null ? "brand" : $"{Math.Round(Reading.Remaining, MidpointRounding.AwayFromZero)}:{(Reading.Remaining < 20 ? 0 : Reading.Remaining < 50 ? 1 : 2)}";
 
@@ -45,6 +45,7 @@ internal sealed record TrayIndicator(TrayReading? Reading, string Tooltip)
         Add("workbuddy", "WorkBuddy", ForecastPresentation.Field(others, "WorkBuddy"));
         Add("zcode", "ZCode", ForecastPresentation.Field(others, "ZCode"));
         Add("volcengine", "火山方舟", ForecastPresentation.Field(others, "Volcengine"));
+        Add("mimo", "小米 MiMo", ForecastPresentation.Field(others, "MiMo"));
         var chosen = readings.OrderBy(reading => reading.Remaining).FirstOrDefault();
         if (chosen is null) return new(null, prefix + "\n所选来源暂无可用额度，请打开面板查看");
         string text = $"{prefix}\n{chosen.Provider} · {chosen.Window}剩余 {chosen.Remaining:0.#}%" +

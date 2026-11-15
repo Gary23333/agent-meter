@@ -21,6 +21,7 @@ internal sealed record ProviderStyle(string DisplayName, string Initial, Color C
             ("DEEPSEEK API", "DeepSeek API", "D", Color.FromArgb(76, 122, 225)),
             ("OPENCODE", "OpenCode", "O", Color.FromArgb(126, 100, 215)),
             ("MIMO CODE", "MiMo Code", "M", Color.FromArgb(223, 133, 48)),
+            ("MIMO 平台", "MiMo 平台", "M", Color.FromArgb(223, 133, 48)),
             ("DEVECO", "DevECo", "D", Color.FromArgb(100, 138, 180)),
         };
         foreach (var choice in choices)

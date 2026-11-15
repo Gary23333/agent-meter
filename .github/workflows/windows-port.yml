@@ -76,6 +76,10 @@ jobs:
           $volcengine = '{"credentials":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --volcengine-only | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $volcengine.reason -ne 'volcengine_credential_not_connected') { throw 'Volcengine opt-in check failed' }
           $env:VOLC_ACCESSKEY = ''
+          $env:MIMO_COOKIE = 'synthetic-ambient-cookie-not-used'
+          $mimo = '{"session":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --mimo-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $mimo.reason -ne 'mimo_session_missing') { throw 'MiMo opt-in check failed' }
+          $env:MIMO_COOKIE = ''
           $workbuddy = '{"session":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --workbuddy-only | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $workbuddy.reason -ne 'workbuddy_session_missing') { throw 'WorkBuddy opt-in check failed' }
           $fixture = @'
@@ -193,7 +197,7 @@ jobs:
         shell: pwsh
         run: |
           $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -PassThru -Wait
-          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 72) { throw 'Demo preview generation failed' }
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 74) { throw 'Demo preview generation failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: AgentMeter-demo-previews

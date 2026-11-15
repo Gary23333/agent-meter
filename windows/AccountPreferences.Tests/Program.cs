@@ -150,7 +150,7 @@ try
         throw new InvalidOperationException("账户开关未正确覆盖");
     File.WriteAllText(Path.Combine(directory, "preferences.json"), "{\"codex\":true,\"kimi\":false,\"claude\":true}");
     var oldPreferences = AccountPreferences.Load(directory);
-    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy || oldPreferences.ZCode || oldPreferences.Volcengine)
+    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy || oldPreferences.ZCode || oldPreferences.Volcengine || oldPreferences.MiMo)
         throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
     var deepseekPreferences = oldPreferences with { DeepSeek = true, WorkBuddy = true };
     deepseekPreferences.Save(directory);
@@ -159,6 +159,8 @@ try
     if (AccountPreferences.Load(directory) != zcodePreferences) throw new InvalidOperationException("智谱账户开关保存失败");
     var volcPreferences = zcodePreferences with { Volcengine = true }; volcPreferences.Save(directory);
     if (AccountPreferences.Load(directory) != volcPreferences) throw new InvalidOperationException("火山方舟账户开关保存失败");
+    var mimoPreferences = volcPreferences with { MiMo = true }; mimoPreferences.Save(directory);
+    if (AccountPreferences.Load(directory) != mimoPreferences) throw new InvalidOperationException("MiMo 账户开关保存失败");
     if (!VolcengineKeyStore.Valid(new VolcengineKeys("AK-synthetic", "synthetic-secret")) ||
         VolcengineKeyStore.Valid(new VolcengineKeys("model-api-key", "secret")) ||
         VolcengineKeyStore.Valid(new VolcengineKeys("AK-valid", "bad\nsecret")))
@@ -183,6 +185,20 @@ try
     if (WebCookieFilter.WorkBuddyHeader([new WebCookieFilter.Cookie("session", "bad\r\nvalue", ".workbuddy.cn", "/")]) is not null ||
         WebCookieFilter.WorkBuddyHeader([new WebCookieFilter.Cookie("session", "safe", ".evilworkbuddy.cn", "/")]) is not null)
         throw new InvalidOperationException("非法 Cookie 不应发送");
+    WebCookieFilter.Cookie[] mimoCookies = [new("api-platform_serviceToken", "synthetic", ".xiaomimimo.com", "/api/v1"),
+        new("userId", "42", "platform.xiaomimimo.com", "/"), new("unrelated", "private", ".xiaomimimo.com", "/"),
+        new("api-platform_ph", "scoped", ".xiaomimimo.com", "/api/v1/balance")];
+    string? mimoHeader = WebCookieFilter.MiMoHeader(mimoCookies);
+    if (mimoHeader is null || !mimoHeader.Contains("userId=42") || mimoHeader.Contains("private") || mimoHeader.Contains("scoped") ||
+        WebCookieFilter.MiMoHeader(mimoCookies.Append(mimoCookies[0])) is not null ||
+        WebCookieFilter.MiMoHeader([new("userId", "42", ".xiaomimimo.com", "/")]) is not null ||
+        WebCookieFilter.MiMoHeader([new("api-platform_serviceToken", "bad\r\nheader", ".xiaomimimo.com", "/"), new("userId", "42", ".xiaomimimo.com", "/")]) is not null ||
+        WebCookieFilter.MiMoHeader([new("api-platform_serviceToken", "secret", ".evilxiaomimimo.com", "/"), new("userId", "42", ".xiaomimimo.com", "/")]) is not null)
+        throw new InvalidOperationException("MiMo Cookie 必须过滤来源、路径和重复字段");
+    if (!MiMoNavigation.IsPlatform("https://platform.xiaomimimo.com/#/console/balance") ||
+        !MiMoNavigation.Allowed("https://account.xiaomi.com/") || MiMoNavigation.Allowed("https://xiaomimimo.com.evil.example/") ||
+        MiMoNavigation.Allowed("https://user@platform.xiaomimimo.com/") || MiMoNavigation.Allowed("http://platform.xiaomimimo.com/"))
+        throw new InvalidOperationException("MiMo 登录跳转域名过滤错误");
     if (!WorkBuddyNavigation.Allowed("https://www.workbuddy.cn/profile/plans-usage") ||
         !WorkBuddyNavigation.Allowed("https://xui.ptlogin2.qq.com/") || !WorkBuddyNavigation.IsWorkBuddy("https://www.workbuddy.cn/"))
         throw new InvalidOperationException("合法登录网址应可访问");

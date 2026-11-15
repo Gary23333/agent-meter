@@ -24,6 +24,43 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_mimo_session_is_explicit_and_only_allowlisted_cookies_are_sent(self):
+        answers = {'/balance': {'code': 0, 'data': {'balance': '12.3', 'currency': 'CNY'}},
+                   '/tokenPlan/detail': {'code': 0, 'data': {'planCode': 'lite'}},
+                   '/tokenPlan/usage': {'code': 0, 'data': {'monthUsage': {'used': 20, 'limit': 100}}}}
+        def response(url, **kwargs):
+            self.assertTrue(url.startswith('https://platform.xiaomimimo.com/api/v1/'))
+            self.assertNotIn('private-extra', kwargs['headers']['Cookie'])
+            return answers[url.removeprefix('https://platform.xiaomimimo.com/api/v1')]
+        with patch('agent_meter.mimo.get_json', side_effect=response) as request:
+            with self.assertRaises(SourceError): backend.mimo_account(None, 1800000000)
+            request.assert_not_called()
+            session = {'cookie': 'api-platform_serviceToken=synthetic-secret; userId=42; private-extra=secret', 'user_agent': 'Synthetic/1.0'}
+            result = backend.mimo_account(session, 1800000000)
+            self.assertEqual(result['quota']['value'][0]['remaining_percent'], 80)
+            self.assertEqual(result['credits']['value'][0]['balance'], '12.3')
+            self.assertNotIn('synthetic-secret', json.dumps(result))
+            self.assertNotIn('private-extra', json.dumps(result))
+            with self.assertRaises(SourceError): backend.mimo_account({'cookie': 'x\r\ny', 'user_agent': 'ua'}, 1800000000)
+
+    def test_mimo_missing_session_is_offline(self):
+        env = dict(os.environ, MIMO_COOKIE='synthetic-ambient-secret')
+        result = subprocess.run([sys.executable, '-m', 'windows.backend', '--mimo-only'], input='{"session":null}',
+                                text=True, encoding='utf-8', capture_output=True, timeout=15, check=True, env=env)
+        self.assertEqual(json.loads(result.stdout)['reason'], 'mimo_session_missing')
+        self.assertNotIn('synthetic-ambient-secret', result.stdout + result.stderr)
+
+    def test_mimo_failed_plan_does_not_guess_pay_as_you_go(self):
+        def response(url, **kwargs):
+            if url.endswith('/balance'): return {'code': 0, 'data': {'balance': '12', 'currency': 'CNY'}}
+            raise SourceError('synthetic_plan_failure')
+        with patch('agent_meter.mimo.get_json', side_effect=response):
+            result = backend.mimo_account({'cookie':'api-platform_serviceToken=secret; userId=42', 'user_agent':'synthetic'}, 1800000000)
+        self.assertEqual(result['status'], 'partial')
+        self.assertIsNone(result['subscription'])
+        self.assertEqual(result['credits']['value'][0]['balance'], '12')
+        self.assertNotIn('secret', json.dumps(result))
+
     def test_volcengine_requires_explicit_pair_and_signs_fixed_endpoint(self):
         payload = {'Result': {'PlanName': 'PLAN_TIER_LITE', 'QuotaUsage': [
             {'Level': 'session', 'Percent': 20}, {'Level': 'weekly', 'Percent': 50}]}}

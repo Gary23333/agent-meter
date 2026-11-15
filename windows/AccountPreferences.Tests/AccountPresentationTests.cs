@@ -34,6 +34,7 @@ internal static class AccountPresentationTests
         var balances = Details("DeepSeek API", """{"status":"available","credits":{"value":[{"total":"8","unit":"CNY","granted":"3","topped_up":"5"},{"total":"2","unit":"USD"}]}}""");
         Check(balances.Amounts.Count == 2 && balances.Amounts[0].Note == "赠金 3 · 充值 5" && balances.Amounts[1].Value == "2 USD", "不同币种必须分别展示");
         Check(Details("WorkBuddy", """{"status":"available","credits":{"value":{"balance":"25","total":"100","frozen":"2"}}}""").Amounts.Single().Note == "总额 100 · 冻结 2", "积分冻结信息遗漏");
+        Check(Details("MiMo", """{"status":"partial","subscription":{"plan":"Token Plan Lite"},"credits":{"value":[{"balance":"-1.5","cash":"0","granted":"2","unit":"CNY"}]}}""").Amounts.Single() is { Value: "-1.5 CNY", Note: "现金 0 · 赠金 2" }, "MiMo 钱包单位、负数和拆分应保留");
 
         var sample = JsonNode.Parse("""
           {"observed_at":1800000000,"account":{"status":"available","quota":{"value":[
@@ -55,6 +56,8 @@ internal static class AccountPresentationTests
         Check(Read("zcode").Reading is { Remaining: 8, Window: "MCP 调用" }, "智谱托盘额度和 MCP 类型错误");
         sample["other_accounts"]!["Volcengine"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"monthly","window_minutes":43200,"remaining_percent":18}]}}""");
         Check(Read("volcengine").Reading is { Remaining: 18, Window: "月度" }, "火山方舟月度托盘额度错误");
+        sample["other_accounts"]!["MiMo"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"monthTotal","remaining_percent":40}]}}""");
+        Check(Read("mimo").Reading is { Remaining: 40, Window: "月度总额" }, "MiMo 托盘额度类型错误");
         Check(Read(time: now.AddMinutes(31)).Reading is null && Read(time: now.AddMinutes(-6)).Reading is null, "过期或未来快照必须停止显示数字");
         Check(Read(time: now.AddMinutes(31), demo: true).Tooltip.Contains("演示数据"), "演示模式应明确标注");
         sample["account"]!["quota"]!["value"]![1]!["resets_at"]!["epoch_seconds"] = 1799999999;

@@ -28,6 +28,8 @@
 
 「设置火山方舟 AccessKey」用于查看火山方舟 Coding Plan 额度，默认关闭。需要火山引擎访问控制中的 AccessKey ID 和 SecretAccessKey，并应使用仅有对应查询权限的凭据；模型调用 API 密钥不能用于此功能。两项凭据作为一条记录存入 Windows 凭据管理器，可在同一窗口删除。启用查询后经本地子进程标准输入传递，并签名请求 `open.volcengineapi.com` 的 `GetCodingPlanUsage`；不调用模型、不读取浏览器登录或环境变量。本功能目前仅经模拟测试，真实账户及权限尚待验证。
 
+实验功能「登录小米 MiMo 平台」需要 WebView2 Runtime，默认关闭。用户在应用内独立窗口登录后，可查询平台余额和 Token Plan 月度额度；资料保存在 `%LOCALAPPDATA%\AgentMeter\webprofiles\mimo`，不会读取现有浏览器资料。「清除本地登录」清除应用内资料，不会在服务端退出。登录窗口只允许小米 MiMo 和小米账号相关 HTTPS 跳转，部分登录方式可能无法使用；真实登录和账户尚待验证。MiMo 平台账户与本机 MiMo Code 账本分别统计。
+
 账户积分、Kimi 钱包及 Codex 重置卡现在收在对应账户卡片内。重置卡显示服务报告的总数和按到期顺序排列的明细，超过 3 条可展开；「已到期 · 待刷新」不会自行减少服务报告的总数。钱包与积分仍按各自单位展示，不能合并。
 
 本机会话较多时首次扫描可能较慢。账户额度和本机 Token 分别统计；未提供的数据不会当作零。运行 `AgentMeter.Windows.exe --demo` 可查看虚构演示数据；运行 `AgentMeter.Windows.exe --window` 可用普通任务栏窗口查看真实数据。

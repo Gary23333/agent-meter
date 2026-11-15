@@ -78,7 +78,11 @@ internal static class Program
             Location = new Point(-32000, -32000), Size = new Size(1, 1) };
         pump.Shown += async (_, _) =>
         {
-            try { using var browser = new WorkBuddyBrowser(directory); await browser.SyntheticSmokeAsync(); }
+            try
+            {
+                using var browser = new WorkBuddyBrowser(directory); await browser.SyntheticSmokeAsync();
+                using var mimo = new MiMoBrowser(directory); await mimo.SyntheticSmokeAsync();
+            }
             catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException) { Environment.ExitCode = 10; }
             catch (Exception) { Environment.ExitCode = 1; }
             finally { pump.Close(); }
@@ -122,7 +126,7 @@ internal sealed partial class MeterContext : ApplicationContext
         {
             var accounts = new ToolStripMenuItem("账户查询");
             var accountItems = new Dictionary<string, ToolStripMenuItem>();
-            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine" })
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy", "ZCode", "Volcengine", "MiMo" })
             {
                 var item = new ToolStripMenuItem(provider == "DeepSeek" ? "DeepSeek API 余额" : provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
                 item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
@@ -172,6 +176,13 @@ internal sealed partial class MeterContext : ApplicationContext
                 if (editor.ShowDialog(window) != DialogResult.OK) return;
                 bool enabled = !editor.Cleared;
                 if (window.SetAccountEnabled("WorkBuddy", enabled)) accountItems["WorkBuddy"].Checked = enabled;
+            });
+            menu.Items.Add("登录小米 MiMo 平台", null, (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new MiMoLoginDialog(window.MiMoBrowser, window.CancelAccountRequests);
+                if (editor.ShowDialog(window) != DialogResult.OK) return;
+                if (window.SetAccountEnabled("MiMo", !editor.Cleared)) accountItems["MiMo"].Checked = !editor.Cleared;
             });
             var alerts = new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
@@ -324,6 +335,7 @@ internal sealed partial class MeterWindow : Form
     readonly CancellationTokenSource shutdown = new();
     readonly HistoryWorker historyWorker = new();
     readonly WorkBuddyBrowser workBuddyBrowser = new(AccountPreferences.DefaultDirectory);
+    readonly MiMoBrowser mimoBrowser = new(AccountPreferences.DefaultDirectory);
     readonly QuotaAlerts quotaAlerts = new();
     readonly bool demo;
     AccountPreferences preferences;
@@ -342,6 +354,7 @@ internal sealed partial class MeterWindow : Form
     string? lastSnapshot;
     public string? CurrentSnapshot => lastSnapshot;
     internal WorkBuddyBrowser WorkBuddyBrowser => workBuddyBrowser;
+    internal MiMoBrowser MiMoBrowser => mimoBrowser;
     public void CancelAccountRequests() => accountCancellation?.Cancel();
     public event Action<string>? SnapshotUpdated;
     public void ShowNotice(string message) { if (!IsDisposed && !Disposing) status.Text = message; }
@@ -619,11 +632,25 @@ internal sealed partial class MeterWindow : Form
             picture.Save(Path.Combine(directory, "volcengine-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
             dialog.Close();
         }
+        var mimo = JsonNode.Parse(lastSnapshot!)!.AsObject();
+        mimo["other_accounts"] = JsonNode.Parse("""{"MiMo":{"status":"available","subscription":{"plan":"Token Plan Lite"},"quota":{"value":[{"bucket":"monthTotal","remaining_percent":75}]},"credits":{"value":[{"unit":"CNY","balance":"12.3","cash":"10","granted":"2.3"}]}}}""");
+        using (var snapshot = JsonDocument.Parse(mimo.ToJsonString())) Render(snapshot.RootElement);
+        SetView(View.Accounts); SavePreview("aurora-mimo-narrow");
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "Token Plan · 月度额度"))
+            throw new InvalidOperationException("MiMo 账户卡片缺少月度额度");
+        using (var dialog = new MiMoLoginDialog(mimoBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        {
+            dialog.Show(); Application.DoEvents();
+            using var picture = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, "mimo-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
+            dialog.Close();
+        }
         Hide();
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); popupTips.Dispose(); }
+        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); mimoBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); forecastClock.Dispose(); popupTips.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
     }
@@ -686,7 +713,7 @@ internal sealed partial class MeterWindow : Form
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude,
         "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy,
-        "ZCode" => preferences.ZCode, "Volcengine" => preferences.Volcengine, _ => false
+        "ZCode" => preferences.ZCode, "Volcengine" => preferences.Volcengine, "MiMo" => preferences.MiMo, _ => false
     };
     public Task RefreshAfterAccountChange()
     {
@@ -739,7 +766,8 @@ internal sealed partial class MeterWindow : Form
             "Codex" => preferences with { Codex = enabled }, "Kimi" => preferences with { Kimi = enabled },
             "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled },
             "DeepSeek" => preferences with { DeepSeek = enabled }, "WorkBuddy" => preferences with { WorkBuddy = enabled },
-            "ZCode" => preferences with { ZCode = enabled }, "Volcengine" => preferences with { Volcengine = enabled }, _ => preferences
+            "ZCode" => preferences with { ZCode = enabled }, "Volcengine" => preferences with { Volcengine = enabled },
+            "MiMo" => preferences with { MiMo = enabled }, _ => preferences
         };
         try { next.Save(AccountPreferences.DefaultDirectory); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -773,6 +801,7 @@ internal sealed partial class MeterWindow : Form
         if (!preferences.WorkBuddy) others["WorkBuddy"] = Disabled();
         if (!preferences.ZCode) others["ZCode"] = Disabled();
         if (!preferences.Volcengine) others["Volcengine"] = Disabled();
+        if (!preferences.MiMo) others["MiMo"] = Disabled();
         if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
@@ -830,6 +859,7 @@ internal sealed partial class MeterWindow : Form
                 var historyTask = historyWorker.RefreshAsync(shutdown.Token);
                 var forecastTask = forecastEnabled ? RunCollector("--forecast-only", accountCancellation.Token) : null;
                 var workbuddyTask = preferences.WorkBuddy ? WorkBuddyAccountAsync(accountCancellation.Token) : null;
+                var mimoTask = preferences.MiMo ? MiMoAccountAsync(accountCancellation.Token) : null;
                 Task<string>? deepseekTask = null;
                 Task<string>? zcodeTask = null;
                 Task<string>? volcengineTask = null;
@@ -877,6 +907,7 @@ internal sealed partial class MeterWindow : Form
                 combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = preferences.WorkBuddy ? "loading" : "disabled" };
                 combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = preferences.ZCode ? "loading" : "disabled" };
                 combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = preferences.Volcengine ? "loading" : "disabled" };
+                combined["other_accounts"]!["MiMo"] = new JsonObject { ["status"] = preferences.MiMo ? "loading" : "disabled" };
                 ApplyAccountPreferences(combined);
                 string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
@@ -908,6 +939,14 @@ internal sealed partial class MeterWindow : Form
                     try { combined["other_accounts"]!["Volcengine"] = JsonNode.Parse(await volcengineTask); }
                     catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                     { combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
+                }
+                if (mimoTask is not null)
+                {
+                    try { combined["other_accounts"]!["MiMo"] = JsonNode.Parse(await mimoTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["other_accounts"]!["MiMo"] = new JsonObject { ["status"] = "error" }; }
                     ApplyAccountPreferences(combined);
                     using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
                 }
@@ -1059,6 +1098,25 @@ internal sealed partial class MeterWindow : Form
             InvalidOperationException or IOException or UnauthorizedAccessException or System.Security.SecurityException or OperationCanceledException)
         { return """{"status":"unavailable","reason":"workbuddy_session_unavailable"}"""; }
     }
+    async Task<string> MiMoAccountAsync(CancellationToken cancellation)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            string? session = await mimoBrowser.SessionInputAsync(timeout.Token).WaitAsync(timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            var task = RunCollector("--mimo-only", timeout.Token, session); session = null;
+            return await task;
+        }
+        catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException)
+        { return """{"status":"unavailable","reason":"mimo_runtime_missing"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && WebViewSafety.IsIsolationFailure(ex))
+        { return """{"status":"unavailable","reason":"mimo_profile_unsafe"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && ex is System.Runtime.InteropServices.COMException or
+            InvalidOperationException or IOException or UnauthorizedAccessException or System.Security.SecurityException or OperationCanceledException)
+        { return """{"status":"unavailable","reason":"mimo_session_unavailable"}"""; }
+    }
     static async Task<string> RunCollector(string mode, CancellationToken shutdown, string? accountInput = null)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "backend", "AgentMeterBackend.exe");
@@ -1175,6 +1233,7 @@ internal sealed partial class MeterWindow : Form
         AddWorkBuddyAccount(GetValue(otherAccounts, "WorkBuddy"), GetValue(localHistories, "WorkBuddy"));
         AddZCodeAccount(GetValue(otherAccounts, "ZCode"), GetValue(localHistories, "ZCode"));
         AddVolcengineAccount(GetValue(otherAccounts, "Volcengine"));
+        AddMiMoAccount(GetValue(otherAccounts, "MiMo"));
         }
         else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)
@@ -1571,6 +1630,7 @@ internal sealed partial class MeterWindow : Form
         AddGauge("WorkBuddy", GetValue(GetValue(root, "other_accounts"), "WorkBuddy"));
         AddGauge("ZCode", GetValue(GetValue(root, "other_accounts"), "ZCode"));
         AddGauge("火山方舟", GetValue(GetValue(root, "other_accounts"), "Volcengine"));
+        AddGauge("小米 MiMo", GetValue(GetValue(root, "other_accounts"), "MiMo"));
         var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {

@@ -19,6 +19,7 @@ internal sealed class QuotaAlerts
         Inspect("WorkBuddy", Field(other, "WorkBuddy"), messages, now);
         Inspect("ZCode", Field(other, "ZCode"), messages, now);
         Inspect("火山方舟", Field(other, "Volcengine"), messages, now);
+        Inspect("小米 MiMo", Field(other, "MiMo"), messages, now);
         var minimax = Field(other, "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {

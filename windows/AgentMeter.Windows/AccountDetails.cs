@@ -65,6 +65,17 @@ internal sealed record AccountDetails(string? Plan, IReadOnlyList<AccountAmount>
             if (balance is not null) amounts.Add(new AccountAmount("积分余额", balance + " 积分",
                 total is null ? null : "总额 " + total + (frozen is null ? "" : " · 冻结 " + frozen)));
         }
+        else if (provider == "MiMo" && credits.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var credit in credits.EnumerateArray().Take(2))
+            {
+                string unit = Text(credit, "unit"); string? balance = Amount(credit, "balance", negative: true);
+                string? cash = Amount(credit, "cash", negative: true), granted = Amount(credit, "granted", negative: true);
+                if (balance is null || unit is not ("CNY" or "USD")) continue;
+                amounts.Add(new AccountAmount("平台余额", balance + " " + unit,
+                    cash is not null && granted is not null ? $"现金 {cash} · 赠金 {granted}" : null));
+            }
+        }
         else if (provider == "DeepSeek API" && credits.ValueKind == JsonValueKind.Array)
         {
             foreach (var credit in credits.EnumerateArray().Take(2))
