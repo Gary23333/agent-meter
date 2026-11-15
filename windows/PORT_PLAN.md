@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 24 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.24) 对应提交 `e9c33e6`；Windows 和跨平台检查通过。提醒阈值、旧设置兼容、过期数据过滤和异步账户结果经过模拟检查，隔离环境菜单演示与便携包校验通过；系统通知显示仍待实体设备验收。SHA-256：`d49ff83bd586bfed0e21efd7b69a847076354bc26c36ac6f1994d6365ed5ce78`。
+
 - Codex 账户额度和本机历史已在开发电脑上读取；Codex 累计 Token 与原始记录独立重算一致。WorkBuddy 和 ZCode 今日及累计账本也与独立重算一致；不代表其他账户或版本均已验证。
 - Kimi、OpenCode、MiniMax Code、MiMo Code、DevEco 和 Qoder CN 的新增读取器目前以模拟数据验证为主。Kimi 账户通过模拟本地服务测试；Claude Code 账户使用模拟本地凭据及模拟接口响应测试；两者均尚无真实 Windows 账户验收。OpenCode 检测到新版消息时标记统计不完整。
 - 真实大账本首次扫描约 91 秒，同一进程内第二次约 1.3 秒；缓存只保存在内存，文件变化会重新读取。测试结果只适用于本机数据规模。
