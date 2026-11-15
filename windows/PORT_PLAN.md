@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 26 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.26) 对应提交 `7ce5bdc`；Windows 和跨平台检查通过。独立提醒开关、到期阶段、过期快照和旧设置兼容经过模拟检查，托盘菜单与深色额度环演示已核对；通知实际显示仍待实体设备验收。SHA-256：`ce22f6dfc45dbc5304acde2802592b9eb34c85a0cc371f3ce9a0d12a3aaab7a8`。
+
 - [Alpha 25 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.25) 对应提交 `5a0786e`；Windows 和跨平台检查通过。解压包在隔离的模拟账本中验证了 OpenCode v1/v2 去重、活动汇总和隐私字段，真实 OpenCode 安装仍待验收。SHA-256：`74a539a107125090a8d868ff60e5ca750f7496cde0056fdc6a6539ea9d411a9e`。
 
 - [Alpha 24 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.24) 对应提交 `e9c33e6`；Windows 和跨平台检查通过。提醒阈值、旧设置兼容、过期数据过滤和异步账户结果经过模拟检查，隔离环境菜单演示与便携包校验通过；系统通知显示仍待实体设备验收。SHA-256：`d49ff83bd586bfed0e21efd7b69a847076354bc26c36ac6f1994d6365ed5ce78`。
