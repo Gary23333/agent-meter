@@ -131,4 +131,19 @@ internal sealed partial class MeterWindow
         }
         finally { preferences = original; }
     }
+
+    internal async Task SyntheticFullRefreshSmokeAsync()
+    {
+        // 此入口仅供隔离构建机调用；关闭所有账户和预测，读取测试专用空目录。
+        if (Environment.GetEnvironmentVariable("AGENT_METER_ISOLATED_SMOKE") != "1") throw new InvalidOperationException("仅允许隔离环境检查完整刷新");
+        preferences = AccountPreferences.Disabled; forecastEnabled = false;
+        await RefreshData();
+        using var snapshot = JsonDocument.Parse(lastSnapshot ?? throw new InvalidOperationException("完整刷新未生成结果"));
+        var root = snapshot.RootElement;
+        if (GetString(GetValue(root, "account"), "status", "") != "disabled" ||
+            GetString(GetValue(GetValue(root, "history"), "Codex"), "reason", "") != "codex_sessions_not_found" ||
+            GetString(GetValue(root, "quota_cards"), "status", "") != "available" ||
+            !status.Text.StartsWith("更新于", StringComparison.Ordinal))
+            throw new InvalidOperationException("打包程序的隔离完整刷新结果错误");
+    }
 }

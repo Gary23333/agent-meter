@@ -106,6 +106,21 @@ internal sealed partial class MeterWindow
             picture.Save(Path.Combine(output, $"theme-{option.Id}.png"), ImageFormat.Png);
             for (int i = 0; i < tabs.Length; i++) CheckTabPixel(picture, tabs[i], i == 0);
         }
+        SetTheme(VisualThemes.Find("aurora"));
+        var loading = System.Text.Json.Nodes.JsonNode.Parse(DemoData)!.AsObject();
+        loading["account"] = new System.Text.Json.Nodes.JsonObject { ["status"] = "loading" };
+        foreach (string source in new[] { "Kimi Code", "Claude Code", "MiniMax Code" })
+            loading["other_accounts"]![source] = new System.Text.Json.Nodes.JsonObject { ["status"] = "loading" };
+        using (var document = System.Text.Json.JsonDocument.Parse(loading.ToJsonString())) Render(document.RootElement);
+        content.AutoScrollPosition = Point.Empty;
+        await Task.Delay(150);
+        if (content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Count(label => label.Text == "正在读取额度") != 4)
+            throw new InvalidOperationException("账户加载状态显示错误");
+        if (!gauges.Controls.OfType<Label>().Any(label => label.Text == "正在读取账户额度…"))
+            throw new InvalidOperationException("额度环加载状态显示错误");
+        using var loadingPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(loadingPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+        loadingPicture.Save(Path.Combine(output, "accounts-loading.png"), ImageFormat.Png);
     }
 
     void CheckTabPixel(Bitmap picture, NavigationTab tab, bool selected)

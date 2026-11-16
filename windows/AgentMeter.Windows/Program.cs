@@ -60,6 +60,17 @@ internal static class Program
             RunActivitySmoke();
             return;
         }
+        if (args.Length == 1 && args[0] == "--isolated-refresh-smoke")
+        {
+            if (Environment.GetEnvironmentVariable("AGENT_METER_ISOLATED_SMOKE") != "1") { Environment.ExitCode = 1; return; }
+            using var testWindow = new MeterWindow(demo: false, windowed: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) };
+            testWindow.Shown += async (_, _) => {
+                try { await testWindow.SyntheticFullRefreshSmokeAsync(); }
+                catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
+                finally { testWindow.Close(); }
+            };
+            Application.Run(testWindow); return;
+        }
         if (args.Length == 1 && args[0] == "--popup-ui-smoke")
         {
             using var popup = new MeterWindow(demo: true, windowed: false) { Location = new Point(-32000, -32000) };
@@ -2006,7 +2017,12 @@ internal sealed partial class MeterWindow : Form
         }
         else AddGauge("MiniMax", minimax);
         if (gauges.Controls.Count == 0)
-            gauges.Controls.Add(new Label { Text = "暂无可用周期额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
+        {
+            var others = GetValue(root, "other_accounts");
+            bool loading = GetString(GetValue(root, "account"), "status", "") == "loading" ||
+                (others.ValueKind == JsonValueKind.Object && others.EnumerateObject().Any(item => GetString(item.Value, "status", "") == "loading"));
+            gauges.Controls.Add(new Label { Text = loading ? "正在读取账户额度…" : "暂无可用周期额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
+        }
         LayoutGauges();
     }
     void LayoutGauges()

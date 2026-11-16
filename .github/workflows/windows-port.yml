@@ -137,6 +137,26 @@ jobs:
             $secondCards = $account | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --cards-update | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or @($secondCards.cards | Where-Object { $_.id -eq 'q5_80' -and $_.count -eq 1 }).Count -ne 1) { throw 'Quota card deduplication failed' }
           } finally { $env:LOCALAPPDATA = $savedLocalAppData }
+      - name: Smoke test complete refresh with an isolated profile
+        shell: pwsh
+        run: |
+          $isolatedProfilePath = "$env:RUNNER_TEMP/agentmeter-refresh-profile"
+          New-Item -ItemType Directory -Path $isolatedProfilePath -Force | Out-Null
+          $env:USERPROFILE = $isolatedProfilePath
+          $env:LOCALAPPDATA = "$isolatedProfilePath/local"
+          $env:CODEX_HOME = "$isolatedProfilePath/codex"
+          $env:CLAUDE_CONFIG_DIR = "$isolatedProfilePath/claude"
+          $env:DSH_HOME = "$isolatedProfilePath/deepseek"
+          $env:KIMI_CODE_HOME = "$isolatedProfilePath/kimi"
+          $env:XDG_DATA_HOME = "$isolatedProfilePath/xdg"
+          $env:OPENCODE_DB = "$isolatedProfilePath/opencode.sqlite"
+          $env:AGENT_METER_ISOLATED_SMOKE = '1'
+          $errors = "$env:RUNNER_TEMP/refresh-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--isolated-refresh-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(90000)) { throw 'Complete refresh smoke test timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw "Complete refresh smoke test failed ($($app.ExitCode))" }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
       - name: Smoke test application startup
         shell: pwsh
         run: |
