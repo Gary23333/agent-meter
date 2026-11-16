@@ -23,12 +23,18 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--background-ui-smoke")
         {
             using var context = new MeterContext(demo: true, windowed: false, background: true);
+            using var testSignal = new SingleInstanceSignal("Local\\AgentMeterWakeTest-" + Guid.NewGuid().ToString("N"));
+            testSignal.Listen(context.ActivateFromOtherInstance);
             using var check = new System.Windows.Forms.Timer { Interval = 300 };
+            int stage = 0;
             check.Tick += (_, _) => {
-                check.Stop();
-                try { context.SyntheticBackgroundSmoke(); }
+                try
+                {
+                    if (stage++ == 0) { context.SyntheticBackgroundSmoke(); testSignal.Notify(); return; }
+                    check.Stop(); context.SyntheticWakeSmoke();
+                }
                 catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
-                finally { context.ExitThread(); }
+                if (stage > 1 || Environment.ExitCode != 0) { check.Stop(); context.ExitThread(); }
             };
             check.Start(); Application.Run(context); return;
         }

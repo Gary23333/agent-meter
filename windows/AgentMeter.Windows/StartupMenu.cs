@@ -26,4 +26,8 @@ internal sealed partial class MeterContext
         if (window.Visible || !tray.Visible || window.CurrentSnapshot is null)
             throw new InvalidOperationException("后台启动应显示托盘并保持面板收起");
     }
+    internal void SyntheticWakeSmoke()
+    {
+        if (!window.Visible) throw new InvalidOperationException("再次启动后未打开托盘面板");
+    }
 }
