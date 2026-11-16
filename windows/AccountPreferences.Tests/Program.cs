@@ -368,6 +368,18 @@ try
     if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("桌宠形象必须限制为内置选择");
     File.WriteAllText(Path.Combine(directory, "pet-settings.json"), "broken");
     if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("损坏的桌宠设置应默认隐藏");
+    var petActions = new PetInteractionQueue();
+    petActions.Add("drag-start"); petActions.Add("drag-end"); petActions.Add("poke");
+    if (petActions.Take() != "drag-start" || petActions.Take() != "drag-end" || petActions.Take() != "poke" || petActions.Take() is not null)
+        throw new InvalidOperationException("桌宠动作队列顺序错误");
+    for (int i = 0; i < 16; i++) petActions.Add("poke");
+    petActions.Add("refresh");
+    if (petActions.Take() != "drag-end" || petActions.Take() != "refresh" || petActions.Take() is not null)
+        throw new InvalidOperationException("动作堆积时必须释放拖动状态并保留最新动作");
+    for (int i = 0; i < 16; i++) petActions.Add("poke");
+    petActions.Add("drag-end");
+    if (petActions.Take() != "drag-end" || petActions.Take() is not null)
+        throw new InvalidOperationException("动作堆积时的放下操作不能丢失或重复");
     var alerts = new QuotaAlerts();
     JsonElement Snapshot(double remaining, long reset, string status = "available", long observed = 1800000000) => JsonSerializer.SerializeToElement(new
     {
