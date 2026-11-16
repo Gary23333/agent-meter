@@ -53,6 +53,9 @@ internal static class Pet3dSmoke
                 using var poked = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "poke");
                 if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:poke:", StringComparison.Ordinal))
                     throw new InvalidOperationException("桌宠点击动作未生效");
+                using var refreshed = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "refresh");
+                if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:refresh:", StringComparison.Ordinal))
+                    throw new InvalidOperationException("桌宠刷新动作未生效");
             }
             first.Save(Path.Combine(outputDirectory, pack + ".png"), ImageFormat.Png);
         }
