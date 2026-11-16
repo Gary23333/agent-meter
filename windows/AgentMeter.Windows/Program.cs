@@ -2195,7 +2195,7 @@ internal sealed partial class MeterWindow : Form
             var name = new Label { Text = labels[i], AutoSize = false, AutoEllipsis = true, Height = 20, Location = new Point(173, 48 + i * 27), ForeColor = Muted };
             var value = new Label { Name = "usage-part-" + i, Text = FormatNumber(parts[i]), AutoSize = false, AutoEllipsis = true,
                 Height = 20, TextAlign = ContentAlignment.MiddleRight, Top = 48 + i * 27, ForeColor = Primary };
-            popupTips.SetToolTip(value, labels[i] + " · " + FormatNumber(parts[i]));
+            popupTips.SetToolTip(value, labels[i] + " · " + parts[i].ToString("N0") + " Token");
             box.Resize += (_, _) => {
                 value.Left = Math.Max(230, box.ClientSize.Width - 102); value.Width = Math.Max(0, box.ClientSize.Width - value.Left - 16);
                 name.Width = Math.Max(0, value.Left - name.Left - 4);
