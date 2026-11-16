@@ -528,7 +528,8 @@ class WindowsBackendTests(unittest.TestCase):
         result = backend.compact_history(source)['history']['Codex']
         self.assertEqual(result['status'], 'partial')
         self.assertEqual(result['reason'], 'some_skipped')
-        self.assertEqual(result['value'], {'periods': {'today': {'totals': {'total_tokens': 12, 'cache_read': 8}},
+        self.assertEqual(result['value'], {'periods': {'today': {'totals': {'total_tokens': 12, 'cache_read': 8},
+                                                                 'groups': [], 'groups_truncated': False, 'groups_incomplete': True},
                                                        '7d': {'totals': {'total_tokens': 20}},
                                                        '30d': {'totals': {'total_tokens': 35}},
                                                        'all': {'totals': {'total_tokens': 60}}}, 'daily_trend': None})
@@ -568,14 +569,37 @@ class WindowsBackendTests(unittest.TestCase):
                 worker.stdout.close(); worker.stderr.close()
 
     def test_model_groups_are_bounded_sorted_and_exclude_other_fields(self):
-        rows = [{'model': f'model-{n}', 'total_tokens': n, 'private_detail': '不应发送'} for n in range(25)]
+        names = list(backend.PriceTable('USD', {}, set()).index.values())[:25]
+        rows = [{'model': name, 'total_tokens': n, 'private_detail': '不应发送'} for n, name in enumerate(names)]
         rows.extend([{'model': 'bad', 'total_tokens': -1}, {'model': 'bad', 'total_tokens': True}])
         source = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'测试': {
             'status': 'available', 'value': {'periods': {'7d': {'totals': {'total_tokens': 300}, 'groups': rows}}}}}}
         period = backend.compact_history(source)['history']['测试']['value']['periods']['7d']
         self.assertEqual(len(period['groups']), 20)
-        self.assertEqual(period['groups'][0], {'model': 'model-24', 'total_tokens': 24})
+        self.assertEqual(period['groups'][0], {'model': names[24], 'total_tokens': 24})
         self.assertTrue(period['groups_truncated'])
+        self.assertTrue(period['groups_incomplete'])
+        self.assertNotIn('不应发送', json.dumps(period, ensure_ascii=False))
+
+    def test_model_groups_cover_periods_merge_aliases_and_hide_unknown_names(self):
+        def group(model, count):
+            return {'model': model, 'app': 'codex', 'fresh_input': count, 'cache_read': 0,
+                    'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': count, 'path': 'private-path'}
+        periods = {}
+        for period in ('today', '7d', '30d', 'all'):
+            periods[period] = {'totals': {'total_tokens': 1500010}, 'groups': [
+                group('gpt-5.3-codex', 1000000), group('provider/gpt-5-3-codex', 500000), group('private-unknown-model', 10)]}
+        source = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'Codex': {'status': 'available', 'value': {'periods': periods}}}}
+        item = backend.compact_history(source)['history']['Codex']
+        for period in periods:
+            value = item['value']['periods'][period]
+            self.assertEqual(value['groups'][0], {'model': 'gpt-5.3-codex', 'total_tokens': 1500000})
+            self.assertEqual(value['groups'][1], {'model': '未识别模型', 'total_tokens': 10})
+            self.assertTrue(value['groups_incomplete'])
+            self.assertEqual(Decimal(value['model_costs']['gpt-5.3-codex']['amount_usd']), Decimal('2.625'))
+            self.assertFalse(value['model_costs']['gpt-5.3-codex']['partial'])
+        self.assertNotIn('private-unknown-model', json.dumps(item, ensure_ascii=False))
+        self.assertNotIn('private-path', json.dumps(item, ensure_ascii=False))
 
     def test_daily_trend_uses_beijing_dates_and_marks_partial_sources(self):
         now = datetime(2026, 11, 14, 16, 30, tzinfo=timezone.utc).timestamp()

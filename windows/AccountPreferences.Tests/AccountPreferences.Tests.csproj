@@ -17,6 +17,7 @@
     <Compile Include="..\AgentMeter.Windows\UsagePeriodPreferences.cs" Link="UsagePeriodPreferences.cs" />
     <Compile Include="..\AgentMeter.Windows\UsageCostSummary.cs" Link="UsageCostSummary.cs" />
     <Compile Include="..\AgentMeter.Windows\UsageSources.cs" Link="UsageSources.cs" />
+    <Compile Include="..\AgentMeter.Windows\ModelRanking.cs" Link="ModelRanking.cs" />
     <Compile Include="..\AgentMeter.Windows\BudgetPreferences.cs" Link="BudgetPreferences.cs" />
     <Compile Include="..\AgentMeter.Windows\BudgetAlerts.cs" Link="BudgetAlerts.cs" />
     <Compile Include="..\AgentMeter.Windows\BudgetState.cs" Link="BudgetState.cs" />

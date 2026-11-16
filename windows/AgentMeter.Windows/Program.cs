@@ -790,6 +790,10 @@ internal sealed partial class MeterWindow : Form
             var leadingTokens = sourcesCard.Controls.OfType<Label>().Single(label => label.Name == "usage-source-tokens-0").Text;
             if (period == "7d" && leadingTokens != "7.6M" || period == "today" && leadingTokens != "1.43M")
                 throw new InvalidOperationException("应用用量对比未跟随所选周期");
+            var rankingCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "model-ranking");
+            string leadingModelTokens = rankingCard.Controls.OfType<Label>().Single(label => label.Name == "model-rank-tokens-0").Text;
+            string expectedModelTokens = period switch { "today" => "1.43M", "7d" => "6.2M", "30d" => "25.8M", _ => "102M" };
+            if (leadingModelTokens != expectedModelTokens) throw new InvalidOperationException("模型排行未跟随所选周期");
             if (period == "7d") SavePreview("aurora-usage-period-seven-days");
         }
         string fullUsageSnapshot = lastSnapshot!;
@@ -1219,6 +1223,16 @@ internal sealed partial class MeterWindow : Form
             if (demo)
             {
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
+                var codexPeriods = sample["history"]!["Codex"]!["value"]!["periods"]!;
+                codexPeriods["today"]!["groups"] = JsonNode.Parse("""[{"model":"gpt-5.3-codex","total_tokens":1426000}]""");
+                codexPeriods["today"]!["model_costs"] = JsonNode.Parse("""{"gpt-5.3-codex":{"amount_usd":"2.464","partial":false}}""");
+                codexPeriods["7d"]!["model_costs"] = JsonNode.Parse("""{"gpt-5.3-codex":{"amount_usd":"10.3","partial":false},"gpt-5.1-codex":{"amount_usd":"2","partial":false}}""");
+                codexPeriods["30d"]!["groups"] = JsonNode.Parse("""[{"model":"gpt-5.3-codex","total_tokens":25800000}]""");
+                codexPeriods["all"]!["groups"] = JsonNode.Parse("""[{"model":"gpt-5.3-codex","total_tokens":102000000}]""");
+                var claudePeriods = sample["history"]!["Claude Code"]!["value"]!["periods"]!;
+                claudePeriods["today"]!["groups"] = JsonNode.Parse("""[{"model":"claude-sonnet-4","total_tokens":341000}]""");
+                claudePeriods["30d"]!["groups"] = JsonNode.Parse("""[{"model":"claude-sonnet-4","total_tokens":2400000}]""");
+                claudePeriods["all"]!["groups"] = JsonNode.Parse("""[{"model":"claude-sonnet-4","total_tokens":3800000}]""");
                 sample["activity"]!["sources"] = JsonNode.Parse("""{"Codex":"available","Claude Code":"available","Kimi Code":"available"}""");
                 var daily = new JsonArray();
                 int[] demoDailyThousands = [324, 480, 550, 710, 280, 820, 650, 840, 1030, 610,
@@ -2354,39 +2368,6 @@ internal sealed partial class MeterWindow : Form
     {
         foreach (Control child in box.Controls)
             if (child is Label) child.BackColor = Color.Transparent;
-    }
-    void AddModelRanking(JsonElement history)
-    {
-        var models = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-        bool incomplete = false;
-        foreach (var item in history.EnumerateObject())
-        {
-            string status = GetString(item.Value, "status", "");
-            if (status is "error" or "partial" || (status == "unavailable" && !IsAbsent(item.Value))) incomplete = true;
-            var week = GetValue(GetValue(GetValue(item.Value, "value"), "periods"), "7d");
-            var total = GetNumber(GetValue(week, "totals"), "total_tokens");
-            if (!total.HasValue || total.Value <= 0) continue;
-            var groups = GetValue(week, "groups");
-            if (groups.ValueKind != JsonValueKind.Array) { incomplete = true; continue; }
-            double grouped = 0;
-            foreach (var row in groups.EnumerateArray())
-            {
-                string model = GetString(row, "model", ""); var amount = GetNumber(row, "total_tokens");
-                if (model.Length == 0 || !amount.HasValue || amount.Value < 0) { incomplete = true; continue; }
-                grouped += amount.Value;
-                models[model] = models.GetValueOrDefault(model) + amount.Value;
-            }
-            if (Math.Abs(grouped - total.Value) > 0.5 || GetValue(week, "groups_truncated").ValueKind == JsonValueKind.True) incomplete = true;
-        }
-        if (models.Count == 0) return;
-        AddHeading("近 7 天模型排行", incomplete ? "本机账本相加 · 部分模型记录不完整" : "本机账本相加 · 按 Token 排序");
-        int rank = 0;
-        foreach (var entry in models.OrderByDescending(pair => pair.Value).Take(5))
-        {
-            string label = new(entry.Key.Where(c => !char.IsControl(c)).Take(48).ToArray());
-            if (label.Length == 0 || label.Equals("unknown", StringComparison.OrdinalIgnoreCase)) label = "未识别模型";
-            AddCard($"{++rank}. {label}", FormatNumber(entry.Value) + " tokens", "近 7 天 · 按本机记录统计", null);
-        }
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(280, contentViewport.ClientSize.Width - 28); }
     const string DemoData = """

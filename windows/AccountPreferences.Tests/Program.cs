@@ -100,6 +100,18 @@ try
         if (weekRows.Count != 1 || weekRows[0].Tokens != 90 || weekRows[0].Cost is not null || UsageSource.Read(sources.RootElement, "bad").Count != 0)
             throw new InvalidOperationException("按应用对比应使用所选周期，不虚构金额");
     }
+    using (var history = JsonDocument.Parse("""{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":100},"groups":[{"model":"gpt-5.3-codex","total_tokens":100}],"model_costs":{"gpt-5.3-codex":{"amount_usd":"1.25","partial":false}}},"7d":{"totals":{"total_tokens":400},"groups":[{"model":"gpt-5.3-codex","total_tokens":400}]}}}},"OpenCode":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":200},"groups":[{"model":"gpt-5.3-codex","total_tokens":200}]},"7d":{"totals":{"total_tokens":0}}}}}}"""))
+    {
+        var today = ModelRanking.Read(history.RootElement, "today");
+        if (today.Incomplete || today.Rows.Count != 2 || today.Rows[0].Source != "OpenCode" || today.Rows[0].Cost is not null ||
+            today.Rows[1].Source != "Codex" || today.Rows[1].CostDisplay != "$1.25")
+            throw new InvalidOperationException("同模型应按来源分别排行，缺失费用不能显示为零");
+        var week = ModelRanking.Read(history.RootElement, "7d");
+        if (week.Incomplete || week.Rows.Count != 1 || week.Rows[0].Tokens != 400 || week.Rows[0].Cost is not null)
+            throw new InvalidOperationException("模型排行必须跟随所选周期");
+    }
+    using (var incomplete = JsonDocument.Parse("""{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":100},"groups":[{"model":"未识别模型","total_tokens":80}],"groups_incomplete":true}}}}}"""))
+        if (!ModelRanking.Read(incomplete.RootElement, "today").Incomplete) throw new InvalidOperationException("匿名或缺失模型必须提示不完整");
     StartupTests.Run();
     using (var comparison = JsonDocument.Parse("""{"comparable_days":3,"current_comparable_tokens":150,"previous_comparable_tokens":100}"""))
         if (ReportComparison.Read(comparison.RootElement)?.Change != "+50%") throw new InvalidOperationException("相同天数的报告对照错误");

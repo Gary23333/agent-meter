@@ -731,6 +731,8 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
                "account": result["account"], "history": {}}
     # 使用上游内置美元价格和固定回退汇率，不联网更新价格或把估算当作账单。
     table = PriceTable("USD", {}, set()) if price_table is _DEFAULT_PRICE_TABLE else price_table
+    # 只把内置目录中的精确模型标识发给界面；未知标识合并为匿名项，避免泄露路径或自定义名称。
+    identity_table = PriceTable("USD", {}, set())
     compact["price_status"] = "available" if table is not None else "invalid"
     for name, item in result["history"].items():
         value = item.get("value")
@@ -743,25 +745,37 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
             compact["history"][name] = {"status": "partial" if partial else "not_provided",
                                         "reason": item.get("reason") if partial else "history_no_usage_records", "value": None}
             continue
-        selected = {}
+        selected, aliases = {}, {}
         for period in ("today", "7d", "30d", "all"):
             bucket = periods.get(period)
             totals = bucket.get("totals") if isinstance(bucket, dict) else None
             if isinstance(totals, dict) and "total_tokens" in totals:
                 keys = ("total_tokens", "requests", "fresh_input", "output", "reasoning", "cache_read", "cache_write", "unclassified")
                 selected[period] = {"totals": {key: totals[key] for key in keys if key in totals}}
-                if period == "7d" and isinstance(bucket.get("groups"), list):
-                    groups = []
+                if isinstance(bucket.get("groups"), list):
+                    # 同一账本内相同原始模型先合并，再限制数量，避免遗漏较小分组后扭曲排行。
+                    groups, period_aliases = {}, {}
+                    invalid = False
                     for row in bucket["groups"]:
                         if not isinstance(row, dict):
+                            invalid = True
                             continue
                         model, count = row.get("model"), row.get("total_tokens")
                         if (isinstance(model, str) and 0 < len(model) < 120 and
                                 isinstance(count, int) and not isinstance(count, bool) and count >= 0):
-                            groups.append({"model": model, "total_tokens": count})
-                    groups.sort(key=lambda row: row["total_tokens"], reverse=True)
-                    selected[period]["groups"] = groups[:20]
-                    selected[period]["groups_truncated"] = len(groups) > 20
+                            safe_name = identity_table.index.get(normalize_model(model)) or "未识别模型"
+                            if safe_name == "未识别模型":
+                                invalid = True
+                            groups[safe_name] = groups.get(safe_name, 0) + count
+                            period_aliases.setdefault(safe_name, set()).add(model)
+                        else:
+                            invalid = True
+                    ranked = [{"model": model, "total_tokens": count} for model, count in groups.items()]
+                    ranked.sort(key=lambda row: (-row["total_tokens"], row["model"]))
+                    selected[period]["groups"] = ranked[:20]
+                    selected[period]["groups_truncated"] = len(ranked) > 20
+                    selected[period]["groups_incomplete"] = invalid
+                    aliases[period] = period_aliases
         compact_value = {"periods": selected} if selected else None
         if compact_value is not None:
             compact_value["daily_trend"] = source_daily_trend(item, result["observed_at"])
@@ -776,6 +790,32 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
         for period in ("today", "7d", "30d", "all"):
             try:
                 cost = (estimated or {}).get("value", {}).get("periods", {}).get(period, {})
+                model_costs = cost.get("models") if isinstance(cost, dict) else None
+                if period in selected and isinstance(model_costs, dict):
+                    amounts = {}
+                    for group in selected[period].get("groups", []):
+                        model = group["model"]
+                        total_amount = Decimal(0)
+                        known = False
+                        incomplete = item.get("status") == "partial" or model == "未识别模型"
+                        for original in aliases.get(period, {}).get(model, set()):
+                            try:
+                                amount = Decimal(str(model_costs.get(original)))
+                                if not amount.is_finite() or amount < 0 or amount > Decimal("1000000000000000"):
+                                    incomplete = True
+                                    continue
+                            except (InvalidOperation, ValueError, TypeError):
+                                incomplete = True
+                                continue
+                            total_amount += amount
+                            known = True
+                            unmatched = cost.get("unmatched_models") or []
+                            incomplete |= any(isinstance(name, str) and (name == original or name.startswith(original + " (")) for name in unmatched)
+                            incomplete |= original in (cost.get("unsplit_models") or []) and table.peak_multipliers.get(table.match(original), 1) != 1
+                        if known and total_amount <= Decimal("1000000000000000"):
+                            amounts[model] = {"amount_usd": format(total_amount, "f"), "partial": bool(incomplete)}
+                    if amounts:
+                        selected[period]["model_costs"] = amounts
                 bucket = periods.get(period, {})
                 total = bucket.get("totals", {}).get("total_tokens") if isinstance(bucket, dict) else None
                 groups = bucket.get("groups") if isinstance(bucket, dict) else None

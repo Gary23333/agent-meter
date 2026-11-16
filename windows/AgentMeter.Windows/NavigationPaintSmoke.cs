@@ -107,6 +107,27 @@ internal sealed partial class MeterWindow
                     using (var graphics = Graphics.FromImage(narrowPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
                     narrowPicture.Save(Path.Combine(output, "usage-sources-porcelain-narrow.png"), ImageFormat.Png);
                     Size = new Size(440, 680); SetTheme(VisualThemes.Find("aurora"));
+                    var rankingCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "model-ranking");
+                    content.ScrollControlIntoView(rankingCard); await Task.Delay(200);
+                    if (!rankingCard.Controls.OfType<Label>().Any(label => label.Name == "model-rank-tokens-0" && label.Text == "6.2M") ||
+                        !rankingCard.Controls.OfType<Label>().Any(label => label.Name == "model-rank-cost-0" && label.Text == "$10.3"))
+                        throw new InvalidOperationException("模型排行周期或费用显示错误");
+                    using var modelPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+                    using (var graphics = Graphics.FromImage(modelPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+                    modelPicture.Save(Path.Combine(output, "model-ranking.png"), ImageFormat.Png);
+                    Size = new Size(380, 680); SetTheme(VisualThemes.Find("porcelain"));
+                    rankingCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "model-ranking");
+                    content.ScrollControlIntoView(rankingCard); await Task.Delay(200);
+                    var model = rankingCard.Controls.OfType<Label>().Single(label => label.Name == "model-rank-name-0");
+                    var origin = rankingCard.Controls.OfType<Label>().Single(label => label.Name == "model-rank-source-0");
+                    var modelCost = rankingCard.Controls.OfType<Label>().Single(label => label.Name == "model-rank-cost-0");
+                    var modelTokens = rankingCard.Controls.OfType<Label>().Single(label => label.Name == "model-rank-tokens-0");
+                    if (model.Right > origin.Left || origin.Right > modelCost.Left || modelCost.Right > modelTokens.Left || modelTokens.Right > rankingCard.ClientSize.Width)
+                        throw new InvalidOperationException("窄弹层模型排行发生重叠");
+                    using var narrowModelPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+                    using (var graphics = Graphics.FromImage(narrowModelPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+                    narrowModelPicture.Save(Path.Combine(output, "model-ranking-porcelain-narrow.png"), ImageFormat.Png);
+                    Size = new Size(440, 680); SetTheme(VisualThemes.Find("aurora"));
                 }
             }
         }
