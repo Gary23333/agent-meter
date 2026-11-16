@@ -10,6 +10,11 @@ internal static class Program
     static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Length == 2 && args[0] == "--navigation-paint-smoke")
+        {
+            NavigationPaintSmoke.Run(args[1]);
+            return;
+        }
         if (args.Length == 2 && args[0] == "--pet3d-smoke")
         {
             Pet3dSmoke.Run(args[1]);

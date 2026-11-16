@@ -9,18 +9,20 @@ internal sealed class NavigationTab : Button
     bool selected, hovering;
     public NavigationTab()
     {
+        // 子按钮使用不透明底色，避免 Windows 实时重绘时把父容器和旧文字重复绘制到每个按钮上。
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         DoubleBuffered = true;
-        SetStyle(ControlStyles.SupportsTransparentBackColor, true);
         FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
     }
     public void SetAppearance(VisualTheme value, bool isSelected)
     {
-        theme = value; selected = isSelected; BackColor = Color.Transparent;
+        theme = value; selected = isSelected; BackColor = theme.Card;
         AccessibleDescription = isSelected ? "当前页面" : "切换页面";
         Invalidate();
     }
     protected override void OnMouseEnter(EventArgs e) { hovering = true; base.OnMouseEnter(e); Invalidate(); }
     protected override void OnMouseLeave(EventArgs e) { hovering = false; base.OnMouseLeave(e); Invalidate(); }
+    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(theme.Card);
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;

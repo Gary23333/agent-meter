@@ -210,6 +210,22 @@ jobs:
           name: AgentMeter-3D-pet-previews
           path: ${{ runner.temp }}/agentmeter-pet3d/*.png
           if-no-files-found: error
+      - name: Check real navigation repaint
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/navigation-paint-errors.txt"
+          $output = "$env:RUNNER_TEMP/agentmeter-navigation-paint"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--navigation-paint-smoke', $output -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Navigation repaint check timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Navigation repaint check failed' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AgentMeter-navigation-paint
+          path: ${{ runner.temp }}/agentmeter-navigation-paint/*.png
+          if-no-files-found: warn
       - name: Render isolated demo previews
         shell: pwsh
         run: |
