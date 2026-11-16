@@ -709,6 +709,12 @@ internal sealed partial class MeterWindow : Form
         Size = new Size(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Usage);
+        var summaryRow = content.Controls.OfType<TableLayoutPanel>().Single(row => row.Name == "usage-summary");
+        if (summaryRow.Controls.OfType<RoundedCard>().Count() != 2) throw new InvalidOperationException("用量总量与估算应分别显示");
+        Size = new Size(380, 680); Application.DoEvents();
+        if (content.HorizontalScroll.Visible) throw new InvalidOperationException("窄用量页出现横向滚动条");
+        content.AutoScrollPosition = Point.Empty; SavePreview("aurora-usage-compact");
+        Size = new Size(420, 760); Application.DoEvents();
         var usageComposition = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-breakdown");
         if (!usageComposition.Controls.OfType<UsageCompositionRing>().Any(ring => ring.AccessibleName == "用量构成，缓存命中 75%") ||
             !usageComposition.Controls.OfType<Label>().Any(label => label.Name == "usage-part-0" && label.Text == "400K") ||
@@ -723,13 +729,15 @@ internal sealed partial class MeterWindow : Form
         {
             var selector = content.Controls.OfType<NavigationStrip>().SelectMany(strip => strip.Controls.OfType<NavigationTab>()).Single(button => button.Name == "usage-period-" + period);
             selector.PerformClick(); Application.DoEvents();
-            if (usagePeriod != period || !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Name == "usage-total" && label.Text == expected))
+            if (usagePeriod != period || !content.Controls.OfType<TableLayoutPanel>().Where(row => row.Name == "usage-summary")
+                .SelectMany(row => row.Controls.OfType<RoundedCard>()).SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Name == "usage-total" && label.Text == expected))
                 throw new InvalidOperationException("用量周期切换或汇总错误：" + period);
             if (period == "7d" && !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text.Contains("近 7 天 API 等价估算 $12.3")))
                 throw new InvalidOperationException("用量周期费用未切换");
             if (period == "7d" && !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "8 个 · 近 7 天"))
                 throw new InvalidOperationException("图片文件统计未跟随用量周期");
-            var totalCost = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Single(label => label.Name == "usage-cost-total");
+            var totalCost = content.Controls.OfType<TableLayoutPanel>().Where(row => row.Name == "usage-summary")
+                .SelectMany(row => row.Controls.OfType<RoundedCard>()).SelectMany(card => card.Controls.OfType<Label>()).Single(label => label.Name == "usage-cost-total");
             if (period == "7d" && totalCost.Text != "$12.3" || period == "today" && totalCost.Text != "$2.464")
                 throw new InvalidOperationException("用量页首屏费用未跟随周期");
             if (period == "7d") SavePreview("aurora-usage-period-seven-days");
@@ -2155,24 +2163,27 @@ internal sealed partial class MeterWindow : Form
             AddCard(UsagePeriodLabel + " Token 总量", "暂无数据", partial ? "部分来源读取失败或未提供该周期" : "没有可读取的本机用量汇总", null);
             return;
         }
-        var box = new RoundedCard(theme) { Height = 112, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        var totalTitle = new Label { Text = UsagePeriodLabel + " Token 总量", Height = 22, AutoEllipsis = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) };
-        var totalValue = new Label { Name = "usage-total", Text = FormatNumber(total), Height = 38, AutoEllipsis = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) };
-        box.Controls.AddRange([totalTitle, totalValue]);
+        var summary = new TableLayoutPanel { Name = "usage-summary", ColumnCount = 2, RowCount = 1, Height = 124,
+            Margin = new Padding(0, 0, 0, 12), BackColor = Background };
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var totalBox = new RoundedCard(theme) { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 6, 0), BackColor = Card };
+        var costBox = new RoundedCard(theme, theme.Accent) { Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 0), BackColor = Card };
+        var totalTitle = new Label { Text = UsagePeriodLabel + " Token 总量", Height = 22, AutoEllipsis = true, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) };
+        var totalValue = new Label { Name = "usage-total", Text = FormatNumber(total), Height = 38, AutoEllipsis = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 34) };
+        var totalNote = new Label { Text = $"{sources} 个账本相加" + (partial ? " · 不完整" : ""), Height = 20, AutoEllipsis = true,
+            Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, Location = new Point(15, 91) };
+        totalBox.Controls.AddRange([totalTitle, totalValue, totalNote]);
         var cost = UsageCostSummary.Read(history, usagePeriod);
-        var costTitle = new Label { Text = "API 等价估算 · 非账单", Top = 11, Height = 21, Font = new Font(Font.FontFamily, 8.5F), ForeColor = Muted, AutoEllipsis = true };
-        var costValue = new Label { Name = "usage-cost-total", Text = cost.Display, Top = 34, Height = 28, Font = new Font(Font.FontFamily, 13F, FontStyle.Bold), ForeColor = Primary, AutoEllipsis = true };
-        var costNote = new Label { Text = cost.Amount is null ? "暂无可估算金额" : cost.Partial ? "部分来源未计入" : "按本机价格表估算", Top = 62, Height = 19, Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, AutoEllipsis = true };
-        box.Controls.AddRange([costTitle, costValue, costNote]);
-        popupTips.SetToolTip(costValue, cost.Display); popupTips.SetToolTip(totalValue, FormatNumber(total));
-        box.Resize += (_, _) => {
-            int x = Math.Max(175, box.ClientSize.Width * 58 / 100);
-            totalTitle.Width = totalValue.Width = Math.Max(0, x - 25);
-            costTitle.Left = costValue.Left = costNote.Left = x;
-            costTitle.Width = costValue.Width = costNote.Width = Math.Max(0, box.ClientSize.Width - x - 16);
-        };
-        box.Controls.Add(new Label { Text = $"{sources} 个本机账本相加" + (partial ? " · 含不完整来源" : ""), AutoSize = true, ForeColor = Muted, Location = new Point(16, 82) });
-        StyleCard(box); content.Controls.Add(box);
+        var costTitle = new Label { Text = "API 等价估算", Top = 11, Left = 15, Height = 21, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), ForeColor = Muted, AutoEllipsis = true };
+        var costValue = new Label { Name = "usage-cost-total", Text = cost.Display, Top = 36, Left = 14, Height = 32, Font = new Font(Font.FontFamily, 17F, FontStyle.Bold), ForeColor = Primary, AutoEllipsis = true };
+        var costNote = new Label { Text = cost.Amount is null ? "非账单 · 暂无金额" : cost.Partial ? "非账单 · 部分未计入" : "非账单 · 本机价格表", Top = 91, Left = 15, Height = 20, Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, AutoEllipsis = true };
+        costBox.Controls.AddRange([costTitle, costValue, costNote]);
+        popupTips.SetToolTip(costValue, cost.Display); popupTips.SetToolTip(totalValue, total.ToString("N0") + " Token");
+        popupTips.SetToolTip(totalNote, totalNote.Text); popupTips.SetToolTip(costNote, costNote.Text);
+        totalBox.Resize += (_, _) => totalTitle.Width = totalValue.Width = totalNote.Width = Math.Max(0, totalBox.ClientSize.Width - 30);
+        costBox.Resize += (_, _) => costTitle.Width = costValue.Width = costNote.Width = Math.Max(0, costBox.ClientSize.Width - 30);
+        StyleCard(totalBox); StyleCard(costBox); summary.Controls.Add(totalBox, 0, 0); summary.Controls.Add(costBox, 1, 0); content.Controls.Add(summary);
         if (complete && total > 0) AddUsageBreakdown(parts, partial);
         else if (complete && total == 0 && !partial) AddCard("用量构成", "本周期暂无 Token 消耗", "暂无可计算的构成比例", null);
         else if (complete && total == 0) AddCard("用量构成", "暂无法计算", "已读取来源为零，部分来源不完整", null);
