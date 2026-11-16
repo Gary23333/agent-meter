@@ -80,7 +80,7 @@ internal sealed partial class MeterWindow
                         var alerts = BudgetAlerts.TakePending(GetValue(document.RootElement, "budget"), AccountPreferences.DefaultDirectory, DateTimeOffset.UtcNow);
                         if (alerts.Count > 0) BudgetTriggered.Invoke(alerts);
                     }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException)
                     { partialFailure = true; }
                 }
             }

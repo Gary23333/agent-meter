@@ -175,6 +175,14 @@ internal sealed partial class MeterWindow
             if (dialog.DialogResult != DialogResult.OK || !saved.Enabled || saved.Daily != 20.5m || saved.AlertsEnabled)
                 throw new InvalidOperationException("预算设置保存错误");
         }
+        string testConfig = Path.Combine(testDirectory, "budget-windows.json");
+        File.WriteAllText(testConfig, "invalid");
+        using (var broken = new BudgetDialog(testDirectory))
+        {
+            if (((Button)broken.Controls.Find("budget-save", true).Single()).Enabled ||
+                !((Label)broken.Controls.Find("budget-message", true).Single()).Text.Contains("无法读取") || File.ReadAllText(testConfig) != "invalid")
+                throw new InvalidOperationException("损坏预算设置应保留原文件并阻止覆盖");
+        }
     }
 
     void CheckTabPixel(Bitmap picture, NavigationTab tab, bool selected)

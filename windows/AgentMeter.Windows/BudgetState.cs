@@ -10,7 +10,7 @@ internal static class BudgetState
         if (snapshot["budget"] is not JsonObject budget) return;
         BudgetSettings settings;
         try { settings = BudgetPreferences.Load(directory); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { snapshot["budget"] = new JsonObject { ["status"] = "invalid" }; return; }
         if (!settings.Enabled) { snapshot["budget"] = new JsonObject { ["status"] = "disabled" }; return; }
         string? status = budget["status"] is JsonValue statusValue && statusValue.TryGetValue<string>(out var text) ? text : null;

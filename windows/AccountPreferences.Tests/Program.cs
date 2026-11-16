@@ -28,6 +28,10 @@ try
             throw new InvalidOperationException("预算提醒应标记部分数据并跨刷新去重");
         if (BudgetAlerts.TakePending(budget.RootElement, budgetDirectory, budgetNow.AddHours(1)).Count != 0)
             throw new InvalidOperationException("过期预算结果不应触发通知");
+        string alertPath = Path.Combine(budgetDirectory, "budget-alerts.json");
+        File.WriteAllText(alertPath, "invalid");
+        try { BudgetAlerts.TakePending(budget.RootElement, budgetDirectory, budgetNow); throw new InvalidOperationException("损坏的提醒记录不应覆盖"); }
+        catch (InvalidDataException) { if (File.ReadAllText(alertPath) != "invalid") throw new InvalidOperationException("提醒记录已被意外覆盖"); }
     }
     var budgetSnapshot = JsonNode.Parse("""{"budget":{"status":"ok","alerts_enabled":true,"config":{"daily_cny":"20.5","weekly_cny":"100","anomaly_multiplier":"2.0"}}}""")!.AsObject();
     BudgetPreferences.Save(budgetDirectory, budgetSettings with { AlertsEnabled = false });
@@ -42,6 +46,8 @@ try
     File.WriteAllText(Path.Combine(budgetDirectory, "budget-windows.json"), "invalid");
     try { BudgetPreferences.Load(budgetDirectory); throw new InvalidOperationException("损坏预算设置不应当作默认值"); }
     catch (InvalidDataException) { }
+    BudgetState.Apply(budgetSnapshot, budgetDirectory);
+    if (budgetSnapshot["budget"]!["status"]!.GetValue<string>() != "invalid") throw new InvalidOperationException("损坏预算设置不应中断刷新");
     string signalName = "Local\\AgentMeterTest-" + Guid.NewGuid().ToString("N");
     using (var listener = new SingleInstanceSignal(signalName))
     using (var sender = new SingleInstanceSignal(signalName))

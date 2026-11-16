@@ -51,7 +51,7 @@ internal sealed class BudgetDialog : Form
             multiplier.Text = saved.Multiplier.ToString(CultureInfo.InvariantCulture);
             alerts.Enabled = saved.Enabled;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { message.Text = "预算设置无法读取；请备份并检查本地设置文件。"; save.Enabled = false; }
     }
     void SaveSettings()
