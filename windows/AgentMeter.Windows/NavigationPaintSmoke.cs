@@ -9,7 +9,7 @@ internal static class NavigationPaintSmoke
     public static void Run(string output)
     {
         Directory.CreateDirectory(output);
-        using var window = new MeterWindow(demo: true, windowed: true)
+        using var window = new MeterWindow(demo: true, windowed: false)
         { StartPosition = FormStartPosition.Manual, Location = new Point(20, 20), TopMost = true };
         window.Shown += async (_, _) =>
         {
