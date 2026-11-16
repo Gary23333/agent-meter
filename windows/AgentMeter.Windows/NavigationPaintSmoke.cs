@@ -99,6 +99,7 @@ internal sealed partial class MeterWindow
             ClickOnIsolatedDesktop(accountTab);
             await Task.Delay(350);
             Cursor.Position = new Point(1, 1);
+            ActiveControl = null;
             await Task.Delay(100);
             if (view != View.Accounts) throw new InvalidOperationException("主题切换后导航无法点击");
             using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
