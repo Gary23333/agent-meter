@@ -47,15 +47,23 @@ internal static class Pet3dSmoke
             {
                 using var held = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "drag-start");
                 if (await renderer.SyntheticLayerAsync() != "drag") throw new InvalidOperationException("桌宠拖动动作未生效");
+                if (DifferentPixels(second, held) < 10) throw new InvalidOperationException("桌宠拖动动作没有可见变化");
                 using var dropped = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "drag-end");
                 if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:drop:", StringComparison.Ordinal))
                     throw new InvalidOperationException("桌宠放下动作未生效");
+                if (DifferentPixels(held, dropped) < 10) throw new InvalidOperationException("桌宠放下动作没有可见变化");
                 using var poked = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "poke");
                 if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:poke:", StringComparison.Ordinal))
                     throw new InvalidOperationException("桌宠点击动作未生效");
+                if (DifferentPixels(dropped, poked) < 10) throw new InvalidOperationException("桌宠点击动作没有可见变化");
                 using var refreshed = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "refresh");
                 if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:refresh:", StringComparison.Ordinal))
                     throw new InvalidOperationException("桌宠刷新动作未生效");
+                if (DifferentPixels(poked, refreshed) < 10) throw new InvalidOperationException("桌宠刷新动作没有可见变化");
+                held.Save(Path.Combine(outputDirectory, "cat-drag.png"), ImageFormat.Png);
+                dropped.Save(Path.Combine(outputDirectory, "cat-drop.png"), ImageFormat.Png);
+                poked.Save(Path.Combine(outputDirectory, "cat-poke.png"), ImageFormat.Png);
+                refreshed.Save(Path.Combine(outputDirectory, "cat-refresh.png"), ImageFormat.Png);
             }
             first.Save(Path.Combine(outputDirectory, pack + ".png"), ImageFormat.Png);
         }
@@ -63,5 +71,13 @@ internal static class Pet3dSmoke
         pet.SetSnapshot("{\"observed_at\":" + DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ",\"account\":{\"status\":\"available\",\"quota\":{\"value\":[{\"remaining_percent\":10}]}}}");
         pet.Show();
         if (!await pet.FirstFrame.Task.WaitAsync(TimeSpan.FromSeconds(30))) throw new InvalidOperationException("原生桌宠窗口绘制失败");
+    }
+    static int DifferentPixels(Bitmap a, Bitmap b)
+    {
+        int different = 0;
+        for (int y = 0; y < a.Height; y += 3)
+            for (int x = 0; x < a.Width; x += 3)
+                if (a.GetPixel(x, y).ToArgb() != b.GetPixel(x, y).ToArgb()) different++;
+        return different;
     }
 }
