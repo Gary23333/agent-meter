@@ -1,4 +1,5 @@
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace AgentMeter.Windows;
 
@@ -22,9 +23,12 @@ internal static class NavigationPaintSmoke
 
 internal sealed partial class MeterWindow
 {
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr handle, int command);
     internal async Task SyntheticNavigationPaintAsync(string output)
     {
         if (!demo) throw new InvalidOperationException("仅允许演示数据检查绘制");
+        // 构建进程本身以隐藏方式启动；测试窗口必须显式显示到隔离桌面。
+        ShowWindow(Handle, 5); BringToFront(); Activate();
         await RefreshData();
         // 只在隔离构建机运行，移开鼠标以免悬停色干扰像素判断。
         Cursor.Position = new Point(1, 1);
