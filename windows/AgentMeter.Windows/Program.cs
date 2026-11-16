@@ -778,6 +778,10 @@ internal sealed partial class MeterWindow : Form
                 .SelectMany(row => row.Controls.OfType<RoundedCard>()).SelectMany(card => card.Controls.OfType<Label>()).Single(label => label.Name == "usage-cost-total");
             if (period == "7d" && totalCost.Text != "$12.3" || period == "today" && totalCost.Text != "$2.464")
                 throw new InvalidOperationException("用量页首屏费用未跟随周期");
+            var sourcesCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-sources");
+            var leadingTokens = sourcesCard.Controls.OfType<Label>().Single(label => label.Name == "usage-source-tokens-0").Text;
+            if (period == "7d" && leadingTokens != "7.6M" || period == "today" && leadingTokens != "1.43M")
+                throw new InvalidOperationException("应用用量对比未跟随所选周期");
             if (period == "7d") SavePreview("aurora-usage-period-seven-days");
         }
         string fullUsageSnapshot = lastSnapshot!;
@@ -1608,6 +1612,7 @@ internal sealed partial class MeterWindow : Form
         if (history.ValueKind == JsonValueKind.Object)
         {
             AddUsageSummary(history);
+            AddUsageSources(history);
             AddDailyTrend(GetValue(root, "daily_trend"));
             var exportData = new RoundedActionButton(theme) { Name = "usage-export-data", Text = "导出本机汇总 · JSON / CSV", Height = 42,
                 Margin = new Padding(0, 0, 0, 12), ForeColor = Primary };

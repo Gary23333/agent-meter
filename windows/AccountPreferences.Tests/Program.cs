@@ -46,6 +46,16 @@ try
     }
     using (var costs = JsonDocument.Parse("""{"A":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1}}}},"estimate":{"amount_usd":"0","partial":false}}}"""))
         if (UsageCostSummary.Read(costs.RootElement, "today") is not { Amount: 0, Partial: false }) throw new InvalidOperationException("免费价格估算不能误当未知");
+    using (var sources = JsonDocument.Parse("""{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":10}},"7d":{"totals":{"total_tokens":90}}}},"estimates":{"today":{"amount_usd":"0.125","partial":false}}},"Claude Code":{"status":"partial","value":{"periods":{"today":{"totals":{"total_tokens":30}}}}},"Empty":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":0}}}}},"Bad":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":-10}}}}},"Unavailable":{"status":"error"}}"""))
+    {
+        var todayRows = UsageSource.Read(sources.RootElement, "today");
+        if (todayRows.Count != 2 || todayRows[0].Name != "Claude Code" || todayRows[0].Cost is not null || !todayRows[0].Partial ||
+            todayRows[1].Tokens != 10 || todayRows[1].CostDisplay != "$0.125" || todayRows[1].Partial)
+            throw new InvalidOperationException("按应用对比应排序并区分缺失费用与部分记录");
+        var weekRows = UsageSource.Read(sources.RootElement, "7d");
+        if (weekRows.Count != 1 || weekRows[0].Tokens != 90 || weekRows[0].Cost is not null || UsageSource.Read(sources.RootElement, "bad").Count != 0)
+            throw new InvalidOperationException("按应用对比应使用所选周期，不虚构金额");
+    }
     StartupTests.Run();
     using (var comparison = JsonDocument.Parse("""{"comparable_days":3,"current_comparable_tokens":150,"previous_comparable_tokens":100}"""))
         if (ReportComparison.Read(comparison.RootElement)?.Change != "+50%") throw new InvalidOperationException("相同天数的报告对照错误");

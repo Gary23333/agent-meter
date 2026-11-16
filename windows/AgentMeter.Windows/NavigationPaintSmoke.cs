@@ -85,6 +85,29 @@ internal sealed partial class MeterWindow
                     if (choices[i].IsSelected != (i == 1)) throw new InvalidOperationException("筛选选中状态错误");
                     CheckTabPixel(afterClick, choices[i], i == 1);
                 }
+                if (page == View.Usage)
+                {
+                    var sourceCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-sources");
+                    content.ScrollControlIntoView(sourceCard);
+                    await Task.Delay(150);
+                    using var sourcePicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+                    using (var graphics = Graphics.FromImage(sourcePicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+                    sourcePicture.Save(Path.Combine(output, "usage-sources.png"), ImageFormat.Png);
+                    if (!sourceCard.Controls.OfType<Label>().Any(label => label.Name == "usage-source-tokens-0" && label.Text == "7.6M"))
+                        throw new InvalidOperationException("应用用量对比缺少当前周期数值");
+                    Size = new Size(380, 680); SetTheme(VisualThemes.Find("porcelain"));
+                    sourceCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-sources");
+                    content.ScrollControlIntoView(sourceCard); await Task.Delay(200);
+                    var nameLabel = sourceCard.Controls.OfType<Label>().Single(label => label.Name == "usage-source-name-0");
+                    var count = sourceCard.Controls.OfType<Label>().Single(label => label.Name == "usage-source-tokens-0");
+                    var cost = sourceCard.Controls.OfType<Label>().Single(label => label.Name == "usage-source-cost-0");
+                    if (nameLabel.Right > count.Left || count.Right > cost.Left || cost.Right > sourceCard.ClientSize.Width)
+                        throw new InvalidOperationException("窄弹层的应用用量对比发生重叠");
+                    using var narrowPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+                    using (var graphics = Graphics.FromImage(narrowPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+                    narrowPicture.Save(Path.Combine(output, "usage-sources-porcelain-narrow.png"), ImageFormat.Png);
+                    Size = new Size(440, 680); SetTheme(VisualThemes.Find("aurora"));
+                }
             }
         }
         // 真实键盘事件检查自绘控件的可操作性，再逐个核对七种主题的高亮。
