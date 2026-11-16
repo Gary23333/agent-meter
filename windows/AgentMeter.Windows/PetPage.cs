@@ -150,6 +150,7 @@ internal sealed class PetHero : Control
         e.Graphics.FillPath(fill, shape);
         var shown = liveArt ?? art;
         int h = Math.Min(stage.Height - 6, 155), w = h * shown.Width / shown.Height;
+        if (w > stage.Width - 12) { w = Math.Max(1, stage.Width - 12); h = Math.Max(1, w * shown.Height / shown.Width); }
         e.Graphics.InterpolationMode = pixelated ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBicubic;
         if (pixelated) e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
         e.Graphics.DrawImage(shown, new Rectangle(stage.Left + (stage.Width - w) / 2, stage.Top + (stage.Height - h) / 2, w, h));
