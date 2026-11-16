@@ -137,6 +137,21 @@ jobs:
             $secondCards = $account | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --cards-update | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or @($secondCards.cards | Where-Object { $_.id -eq 'q5_80' -and $_.count -eq 1 }).Count -ne 1) { throw 'Quota card deduplication failed' }
           } finally { $env:LOCALAPPDATA = $savedLocalAppData }
+      - name: Smoke test packaged budget with an isolated profile
+        shell: pwsh
+        run: |
+          $budgetTestDir = "$env:RUNNER_TEMP/agentmeter-budget-profile"
+          New-Item -ItemType Directory -Path $budgetTestDir -Force | Out-Null
+          '{"schema":1,"enabled":true,"alerts_enabled":false,"daily_cny":"10","weekly_cny":"50","anomaly_multiplier":"2"}' | Set-Content -LiteralPath "$budgetTestDir/budget-windows.json" -Encoding utf8
+          $env:CODEX_HOME = "$budgetTestDir/codex"
+          $env:CLAUDE_CONFIG_DIR = "$budgetTestDir/claude"
+          $env:DSH_HOME = "$budgetTestDir/dsh"
+          $env:KIMI_CODE_HOME = "$budgetTestDir/kimi"
+          $env:XDG_DATA_HOME = "$budgetTestDir/xdg"
+          $env:OPENCODE_DB = "$budgetTestDir/opencode.sqlite"
+          $result = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$budgetTestDir/home" --prices-dir $budgetTestDir | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $result.budget.status -ne 'ok' -or $result.budget.daily.budget_cny -ne '10.000000' -or $null -ne $result.budget.daily.spent_cny) { throw 'Packaged budget smoke test failed' }
+          if (Test-Path -LiteralPath "$budgetTestDir/budget-history.json") { throw 'Unknown budget amount should not create history' }
       - name: Smoke test complete refresh with an isolated profile
         shell: pwsh
         run: |

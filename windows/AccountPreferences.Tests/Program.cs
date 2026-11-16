@@ -12,6 +12,35 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    var budgetDirectory = Path.Combine(directory, "budget");
+    if (BudgetPreferences.Load(budgetDirectory).Enabled) throw new InvalidOperationException("预算默认应关闭");
+    var budgetSettings = new BudgetSettings(true, true, 20.5m, 100m, 2m);
+    BudgetPreferences.Save(budgetDirectory, budgetSettings);
+    if (BudgetPreferences.Load(budgetDirectory) != budgetSettings || BudgetPreferences.TryAmount("-1", out _) ||
+        BudgetPreferences.TryAmount("NaN", out _) || BudgetPreferences.TryAmount("1000000001", out _))
+        throw new InvalidOperationException("预算设置或金额校验错误");
+    var budgetNow = new DateTimeOffset(2026, 11, 9, 4, 0, 0, TimeSpan.Zero);
+    using (var budget = JsonDocument.Parse("""{"status":"ok","alerts_enabled":true,"generated_at":{"epoch_seconds":1794196800},"daily":{"partial":true},"events":[{"id":"budget_daily_exceeded:2026-11-09","kind":"daily_exceeded","date":"2026-11-09","spent_cny":"25","budget_cny":"20"}]}"""))
+    {
+        var messages = BudgetAlerts.TakePending(budget.RootElement, budgetDirectory, budgetNow);
+        if (messages.Count != 1 || !messages[0].Contains("至少") || BudgetAlerts.TakePending(budget.RootElement, budgetDirectory, budgetNow).Count != 0)
+            throw new InvalidOperationException("预算提醒应标记部分数据并跨刷新去重");
+        if (BudgetAlerts.TakePending(budget.RootElement, budgetDirectory, budgetNow.AddHours(1)).Count != 0)
+            throw new InvalidOperationException("过期预算结果不应触发通知");
+    }
+    var budgetSnapshot = JsonNode.Parse("""{"budget":{"status":"ok","alerts_enabled":true,"config":{"daily_cny":"20.5","weekly_cny":"100","anomaly_multiplier":"2.0"}}}""")!.AsObject();
+    BudgetPreferences.Save(budgetDirectory, budgetSettings with { AlertsEnabled = false });
+    BudgetState.Apply(budgetSnapshot, budgetDirectory);
+    if (budgetSnapshot["budget"]!["alerts_enabled"]!.GetValue<bool>()) throw new InvalidOperationException("关闭提醒后不得采用迟到通知");
+    BudgetPreferences.Save(budgetDirectory, budgetSettings with { Daily = 30m });
+    BudgetState.Apply(budgetSnapshot, budgetDirectory);
+    if (budgetSnapshot["budget"]!["status"]!.GetValue<string>() != "loading") throw new InvalidOperationException("旧预算金额不应继续显示");
+    BudgetPreferences.Save(budgetDirectory, budgetSettings with { Enabled = false });
+    BudgetState.Apply(budgetSnapshot, budgetDirectory);
+    if (budgetSnapshot["budget"]!["status"]!.GetValue<string>() != "disabled") throw new InvalidOperationException("关闭预算后应隐藏旧结果");
+    File.WriteAllText(Path.Combine(budgetDirectory, "budget-windows.json"), "invalid");
+    try { BudgetPreferences.Load(budgetDirectory); throw new InvalidOperationException("损坏预算设置不应当作默认值"); }
+    catch (InvalidDataException) { }
     string signalName = "Local\\AgentMeterTest-" + Guid.NewGuid().ToString("N");
     using (var listener = new SingleInstanceSignal(signalName))
     using (var sender = new SingleInstanceSignal(signalName))

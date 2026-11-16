@@ -33,7 +33,7 @@ internal sealed partial class MeterWindow
                 else if (name == "history")
                 {
                     if (data["history"] is not JsonObject) throw new JsonException("history_bundle_incomplete");
-                    foreach (string key in new[] { "history", "local_credits", "image_files", "daily_trend", "calendar_report", "local_medals", "activity", "price_status" })
+                    foreach (string key in new[] { "history", "local_credits", "image_files", "daily_trend", "calendar_report", "local_medals", "activity", "price_status", "budget" })
                         snapshot[key] = data[key]?.DeepClone();
                     lastActivityAttempt = DateTimeOffset.UtcNow;
                 }
@@ -59,6 +59,7 @@ internal sealed partial class MeterWindow
                 else snapshot["other_accounts"]![name] = new JsonObject { ["status"] = "error" };
             }
             ApplyAccountPreferences(snapshot);
+            if (!demo) BudgetState.Apply(snapshot, AccountPreferences.DefaultDirectory);
             static bool HasError(JsonNode? node) => node is JsonArray items ? items.Any(HasError) :
                 node is JsonObject item && item["status"] is JsonValue value && value.TryGetValue<string>(out var state) && state == "error";
             if (name == "accounts")
@@ -72,6 +73,16 @@ internal sealed partial class MeterWindow
             {
                 Render(document.RootElement);
                 NotifyLowQuota(document.RootElement);
+                if (name == "history" && !demo && BudgetTriggered is not null)
+                {
+                    try
+                    {
+                        var alerts = BudgetAlerts.TakePending(GetValue(document.RootElement, "budget"), AccountPreferences.DefaultDirectory, DateTimeOffset.UtcNow);
+                        if (alerts.Count > 0) BudgetTriggered.Invoke(alerts);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    { partialFailure = true; }
+                }
             }
             finished++;
             status.Text = pending.Count > 0 ? $"正在刷新 · 已完成 {finished} 项" : partialFailure

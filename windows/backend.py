@@ -33,6 +33,7 @@ from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
 from windows.forecast import forecast_summary
 from windows.cost_medals import daily_cost_metric
+from windows.budget import budget_from_compact
 from windows.codex_image_files import image_files, medal_image_source
 from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, save_ledger, track_windows
 from agent_meter.deepseek import collect_deepseek
@@ -847,6 +848,11 @@ def history_worker(home=None, prices_dir=None):
             if request != {"command": "refresh"}:
                 raise ValueError("invalid request")
             result = compact_history(collect(local_only=True, home=home), load_price_table(prices_dir))
+            try:
+                result["budget"] = budget_from_compact(result, prices_dir) if prices_dir else {"status": "disabled"}
+            except (OSError, ValueError, TypeError, KeyError, OverflowError, InvalidOperation):
+                # 预算是可选功能，坏设置或历史文件不能阻断本机用量读取。
+                result["budget"] = {"status": "error", "reason": "budget_calculation_failed"}
             try:
                 root = Path(home) if home else Path.home()
                 result["activity"] = compact_activity(collect_activity(activity_config(root), now=result["observed_at"]), result["observed_at"])

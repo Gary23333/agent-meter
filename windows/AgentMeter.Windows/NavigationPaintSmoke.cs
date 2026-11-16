@@ -145,6 +145,32 @@ internal sealed partial class MeterWindow
         using var loadingPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(loadingPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
         loadingPicture.Save(Path.Combine(output, "accounts-loading.png"), ImageFormat.Png);
+        SetView(View.Usage);
+        var withBudget = System.Text.Json.Nodes.JsonNode.Parse(DemoData)!.AsObject();
+        withBudget["budget"] = System.Text.Json.Nodes.JsonNode.Parse("""{"status":"ok","daily":{"budget_cny":"10","spent_cny":"3.625","partial":false},"weekly":{"budget_cny":"100","spent_cny":"15","partial":true}}""");
+        using (var document = System.Text.Json.JsonDocument.Parse(withBudget.ToJsonString())) Render(document.RootElement);
+        content.AutoScrollPosition = Point.Empty; await Task.Delay(200);
+        var budgetCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "budget-progress");
+        if (!budgetCard.Controls.OfType<Label>().Any(label => label.Text.Contains("¥3.63 / ¥10")) ||
+            !budgetCard.Controls.OfType<Label>().Any(label => label.Text.Contains("¥15 / ¥100 · 部分")))
+            throw new InvalidOperationException("预算进度显示错误");
+        using var budgetPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(budgetPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+        budgetPicture.Save(Path.Combine(output, "budget-progress.png"), ImageFormat.Png);
+        string testDirectory = Path.Combine(Path.GetTempPath(), "AgentMeterBudgetSmoke-" + Guid.NewGuid().ToString("N"));
+        using (var dialog = new BudgetDialog(testDirectory) { StartPosition = FormStartPosition.Manual, Location = new Point(40, 40), TopMost = true })
+        {
+            dialog.Show(); await Task.Delay(200);
+            using var dialogPicture = new Bitmap(dialog.Width, dialog.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(dialogPicture)) graphics.CopyFromScreen(dialog.Location, Point.Empty, dialog.Size);
+            dialogPicture.Save(Path.Combine(output, "budget-settings.png"), ImageFormat.Png);
+            ((CheckBox)dialog.Controls.Find("budget-enabled", true).Single()).Checked = true;
+            ((TextBox)dialog.Controls.Find("budget-daily", true).Single()).Text = "20.5";
+            ((Button)dialog.Controls.Find("budget-save", true).Single()).PerformClick();
+            var saved = BudgetPreferences.Load(testDirectory);
+            if (dialog.DialogResult != DialogResult.OK || !saved.Enabled || saved.Daily != 20.5m || saved.AlertsEnabled)
+                throw new InvalidOperationException("预算设置保存错误");
+        }
     }
 
     void CheckTabPixel(Bitmap picture, NavigationTab tab, bool selected)

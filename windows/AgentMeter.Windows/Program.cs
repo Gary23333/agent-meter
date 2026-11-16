@@ -194,6 +194,12 @@ internal sealed partial class MeterContext : ApplicationContext
                 using var editor = new PriceEditor(AccountPreferences.DefaultDirectory);
                 if (editor.ShowDialog(window) == DialogResult.OK) await window.RefreshData();
             });
+            menu.Items.Add("预算与异常提醒", null, async (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new BudgetDialog(AccountPreferences.DefaultDirectory);
+                if (editor.ShowDialog(window) == DialogResult.OK) await window.RefreshAfterBudgetChange();
+            });
             menu.Items.Add("管理 MiniMax 账户", null, async (_, _) =>
             {
                 ShowPanel(true);
@@ -329,6 +335,7 @@ internal sealed partial class MeterContext : ApplicationContext
         }
         window.QuotaLow += messages => ShowAlert("Agent 额度提醒", messages);
         window.CardsExpiring += messages => ShowAlert("Agent 重置卡提醒", messages);
+        window.BudgetTriggered += messages => ShowAlert("Agent 预算提醒", messages);
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else if (!window.JustDismissedAtCursor) ShowPanel(true); } };
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
@@ -1053,6 +1060,15 @@ internal sealed partial class MeterWindow : Form
         quotaAlerts.Clear(); cardAlerts.Clear(); accountCancellation?.Cancel();
         return RefreshData();
     }
+    public Task RefreshAfterBudgetChange()
+    {
+        if (lastSnapshot is not null)
+        {
+            var snapshot = JsonNode.Parse(lastSnapshot)!.AsObject(); BudgetState.Apply(snapshot, AccountPreferences.DefaultDirectory);
+            using var document = JsonDocument.Parse(snapshot.ToJsonString()); Render(document.RootElement);
+        }
+        return RefreshData();
+    }
     public bool AlertsEnabled => alertsEnabled;
     public int RefreshIntervalMinutes => refreshIntervalMinutes;
     public bool SetRefreshInterval(int minutes)
@@ -1088,6 +1104,7 @@ internal sealed partial class MeterWindow : Form
     }
     public event Action<IReadOnlyList<string>>? QuotaLow;
     public event Action<IReadOnlyList<string>>? CardsExpiring;
+    public event Action<IReadOnlyList<string>>? BudgetTriggered;
     public bool SetAlertsEnabled(bool enabled)
     {
         try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(enabled, alertThreshold, cardAlertsEnabled)); }
@@ -1608,6 +1625,7 @@ internal sealed partial class MeterWindow : Form
         else if (view == View.Usage)
         {
         AddUsagePeriodSelector();
+        AddBudgetProgress(GetValue(root, "budget"));
         var history = GetValue(root, "history");
         if (history.ValueKind == JsonValueKind.Object)
         {
