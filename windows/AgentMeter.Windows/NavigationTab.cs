@@ -2,7 +2,7 @@ using System.Drawing.Drawing2D;
 
 namespace AgentMeter.Windows;
 
-/// <summary>保留标准按钮的键盘与辅助功能行为，用圆角和悬停状态统一六个页面入口。</summary>
+/// <summary>保留标准按钮的键盘与辅助功能行为，用圆角和悬停状态统一页面入口。</summary>
 internal sealed class NavigationTab : Button
 {
     VisualTheme theme = VisualThemes.Find("aurora");

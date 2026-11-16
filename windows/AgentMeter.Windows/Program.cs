@@ -603,6 +603,13 @@ internal sealed partial class MeterWindow : Form
             string children = string.Join(",", content.Controls.Cast<Control>().Select(item => $"{item.GetType().Name}:{item.Width}+{item.Margin.Horizontal}"));
             throw new InvalidOperationException($"桌宠页面出现横向滚动条：content={content.Width} viewport={contentViewport.Width} display={content.DisplayRectangle.Width} controls={children}");
         }
+        content.AutoScrollPosition = new Point(0, 80); Application.DoEvents();
+        int beforeResize = -content.AutoScrollPosition.Y;
+        Size = new Size(400, 680); Application.DoEvents();
+        if (beforeResize < 30 || Math.Abs(-content.AutoScrollPosition.Y - beforeResize) > 2)
+            throw new InvalidOperationException("窗口缩放后未保留纵向滚动位置");
+        Size = new Size(380, 680); content.AutoScrollPosition = Point.Empty; Application.DoEvents();
+        if (content.HorizontalScroll.Visible) throw new InvalidOperationException("反复缩放后出现横向滚动条");
         SavePreview("aurora-pet-narrow");
         SetPetPreferences(PetPreferences.Default);
         Size = new Size(500, 1100);
