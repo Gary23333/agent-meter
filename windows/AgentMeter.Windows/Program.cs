@@ -1841,7 +1841,7 @@ internal sealed partial class MeterWindow : Form
         AddHeading("应用概览", "额度、本机用量与活动记录分别统计");
         var activity = GetValue(root, "activity");
         var apps = ApplicationOverview.Build(root);
-        var filters = new NavigationStrip { Height = 40, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var filters = new NavigationStrip { Name = "app-filter-selector", Height = 40, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         var buttons = new List<NavigationTab>();
         foreach (var (filter, label) in new[] { (ApplicationFilter.All, "全部"), (ApplicationFilter.Recent, "近期有更新"), (ApplicationFilter.Other, "其他") })
         {

@@ -33,7 +33,7 @@ internal sealed partial class MeterWindow
         // 只在隔离构建机运行，移开鼠标以免悬停色干扰像素判断。
         Cursor.Position = new Point(1, 1);
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
-        foreach (var (selected, page) in new[] { (0, View.Accounts), (2, View.Usage), (5, View.Pet) })
+        foreach (var (selected, page) in new[] { (0, View.Accounts), (1, View.Applications), (2, View.Usage), (5, View.Pet) })
         {
             SetView(page); navigationStrip.Invalidate(true); Update();
             await Task.Delay(350);
@@ -45,11 +45,24 @@ internal sealed partial class MeterWindow
                 if (tabs[i].IsSelected != (i == selected)) throw new InvalidOperationException("导航选中状态错误");
                 CheckTabPixel(picture, tabs[i], i == selected);
             }
-            if (page == View.Usage)
+            if (page is View.Usage or View.Applications)
             {
-                var strip = content.Controls.OfType<NavigationStrip>().Single(item => item.Name == "usage-period-selector");
-                var periods = strip.Controls.OfType<NavigationTab>().ToArray();
-                for (int i = 0; i < periods.Length; i++) CheckTabPixel(picture, periods[i], i == 0);
+                string name = page == View.Usage ? "usage-period-selector" : "app-filter-selector";
+                var strip = content.Controls.OfType<NavigationStrip>().Single(item => item.Name == name);
+                var choices = strip.Controls.OfType<NavigationTab>().ToArray();
+                for (int i = 0; i < choices.Length; i++) CheckTabPixel(picture, choices[i], i == 0);
+                choices[1].PerformClick();
+                await Task.Delay(350);
+                strip = content.Controls.OfType<NavigationStrip>().Single(item => item.Name == name);
+                choices = strip.Controls.OfType<NavigationTab>().ToArray();
+                using var afterClick = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+                using (var graphics = Graphics.FromImage(afterClick)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+                afterClick.Save(Path.Combine(output, $"{name}-changed.png"), ImageFormat.Png);
+                for (int i = 0; i < choices.Length; i++)
+                {
+                    if (choices[i].IsSelected != (i == 1)) throw new InvalidOperationException("筛选选中状态错误");
+                    CheckTabPixel(afterClick, choices[i], i == 1);
+                }
             }
         }
     }
