@@ -1646,6 +1646,7 @@ internal sealed partial class MeterWindow : Form
         {
             AddUsageSummary(history);
             AddUsageSources(history);
+            AddModelRanking(history);
             AddDailyTrend(GetValue(root, "daily_trend"));
             var exportData = new RoundedActionButton(theme) { Name = "usage-export-data", Text = "导出本机汇总 · JSON / CSV", Height = 42,
                 Margin = new Padding(0, 0, 0, 12), ForeColor = Primary };
@@ -1684,7 +1685,6 @@ internal sealed partial class MeterWindow : Form
                 AddCard(item.Name, dayTokens.HasValue ? FormatNumber(dayTokens.Value) + " " + UsagePeriodLabel : "暂无数据", note, null, extra, costNote);
             }
             if (visible == 0) AddCard("本机记录", "暂无数据", "未发现支持的会话记录", null);
-            AddModelRanking(history);
         }
         AddCodexImageFiles(GetValue(root, "image_files"));
         var creditsHistory = GetValue(root, "local_credits");

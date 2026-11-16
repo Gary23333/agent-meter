@@ -600,6 +600,14 @@ class WindowsBackendTests(unittest.TestCase):
             self.assertFalse(value['model_costs']['gpt-5.3-codex']['partial'])
         self.assertNotIn('private-unknown-model', json.dumps(item, ensure_ascii=False))
         self.assertNotIn('private-path', json.dumps(item, ensure_ascii=False))
+        # 即使用户自定义价格能够计价，也不能把自定义模型名称暴露到面板投影中。
+        custom = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'Codex': {'status': 'available', 'value': {'periods': {
+            'today': {'totals': {'total_tokens': 10}, 'groups': [group('private-unknown-model', 10)]}}}}}}
+        table = backend.PriceTable('USD', {'private-unknown-model': (3, 0, 0, 0)}, set())
+        projected = backend.compact_history(custom, table)['history']['Codex']['value']['periods']['today']
+        self.assertEqual(projected['groups'][0]['model'], '未识别模型')
+        self.assertTrue(projected['model_costs']['未识别模型']['partial'])
+        self.assertNotIn('private-unknown-model', json.dumps(projected, ensure_ascii=False))
 
     def test_daily_trend_uses_beijing_dates_and_marks_partial_sources(self):
         now = datetime(2026, 11, 14, 16, 30, tzinfo=timezone.utc).timestamp()

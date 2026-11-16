@@ -25,7 +25,9 @@ internal sealed partial class MeterWindow
             var row = ranking.Rows[i]; int y = 39 + i * 33; var identity = ProviderStyle.For(row.Source);
             var model = new Label { Name = "model-rank-name-" + i, Text = row.Model, ForeColor = Primary, AutoSize = false,
                 AutoEllipsis = true, Height = 22, Location = new Point(16, y) };
-            var source = new Label { Name = "model-rank-source-" + i, Text = identity.DisplayName, ForeColor = identity.Color,
+            string shortSource = row.Source switch { "Claude Code" => "Claude", "MiniMax Code" => "MiniMax", "Kimi Code" => "Kimi",
+                "Gemini CLI" => "Gemini", "DeepSeek Harness" => "DeepSeek", _ => identity.DisplayName };
+            var source = new Label { Name = "model-rank-source-" + i, Text = shortSource, ForeColor = identity.Color,
                 Font = tabCompact, AutoSize = false, AutoEllipsis = true, Height = 22, Top = y, TextAlign = ContentAlignment.MiddleLeft };
             var cost = new Label { Name = "model-rank-cost-" + i, Text = row.CostDisplay + (row.Cost.HasValue && row.CostPartial ? "*" : ""),
                 Font = tabCompact, ForeColor = Muted, AutoSize = false, AutoEllipsis = true, Height = 22, Top = y, TextAlign = ContentAlignment.MiddleRight };
@@ -33,8 +35,8 @@ internal sealed partial class MeterWindow
                 ForeColor = Primary, AutoSize = false, AutoEllipsis = true, Height = 22, Top = y, TextAlign = ContentAlignment.MiddleRight };
             card.Resize += (_, _) => {
                 tokens.Left = Math.Max(0, card.ClientSize.Width - 80); tokens.Width = Math.Max(0, card.ClientSize.Width - tokens.Left - 16);
-                cost.Left = Math.Max(0, tokens.Left - 78); cost.Width = Math.Max(0, tokens.Left - cost.Left - 4);
-                source.Left = Math.Max(16, cost.Left - 72); source.Width = Math.Max(0, cost.Left - source.Left - 4);
+                cost.Left = Math.Max(0, tokens.Left - 68); cost.Width = Math.Max(0, tokens.Left - cost.Left - 4);
+                source.Left = Math.Max(16, cost.Left - 58); source.Width = Math.Max(0, cost.Left - source.Left - 4);
                 model.Width = Math.Max(0, source.Left - model.Left - 5);
             };
             popupTips.SetToolTip(model, row.Model == "未识别模型" ? "未匹配内置模型目录的名称已匿名汇总" : row.Model);

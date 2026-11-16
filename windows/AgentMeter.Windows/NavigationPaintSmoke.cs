@@ -124,6 +124,9 @@ internal sealed partial class MeterWindow
                     var modelTokens = rankingCard.Controls.OfType<Label>().Single(label => label.Name == "model-rank-tokens-0");
                     if (model.Right > origin.Left || origin.Right > modelCost.Left || modelCost.Right > modelTokens.Left || modelTokens.Right > rankingCard.ClientSize.Width)
                         throw new InvalidOperationException("窄弹层模型排行发生重叠");
+                    if (TextRenderer.MeasureText(model.Text, model.Font, Size.Empty, TextFormatFlags.NoPadding).Width > model.Width ||
+                        !rankingCard.Controls.OfType<Label>().Any(label => label.Name == "model-rank-source-2" && label.Text == "Claude"))
+                        throw new InvalidOperationException("窄弹层模型名称或来源名称显示不完整");
                     using var narrowModelPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
                     using (var graphics = Graphics.FromImage(narrowModelPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
                     narrowModelPicture.Save(Path.Combine(output, "model-ranking-porcelain-narrow.png"), ImageFormat.Png);
