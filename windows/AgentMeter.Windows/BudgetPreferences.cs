@@ -34,7 +34,8 @@ internal static class BudgetPreferences
             }
             var daily = ReadAmount("daily_cny"); var weekly = ReadAmount("weekly_cny");
             var multiplier = ReadAmount("anomaly_multiplier");
-            if (!multiplier.HasValue || multiplier <= 0 || multiplier > 100) throw new InvalidDataException("异常倍率无效");
+            if (!ValidMoney(daily) || !ValidMoney(weekly) || !multiplier.HasValue || !ValidMultiplier(multiplier.Value))
+                throw new InvalidDataException("预算精度或异常倍率无效");
             return new(enabled, alerts, daily, weekly, multiplier.Value);
         }
         catch (FileNotFoundException) { return BudgetSettings.Default; }
@@ -44,9 +45,11 @@ internal static class BudgetPreferences
     }
     public static bool TryAmount(string? input, out decimal value) => decimal.TryParse(input?.Trim(), NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,
         CultureInfo.InvariantCulture, out value) && value >= 0 && value <= Maximum;
+    public static bool ValidMoney(decimal? value) => !value.HasValue || value >= 0 && value <= Maximum && decimal.Round(value.Value, 2) == value.Value;
+    public static bool ValidMultiplier(decimal value) => value > 0 && value <= 100 && decimal.Round(value, 3) == value;
     public static void Save(string directory, BudgetSettings settings)
     {
-        if (settings.Daily is < 0 or > Maximum || settings.Weekly is < 0 or > Maximum || settings.Multiplier is <= 0 or > 100)
+        if (!ValidMoney(settings.Daily) || !ValidMoney(settings.Weekly) || !ValidMultiplier(settings.Multiplier))
             throw new InvalidDataException("预算金额或异常倍率无效");
         Directory.CreateDirectory(directory);
         string temporary = Path.Combine(directory, Path.GetRandomFileName()); bool created = false;

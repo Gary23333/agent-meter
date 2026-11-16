@@ -11,24 +11,30 @@ internal sealed class BudgetDialog : Form
     readonly TextBox daily = new() { Name = "budget-daily", PlaceholderText = "留空表示不设置" };
     readonly TextBox weekly = new() { Name = "budget-weekly", PlaceholderText = "留空表示不设置" };
     readonly TextBox multiplier = new() { Name = "budget-multiplier", Text = "2" };
-    readonly Label message = new() { Name = "budget-message", ForeColor = Color.Firebrick, AutoSize = false, Height = 35, Dock = DockStyle.Bottom };
+    readonly Label message = new() { Name = "budget-message", ForeColor = Color.Firebrick, AutoSize = false, Height = 52, Dock = DockStyle.Bottom, Padding = new Padding(16, 0, 16, 0) };
     readonly Button save = new() { Name = "budget-save", Text = "保存", AutoSize = true };
 
     public BudgetDialog(string directory)
     {
         this.directory = directory;
         Text = "预算与异常提醒"; StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = new Size(540, 420); MinimumSize = new Size(500, 420);
+        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = new Size(540, 455); MinimumSize = new Size(500, 455);
         var description = new Label { Dock = DockStyle.Top, Height = 110, Padding = new Padding(16, 10, 16, 0),
             Text = "预算基于本机 Token 与价格表计算的 API 等价估算，并非实际账单。\n按北京时间自然日、自然周统计；美元按固定汇率 1:7.25 换算。\n异常速度与近期日均比较；当日不足 2 小时或数据不完整时不提醒。" };
-        var form = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 5, Padding = new Padding(16, 0, 16, 0) };
+        var form = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6, Padding = new Padding(16, 0, 16, 0) };
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145)); form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 5; i++) form.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
+        form.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         form.Controls.Add(enabled, 0, 0); form.SetColumnSpan(enabled, 2);
         form.Controls.Add(new Label { Text = "日预算（元）", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1); form.Controls.Add(daily, 1, 1);
         form.Controls.Add(new Label { Text = "周预算（元）", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2); form.Controls.Add(weekly, 1, 2);
         form.Controls.Add(new Label { Text = "异常速度倍率", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 3); form.Controls.Add(multiplier, 1, 3);
         form.Controls.Add(alerts, 0, 4); form.SetColumnSpan(alerts, 2);
+        var noteFont = new Font(Font.FontFamily, 8.5F);
+        var note = new Label { Text = "周进度按已记录自然日累加，缺失日期会标记为部分。\n同一日／周事件只尝试提醒一次；关闭预算会保留本机历史。",
+            ForeColor = Color.DimGray, Font = noteFont, Dock = DockStyle.Fill, AutoEllipsis = true };
+        note.Disposed += (_, _) => noteFont.Dispose();
+        form.Controls.Add(note, 0, 5); form.SetColumnSpan(note, 2);
         daily.Dock = weekly.Dock = multiplier.Dock = DockStyle.Fill;
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 54, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
         var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
@@ -53,18 +59,18 @@ internal sealed class BudgetDialog : Form
         decimal? ReadOptional(TextBox input)
         {
             if (string.IsNullOrWhiteSpace(input.Text)) return null;
-            if (!BudgetPreferences.TryAmount(input.Text, out decimal value)) throw new InvalidDataException();
+            if (!BudgetPreferences.TryAmount(input.Text, out decimal value) || !BudgetPreferences.ValidMoney(value)) throw new InvalidDataException();
             return value;
         }
         try
         {
             var day = ReadOptional(daily); var week = ReadOptional(weekly);
-            if (!BudgetPreferences.TryAmount(multiplier.Text, out decimal factor) || factor <= 0 || factor > 100)
+            if (!BudgetPreferences.TryAmount(multiplier.Text, out decimal factor) || !BudgetPreferences.ValidMultiplier(factor))
                 throw new InvalidDataException();
             BudgetPreferences.Save(directory, new BudgetSettings(enabled.Checked, alerts.Checked, day, week, factor));
             DialogResult = DialogResult.OK; Close();
         }
-        catch (InvalidDataException) { message.Text = "预算须为非负数字，异常倍率须大于 0 且不超过 100。"; }
+        catch (InvalidDataException) { message.Text = "预算须为非负数字且最多 2 位小数；倍率须大于 0、最多 3 位小数且不超过 100。"; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { message.Text = "无法保存预算设置，请检查本地设置目录权限。"; }
     }

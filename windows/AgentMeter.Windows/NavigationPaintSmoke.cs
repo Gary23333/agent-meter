@@ -165,8 +165,12 @@ internal sealed partial class MeterWindow
             using (var graphics = Graphics.FromImage(dialogPicture)) graphics.CopyFromScreen(dialog.Location, Point.Empty, dialog.Size);
             dialogPicture.Save(Path.Combine(output, "budget-settings.png"), ImageFormat.Png);
             ((CheckBox)dialog.Controls.Find("budget-enabled", true).Single()).Checked = true;
-            ((TextBox)dialog.Controls.Find("budget-daily", true).Single()).Text = "20.5";
-            ((Button)dialog.Controls.Find("budget-save", true).Single()).PerformClick();
+            var dailyInput = (TextBox)dialog.Controls.Find("budget-daily", true).Single();
+            var saveButton = (Button)dialog.Controls.Find("budget-save", true).Single();
+            dailyInput.Text = "0.001"; saveButton.PerformClick();
+            if (!dialog.Visible || !((Label)dialog.Controls.Find("budget-message", true).Single()).Text.Contains("2 位小数") || Directory.Exists(testDirectory))
+                throw new InvalidOperationException("预算无效输入未被拒绝");
+            dailyInput.Text = "20.5"; saveButton.PerformClick();
             var saved = BudgetPreferences.Load(testDirectory);
             if (dialog.DialogResult != DialogResult.OK || !saved.Enabled || saved.Daily != 20.5m || saved.AlertsEnabled)
                 throw new InvalidOperationException("预算设置保存错误");

@@ -86,6 +86,13 @@ class WindowsBudgetTests(unittest.TestCase):
             self.assertEqual(budget_from_compact(sample(), directory)["reason"], "budget_history_invalid")
             self.assertEqual(history.read_text(encoding="utf-8"), "invalid")
 
+    def test_money_and_multiplier_precision_are_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings(directory, daily_cny="0.001")
+            self.assertEqual(budget_from_compact(sample(), directory)["status"], "invalid")
+            settings(directory, anomaly_multiplier="0.0001")
+            self.assertEqual(budget_from_compact(sample(), directory)["status"], "invalid")
+
     def test_settings_change_during_calculation_discards_result(self):
         with tempfile.TemporaryDirectory() as directory:
             settings(directory)

@@ -24,10 +24,15 @@ def load_settings(directory):
         if data["schema"] != 1 or type(data["schema"]) is not int or type(data["enabled"]) is not bool or type(data["alerts_enabled"]) is not bool:
             raise ValueError("invalid_config")
         config = clean_config({key: data[key] for key in ("daily_cny", "weekly_cny", "anomaly_multiplier")})
+        for key in ("daily_cny", "weekly_cny"):
+            if config[key] is not None and Decimal(config[key]) != Decimal(config[key]).quantize(Decimal("0.01")):
+                raise ValueError("invalid_config")
+        if Decimal(config["anomaly_multiplier"]) != Decimal(config["anomaly_multiplier"]).quantize(Decimal("0.001")):
+            raise ValueError("invalid_config")
         return {"status": "enabled" if data["enabled"] else "disabled", "alerts_enabled": data["alerts_enabled"], "config": config}
     except FileNotFoundError:
         return {"status": "disabled", "alerts_enabled": False}
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    except (OSError, ValueError, TypeError, InvalidOperation, json.JSONDecodeError):
         return {"status": "invalid", "alerts_enabled": False}
 
 

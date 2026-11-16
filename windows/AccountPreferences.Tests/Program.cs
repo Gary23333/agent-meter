@@ -17,7 +17,8 @@ try
     var budgetSettings = new BudgetSettings(true, true, 20.5m, 100m, 2m);
     BudgetPreferences.Save(budgetDirectory, budgetSettings);
     if (BudgetPreferences.Load(budgetDirectory) != budgetSettings || BudgetPreferences.TryAmount("-1", out _) ||
-        BudgetPreferences.TryAmount("NaN", out _) || BudgetPreferences.TryAmount("1000000001", out _))
+        BudgetPreferences.TryAmount("NaN", out _) || BudgetPreferences.TryAmount("1000000001", out _) ||
+        BudgetPreferences.ValidMoney(0.001m) || BudgetPreferences.ValidMultiplier(0.0001m))
         throw new InvalidOperationException("预算设置或金额校验错误");
     var budgetNow = new DateTimeOffset(2026, 11, 9, 4, 0, 0, TimeSpan.Zero);
     using (var budget = JsonDocument.Parse("""{"status":"ok","alerts_enabled":true,"generated_at":{"epoch_seconds":1794196800},"daily":{"partial":true},"events":[{"id":"budget_daily_exceeded:2026-11-09","kind":"daily_exceeded","date":"2026-11-09","spent_cny":"25","budget_cny":"20"}]}"""))
