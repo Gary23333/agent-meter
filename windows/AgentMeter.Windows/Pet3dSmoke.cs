@@ -43,6 +43,17 @@ internal static class Pet3dSmoke
                 }
             if (transparent < 100 || painted < 100) throw new InvalidOperationException($"{pack} 透明或可见区域异常");
             if (changed < 10) throw new InvalidOperationException($"{pack} 状态或姿态没有变化");
+            if (pack == "cat")
+            {
+                using var held = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "drag-start");
+                if (await renderer.SyntheticLayerAsync() != "drag") throw new InvalidOperationException("桌宠拖动动作未生效");
+                using var dropped = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "drag-end");
+                if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:drop:", StringComparison.Ordinal))
+                    throw new InvalidOperationException("桌宠放下动作未生效");
+                using var poked = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1, "poke");
+                if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:poke:", StringComparison.Ordinal))
+                    throw new InvalidOperationException("桌宠点击动作未生效");
+            }
             first.Save(Path.Combine(outputDirectory, pack + ".png"), ImageFormat.Png);
         }
         using var pet = new Pet3dWindow("cat", new Point(-32000, -32000), directory);

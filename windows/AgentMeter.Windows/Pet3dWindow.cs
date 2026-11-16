@@ -14,6 +14,7 @@ internal sealed class Pet3dWindow : Form, IPetWindow
     readonly string pack, directory;
     readonly System.Windows.Forms.Timer timer = new() { Interval = 150 };
     readonly ContextMenuStrip menu = new();
+    readonly Queue<string> interactions = new();
     Pet3dRenderer? renderer;
     Bitmap? lastFrame;
     string? snapshot;
@@ -32,7 +33,7 @@ internal sealed class Pet3dWindow : Form, IPetWindow
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
         Size = new Size(Side, Side); Location = position; TopMost = true;
         menu.Items.Add("打开 Agent Meter", null, (_, _) => OpenRequested?.Invoke());
-        menu.Items.Add("刷新数据", null, (_, _) => RefreshRequested?.Invoke());
+        menu.Items.Add("刷新数据", null, (_, _) => { EnqueueInteraction("refresh"); RefreshRequested?.Invoke(); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("隐藏桌宠", null, (_, _) => HideRequested?.Invoke());
         ContextMenuStrip = menu;
@@ -45,14 +46,15 @@ internal sealed class Pet3dWindow : Form, IPetWindow
         {
             if (!pressed || e.Button != MouseButtons.Left) return;
             var cursor = Cursor.Position; int dx = cursor.X - dragCursor.X, dy = cursor.Y - dragCursor.Y;
-            if (Math.Abs(dx) + Math.Abs(dy) > 4) dragging = true;
+            if (!dragging && Math.Abs(dx) + Math.Abs(dy) > 4) { dragging = true; EnqueueInteraction("drag-start"); }
             if (dragging) { Location = new Point(dragOrigin.X + dx, dragOrigin.Y + dy); DrawFrame(); }
         };
         MouseUp += (_, e) =>
         {
             if (e.Button != MouseButtons.Left || !pressed) return;
             pressed = false;
-            if (dragging) PositionChanged?.Invoke(Location); else OpenRequested?.Invoke();
+            if (dragging) { EnqueueInteraction("drag-end"); PositionChanged?.Invoke(Location); }
+            else { EnqueueInteraction("poke"); OpenRequested?.Invoke(); }
         };
         timer.Tick += async (_, _) => await TickAsync();
     }
@@ -94,7 +96,8 @@ internal sealed class Pet3dWindow : Form, IPetWindow
             var now = DateTime.UtcNow;
             double elapsed = Math.Clamp((now - lastFrameTime).TotalSeconds, 0.01, 0.25);
             lastFrameTime = now;
-            using var rendered = await renderer.FrameAsync(mood, elapsed);
+            string? interaction = interactions.Count > 0 ? interactions.Dequeue() : null;
+            using var rendered = await renderer.FrameAsync(mood, elapsed, interaction);
             if (IsDisposed || Disposing) return;
             var next = new Bitmap(Side, Side, PixelFormat.Format32bppPArgb);
             using (var graphics = Graphics.FromImage(next))
@@ -114,6 +117,16 @@ internal sealed class Pet3dWindow : Form, IPetWindow
         if (lastFrame is null || !IsHandleCreated || IsDisposed) return;
         try { LayeredWindow.Draw(Handle, lastFrame, Location); FirstFrame.TrySetResult(true); }
         catch (Exception ex) when (ex is Win32Exception or ExternalException or ArgumentException) { Fail(); }
+    }
+    void EnqueueInteraction(string interaction)
+    {
+        // 极快的连续操作可能堆积；清空时先释放拖动状态，避免形象一直悬在半空。
+        if (interactions.Count >= 16)
+        {
+            interactions.Clear(); interactions.Enqueue("drag-end");
+            if (interaction == "drag-end") return;
+        }
+        interactions.Enqueue(interaction);
     }
     void Fail()
     {

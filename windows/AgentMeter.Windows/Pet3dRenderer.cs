@@ -91,7 +91,7 @@ internal sealed class Pet3dRenderer : IDisposable
         throw new TimeoutException("桌宠渲染超时");
     }
 
-    public async Task<Bitmap> FrameAsync(PetMood mood, double elapsed)
+    public async Task<Bitmap> FrameAsync(PetMood mood, double elapsed, string? interaction = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var core = view?.CoreWebView2 ?? throw new InvalidOperationException("桌宠尚未启动");
@@ -100,7 +100,16 @@ internal sealed class Pet3dRenderer : IDisposable
             mood = "neutral", intensity = 0.6,
             energy = new { known = remaining.HasValue, remaining = remaining ?? 0, tone = remaining is < 20 ? "crit" : remaining is < 50 ? "low" : remaining.HasValue ? "ok" : "unknown", drives_state = remaining.HasValue, scope = "auto", label = "", resets_at = (long?)null, stale = false },
             meters = Array.Empty<object>(), activity = new { known = false, running = 0, apps = Array.Empty<object>() }, focus = new { active = false }, reminders = Array.Empty<object>() };
-        string script = "(()=>{const s=window.__pet.stage;s.receive({type:'frame',frame:" + JsonSerializer.Serialize(frame) + "});s.step(" +
+        string action = interaction switch
+        {
+            "drag-start" => "s.receive({type:'drag',phase:'start'});",
+            "drag-end" => "s.receive({type:'drag',phase:'end'});",
+            "poke" => "s.director.poke(s.now);",
+            "refresh" => "s.director.refresh(s.now);",
+            null => "",
+            _ => throw new ArgumentException("未知桌宠动作")
+        };
+        string script = "(()=>{const s=window.__pet.stage;s.receive({type:'frame',frame:" + JsonSerializer.Serialize(frame) + "});" + action + "s.step(" +
             Math.Clamp(elapsed, 0.01, 0.25).ToString(System.Globalization.CultureInfo.InvariantCulture) + ",s.now);return s.renderer.canvas.toDataURL('image/png')})()";
         string data = JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync(script).WaitAsync(TimeSpan.FromSeconds(5))) ?? "";
         const string prefix = "data:image/png;base64,";
@@ -108,6 +117,11 @@ internal sealed class Pet3dRenderer : IDisposable
         using var stream = new MemoryStream(Convert.FromBase64String(data[prefix.Length..]));
         using var image = new Bitmap(stream);
         return new Bitmap(image);
+    }
+    internal async Task<string> SyntheticLayerAsync()
+    {
+        var core = view?.CoreWebView2 ?? throw new InvalidOperationException("桌宠尚未启动");
+        return JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("window.__pet.stage.view.layerKey")) ?? "";
     }
     internal async Task<bool> SyntheticNetworkBlockAsync()
     {
