@@ -10,11 +10,11 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.32) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.33) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 32**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 33**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 32 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.32) 下载 `AgentMeter-Windows-x64.zip`。
+1. 从 [Alpha 33 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.33) 下载 `AgentMeter-Windows-x64.zip`。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；3D 桌宠以及 WorkBuddy、小米 MiMo、Qoder 和 TRAE 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -43,7 +43,7 @@
 
 托盘自动模式比较百分比，不能据此比较不同服务的绝对额度；余额和积分绝对值不参加比较。图标为整数近似值，悬停保留一位小数。
 
-## 六个页面，各有分工
+## 七个页面，各有分工
 
 | 页面 | 可以查看什么 |
 | --- | --- |
@@ -52,9 +52,10 @@
 | 用量 | 今日、近 7 天、近 30 天和累计 Token，首屏并排显示 Token 与所选周期 API 等价估算，并提供 7 日模型排行和自然日趋势；支持导出 JSON / CSV 汇总 |
 | 报告 | 本周、上周、本月和上月汇总；比较已结束的相同自然日，导出 Markdown 或 PNG 分享图 |
 | 预测 | 主动开启后查看第三方 24 / 48 小时预测、上游加权中位数、明确时间窗口与历史事件 |
+| 桌宠 | 查看当前状态、预览并切换七个内置形象，控制桌面显示 |
 | 收集 | 本机用量、图片文件和 API 等价估算花费徽章、5 小时和 7 天额度窗口的掉落卡片；更多类别仍在移植 |
 
-还提供默认关闭的低额度通知、独立的 Codex 重置卡到期提醒，以及上游「麻薯」「比特」精灵图和五套 3D 桌宠。右键托盘图标选择形象并显示桌宠，单击可打开面板，拖动可调整位置。账户和本机账本默认每 15 分钟刷新，可在托盘菜单选择 5、15 或 30 分钟，也可手动刷新；应用页可见时每分钟单独检查本机活动。桌宠完整互动、通知效果和高 DPI 仍需实机验收。
+还提供默认关闭的低额度通知、独立的 Codex 重置卡到期提醒，以及上游「麻薯」「比特」精灵图和五套 3D 桌宠。在桌宠页或托盘菜单选择形象并显示桌宠，单击可打开面板，拖动可调整位置。账户和本机账本默认每 15 分钟刷新，可在托盘菜单选择 5、15 或 30 分钟，也可手动刷新；应用页可见时每分钟单独检查本机活动。桌宠完整互动、通知效果和高 DPI 仍需实机验收。
 
 <p align="center">
   <img src="windows/assets/pets/gauge.png" width="110" alt="量量">
@@ -65,6 +66,8 @@
 </p>
 
 五套 3D 形象使用原版离线渲染资源，上图由隔离构建机生成；额度未知时圆环保持未知。桌宠默认关闭，完整动画和互动仍在移植。
+
+![桌宠页面，静态预览与虚构演示数据](windows/assets/pet-page-preview.png)
 
 <details>
 <summary>展开查看账户明细、应用与用量截图</summary>
