@@ -91,7 +91,7 @@ internal sealed class Pet3dRenderer : IDisposable
         throw new TimeoutException("桌宠渲染超时");
     }
 
-    public async Task<Bitmap> FrameAsync(PetMood mood, double elapsed, string? interaction = null)
+    public async Task<Bitmap> FrameAsync(PetMood mood, double elapsed, string? interaction = null, PointF? cursor = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var core = view?.CoreWebView2 ?? throw new InvalidOperationException("桌宠尚未启动");
@@ -109,7 +109,11 @@ internal sealed class Pet3dRenderer : IDisposable
             null => "",
             _ => throw new ArgumentException("未知桌宠动作")
         };
-        string script = "(()=>{const s=window.__pet.stage;s.receive({type:'frame',frame:" + JsonSerializer.Serialize(frame) + "});" + action + "s.step(" +
+        string look = cursor.HasValue
+            ? "s.director.setPrefs({followCursor:true});s.receive({type:'cursor',x:" + Math.Clamp(cursor.Value.X, -5000, 5000).ToString(System.Globalization.CultureInfo.InvariantCulture) +
+              ",y:" + Math.Clamp(cursor.Value.Y, -5000, 5000).ToString(System.Globalization.CultureInfo.InvariantCulture) + "});"
+            : "s.director.setPrefs({followCursor:false});s.receive({type:'cursor',x:null});";
+        string script = "(()=>{const s=window.__pet.stage;s.receive({type:'frame',frame:" + JsonSerializer.Serialize(frame) + "});" + action + look + "s.step(" +
             Math.Clamp(elapsed, 0.01, 0.25).ToString(System.Globalization.CultureInfo.InvariantCulture) + ",s.now);return s.renderer.canvas.toDataURL('image/png')})()";
         string data = JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync(script).WaitAsync(TimeSpan.FromSeconds(5))) ?? "";
         const string prefix = "data:image/png;base64,";
@@ -122,6 +126,13 @@ internal sealed class Pet3dRenderer : IDisposable
     {
         var core = view?.CoreWebView2 ?? throw new InvalidOperationException("桌宠尚未启动");
         return JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("window.__pet.stage.view.layerKey")) ?? "";
+    }
+    internal async Task<double?> SyntheticLookXAsync()
+    {
+        var core = view?.CoreWebView2 ?? throw new InvalidOperationException("桌宠尚未启动");
+        string result = await core.ExecuteScriptAsync("window.__pet.stage.view.look?.x ?? null");
+        using var document = JsonDocument.Parse(result);
+        return document.RootElement.ValueKind == JsonValueKind.Number ? document.RootElement.GetDouble() : null;
     }
     internal async Task<bool> SyntheticNetworkBlockAsync()
     {

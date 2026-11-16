@@ -116,6 +116,7 @@ internal sealed partial class MeterContext : ApplicationContext
     readonly Icon icon;
     readonly MeterWindow window;
     readonly ToolStripMenuItem petVisible = new("显示桌宠");
+    readonly ToolStripMenuItem petFollow = new("3D 视线跟随光标");
     readonly ToolStripMenuItem petMochi = new("麻薯"), petBit = new("比特");
     readonly Dictionary<string, ToolStripMenuItem> pet3dItems = new()
     {
@@ -278,6 +279,11 @@ internal sealed partial class MeterContext : ApplicationContext
                 item.Click += (_, _) => ChangePet(petPreferences with { Pack = pack });
                 pets.DropDownItems.Add(item);
             }
+            pets.DropDownItems.Add(new ToolStripSeparator());
+            petFollow.Checked = petPreferences.FollowCursor;
+            petFollow.Enabled = petPreferences.Pack is not ("mochi" or "bit");
+            petFollow.Click += (_, _) => ChangePet(petPreferences with { FollowCursor = !petPreferences.FollowCursor });
+            pets.DropDownItems.Add(petFollow);
             menu.Items.Add(pets);
         }
         menu.Items.Add(new ToolStripSeparator());
@@ -313,8 +319,10 @@ internal sealed partial class MeterContext : ApplicationContext
         bool restart = next.Enabled && (!petPreferences.Enabled || next.Pack != petPreferences.Pack);
         petPreferences = next; petVisible.Checked = next.Enabled; petMochi.Checked = next.Pack == "mochi"; petBit.Checked = next.Pack == "bit";
         foreach (var (pack, item) in pet3dItems) item.Checked = next.Pack == pack;
+        petFollow.Checked = next.FollowCursor; petFollow.Enabled = next.Pack is not ("mochi" or "bit");
         if (!next.Enabled) { pet?.Dispose(); pet = null; }
         else if (restart) StartPet();
+        else pet?.SetFollowCursor(next.FollowCursor);
         window.SetPetPreferences(petPreferences);
     }
     void StartPet()
@@ -339,7 +347,7 @@ internal sealed partial class MeterContext : ApplicationContext
             else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, new Size(240, 240), Point.Empty, false);
             IPetWindow instance = petPreferences.Pack is "mochi" or "bit"
                 ? new PetWindow(petPreferences.Pack, location)
-                : new Pet3dWindow(petPreferences.Pack, location, AccountPreferences.DefaultDirectory);
+                : new Pet3dWindow(petPreferences.Pack, location, AccountPreferences.DefaultDirectory, petPreferences.FollowCursor);
             instance.OpenRequested += () => ShowPanel(true);
             instance.RefreshRequested += async () => await window.RefreshData();
             instance.HideRequested += () => ChangePet(petPreferences with { Enabled = false });
@@ -593,8 +601,15 @@ internal sealed partial class MeterWindow : Form
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Pet);
         var petGrid = content.Controls.OfType<TableLayoutPanel>().Single(item => item.Name == "pet-choices");
         if (petGrid.Controls.Count != 7) throw new InvalidOperationException("桌宠形象列表不完整");
+        if (pagePetPreferences.FollowCursor || content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
+            .Single(button => button.Name == "pet-follow-toggle").Enabled)
+            throw new InvalidOperationException("精灵图不应开启视线跟随");
         petGrid.Controls.OfType<Button>().Single(button => button.Name == "pet-choice-cat").PerformClick();
         if (pagePetPreferences.Pack != "cat") throw new InvalidOperationException("桌宠形象切换失败");
+        var followButton = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "pet-follow-toggle");
+        if (!followButton.Enabled) throw new InvalidOperationException("3D 桌宠的视线跟随不可用");
+        followButton.PerformClick();
+        if (!pagePetPreferences.FollowCursor) throw new InvalidOperationException("桌宠视线跟随开关失败");
         content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "pet-toggle").PerformClick();
         if (!pagePetPreferences.Enabled) throw new InvalidOperationException("桌宠显示开关失败");
         Size = new Size(380, 680); Application.DoEvents();

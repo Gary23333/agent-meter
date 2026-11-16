@@ -358,6 +358,13 @@ try
     var petSettings = new PetPreferences(true, "bit", -1200, 200);
     petSettings.Save(directory);
     if (PetPreferences.Load(directory) != petSettings) throw new InvalidOperationException("桌宠设置未正确保存");
+    var followPet = new PetPreferences(true, "cat", 10, 20, true);
+    followPet.Save(directory);
+    if (PetPreferences.Load(directory) != followPet) throw new InvalidOperationException("视线跟随设置未正确保存");
+    File.WriteAllText(Path.Combine(directory, "pet-settings.json"), "{\"enabled\":true,\"pack\":\"cat\",\"follow_cursor\":\"invalid\"}");
+    if (PetPreferences.Load(directory).FollowCursor) throw new InvalidOperationException("异常视线跟随设置必须默认关闭");
+    File.WriteAllText(Path.Combine(directory, "pet-settings.json"), "{\"enabled\":true,\"pack\":\"cat\"}");
+    if (PetPreferences.Load(directory).FollowCursor) throw new InvalidOperationException("旧版设置必须默认关闭视线跟随");
     foreach (string pack in new[] { "gauge", "cat", "bot", "tibo", "blob" })
     {
         var threePetSettings = new PetPreferences(true, pack, 30, 40);

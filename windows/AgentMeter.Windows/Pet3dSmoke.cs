@@ -60,10 +60,19 @@ internal static class Pet3dSmoke
                 if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:refresh:", StringComparison.Ordinal))
                     throw new InvalidOperationException("桌宠刷新动作未生效");
                 if (DifferentPixels(poked, refreshed) < 10) throw new InvalidOperationException("桌宠刷新动作没有可见变化");
+                using var left = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.25, cursor: new PointF(-1000, 130));
+                if (await renderer.SyntheticLookXAsync() is not < 0) throw new InvalidOperationException("桌宠未朝左侧光标注视");
+                using var right = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.25, cursor: new PointF(1000, 130));
+                if (await renderer.SyntheticLookXAsync() is not > 0 || DifferentPixels(left, right) < 10)
+                    throw new InvalidOperationException("桌宠未朝右侧光标注视");
+                using var stopped = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.1);
+                if (await renderer.SyntheticLookXAsync() is not null) throw new InvalidOperationException("关闭跟随后仍在读取光标方向");
                 held.Save(Path.Combine(outputDirectory, "cat-drag.png"), ImageFormat.Png);
                 dropped.Save(Path.Combine(outputDirectory, "cat-drop.png"), ImageFormat.Png);
                 poked.Save(Path.Combine(outputDirectory, "cat-poke.png"), ImageFormat.Png);
                 refreshed.Save(Path.Combine(outputDirectory, "cat-refresh.png"), ImageFormat.Png);
+                left.Save(Path.Combine(outputDirectory, "cat-look-left.png"), ImageFormat.Png);
+                right.Save(Path.Combine(outputDirectory, "cat-look-right.png"), ImageFormat.Png);
             }
             first.Save(Path.Combine(outputDirectory, pack + ".png"), ImageFormat.Png);
         }

@@ -55,6 +55,17 @@ internal sealed partial class MeterWindow
             grid.Controls.Add(button, i % 3, i / 3);
         }
         content.Controls.Add(grid);
+        bool isThree = pagePetPreferences.Pack is not ("mochi" or "bit");
+        var followCard = new RoundedCard(theme) { Height = 92, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var followTitle = new Label { Text = "视线跟随光标", AutoSize = true, Location = new Point(17, 15), ForeColor = Primary,
+            BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold) };
+        var followNote = new Label { Text = isThree ? "仅在显示桌宠时用于本地动画" : "切换到 3D 形象后可使用", AutoSize = true,
+            Location = new Point(18, 48), ForeColor = Muted, BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 8.5F) };
+        var followToggle = new RoundedActionButton(theme) { Name = "pet-follow-toggle", Text = !isThree ? "不支持" : pagePetPreferences.FollowCursor ? "已开启" : "已关闭",
+            Size = new Size(76, 34), Anchor = AnchorStyles.Top | AnchorStyles.Right, AccentText = true, Enabled = isThree };
+        followCard.Resize += (_, _) => followToggle.Location = new Point(Math.Max(180, followCard.Width - 92), 29);
+        followToggle.Click += (_, _) => RequestPetChange(pagePetPreferences with { FollowCursor = !pagePetPreferences.FollowCursor });
+        followCard.Controls.AddRange([followTitle, followNote, followToggle]); content.Controls.Add(followCard);
         AddCard("桌宠状态", mood.Description, mood.Remaining.HasValue ? $"最低有效额度 {mood.Remaining.Value:0.#}% · 不同服务不能比较绝对额度" : "额度未知时不虚构数字", null,
             "状态依据近期额度和本机记录更新；形象预览为静态图");
     }

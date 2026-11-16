@@ -203,7 +203,7 @@ jobs:
           try {
             if (-not $app.WaitForExit(90000)) { throw '3D pet smoke timed out' }
             if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw "3D pet smoke failed ($($app.ExitCode))" }
-            if (@(Get-ChildItem "$output/*.png").Count -ne 9) { throw '3D pet previews missing' }
+            if (@(Get-ChildItem "$output/*.png").Count -ne 11) { throw '3D pet previews missing' }
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
       - uses: actions/upload-artifact@v4
         with:

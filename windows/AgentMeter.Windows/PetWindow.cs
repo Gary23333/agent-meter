@@ -10,6 +10,7 @@ internal interface IPetWindow : IDisposable
     event Action? OpenRequested, RefreshRequested, HideRequested, RenderingFailed;
     event Action<Point>? PositionChanged;
     void SetSnapshot(string value);
+    void SetFollowCursor(bool value);
     void Show();
 }
 
@@ -68,6 +69,7 @@ internal sealed class PetWindow : Form, IPetWindow
     }
     protected override void OnShown(EventArgs e) { base.OnShown(e); DrawFrame(); if (Visible) timer.Start(); }
     public void SetSnapshot(string value) { snapshot = value; lastStateCheck = DateTime.MinValue; }
+    public void SetFollowCursor(bool value) { } // 精灵图没有眼睛跟随动画。
     void TickFrame()
     {
         if (!Visible) return;

@@ -21,15 +21,15 @@ internal sealed class Pet3dWindow : Form, IPetWindow
     PetMood mood = new("idle", "待机");
     DateTime lastStateCheck = DateTime.MinValue, lastFrameTime = DateTime.UtcNow;
     Point dragCursor, dragOrigin;
-    bool busy, dragging, pressed, failed;
+    bool busy, dragging, pressed, failed, followCursor;
     internal TaskCompletionSource<bool> FirstFrame { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public event Action? OpenRequested, RefreshRequested, HideRequested, RenderingFailed;
     public event Action<Point>? PositionChanged;
 
-    public Pet3dWindow(string pack, Point position, string directory)
+    public Pet3dWindow(string pack, Point position, string directory, bool followCursor = false)
     {
         if (!PetPreferences.ValidPack(pack) || pack is "mochi" or "bit") throw new ArgumentException("未知 3D 桌宠");
-        this.pack = pack; this.directory = directory;
+        this.pack = pack; this.directory = directory; this.followCursor = followCursor;
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
         Size = new Size(Side, Side); Location = position; TopMost = true;
         menu.Items.Add("打开 Agent Meter", null, (_, _) => OpenRequested?.Invoke());
@@ -80,6 +80,7 @@ internal sealed class Pet3dWindow : Form, IPetWindow
         { Fail(); }
     }
     public void SetSnapshot(string value) { snapshot = value; lastStateCheck = DateTime.MinValue; }
+    public void SetFollowCursor(bool value) => followCursor = value;
     async Task TickAsync()
     {
         if (busy || failed || renderer is null || IsDisposed || !Visible) return;
@@ -97,7 +98,13 @@ internal sealed class Pet3dWindow : Form, IPetWindow
             double elapsed = Math.Clamp((now - lastFrameTime).TotalSeconds, 0.01, 0.25);
             lastFrameTime = now;
             string? interaction = interactions.Take();
-            using var rendered = await renderer.FrameAsync(mood, elapsed, interaction);
+            PointF? cursor = null;
+            if (followCursor)
+            {
+                var point = Cursor.Position;
+                cursor = new PointF((point.X - Location.X - 9) * 240F / 222F, (point.Y - Location.Y) * 260F / 240F);
+            }
+            using var rendered = await renderer.FrameAsync(mood, elapsed, interaction, cursor);
             if (IsDisposed || Disposing) return;
             var next = new Bitmap(Side, Side, PixelFormat.Format32bppPArgb);
             using (var graphics = Graphics.FromImage(next))

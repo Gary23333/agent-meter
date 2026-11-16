@@ -2,8 +2,8 @@ using System.Text.Json;
 
 namespace AgentMeter.Windows;
 
-/// <summary>只保存桌宠显示、形象和位置；默认不显示。</summary>
-internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y)
+/// <summary>保存桌宠显示、形象、位置及视线跟随选项；默认不显示且不跟随。</summary>
+internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y, bool FollowCursor = false)
 {
     public static PetPreferences Default => new(false, "mochi", null, null);
     public static PetPreferences Load(string directory)
@@ -21,7 +21,8 @@ internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y)
                 if (!root.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) return null;
                 return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int n) && n is >= -100000 and <= 100000 ? n : null;
             }
-            return new PetPreferences(enabled.GetBoolean(), pack.GetString()!, Coordinate("x"), Coordinate("y"));
+            bool follow = root.TryGetProperty("follow_cursor", out var cursor) && cursor.ValueKind == JsonValueKind.True;
+            return new PetPreferences(enabled.GetBoolean(), pack.GetString()!, Coordinate("x"), Coordinate("y"), follow);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or System.Security.SecurityException) { return Default; }
     }
@@ -36,7 +37,7 @@ internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y)
         {
             using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                created = true; JsonSerializer.Serialize(file, new { enabled = Enabled, pack = Pack, x = X, y = Y });
+                created = true; JsonSerializer.Serialize(file, new { enabled = Enabled, pack = Pack, x = X, y = Y, follow_cursor = FollowCursor });
             }
             File.Move(temporary, Path.Combine(directory, "pet-settings.json"), overwrite: true);
         }
