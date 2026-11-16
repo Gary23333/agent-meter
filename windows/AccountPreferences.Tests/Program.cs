@@ -623,6 +623,24 @@ try
     Position(screen, new Rectangle(0, 0, 1880, 1080), new Point(1910, 500), new Point(1368, 150));
     Position(new Rectangle(-1920, 0, 1920, 1080), new Rectangle(-1920, 0, 1920, 1040),
              new Point(-10, 1060), new Point(-512, 328));
+    foreach (var (edge, cursor, expected) in new[] {
+        (TaskbarEdge.Left, new Point(1, 500), new Point(12, 150)),
+        (TaskbarEdge.Right, new Point(1918, 500), new Point(1408, 150)),
+        (TaskbarEdge.Top, new Point(500, 1), new Point(250, 12)),
+        (TaskbarEdge.Bottom, new Point(1900, 1078), new Point(1408, 368)) })
+        if (PanelPlacement.Find(screen, screen, panel, cursor, true, edge) != expected)
+            throw new InvalidOperationException("自动隐藏任务栏方向定位错误：" + edge);
+    var secondScreen = new Rectangle(-1920, 0, 1920, 1080);
+    if (PanelPlacement.Find(secondScreen, secondScreen, panel, new Point(-1, 500), true, TaskbarEdge.Right) != new Point(-512, 150))
+        throw new InvalidOperationException("负坐标屏幕的自动隐藏任务栏定位错误");
+    int queried = 0;
+    var detected = TaskbarLocation.ResolveAutoHide(secondScreen, (edge, bounds) => {
+        if (bounds != secondScreen) throw new InvalidOperationException("任务栏查询屏幕错误");
+        queried++; return edge is TaskbarEdge.Left or TaskbarEdge.Right ? new IntPtr((int)edge + 1) : IntPtr.Zero;
+    }, handle => handle == new IntPtr(1) ? "ThirdPartyBar" : "Shell_SecondaryTrayWnd");
+    if (detected != TaskbarEdge.Right || queried != 3) throw new InvalidOperationException("应忽略第三方自动隐藏工具栏并识别副屏任务栏");
+    if (TaskbarLocation.ResolveAutoHide(screen, (_, _) => IntPtr.Zero, _ => "") is not null)
+        throw new InvalidOperationException("无自动隐藏任务栏时应使用工作区定位");
     Point oversized = PanelPlacement.Find(screen, new Rectangle(0, 0, 300, 200), new Size(500, 700), Point.Empty, true);
     if (oversized != Point.Empty) throw new InvalidOperationException("超大面板应从工作区左上角开始");
     if (PanelPlacement.Fit(new Size(500, 760), new Rectangle(0, 0, 300, 200)) != new Size(276, 176))

@@ -578,7 +578,8 @@ internal sealed partial class MeterWindow : Form
             var fit = PanelPlacement.Fit(preferredSize, screen.WorkingArea);
             MinimumSize = new Size(Math.Min(420, fit.Width), Math.Min(480, fit.Height));
             Size = fit;
-            Location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, Size, cursor, atCursor);
+            var autoHideEdge = TaskbarLocation.AutoHideEdge(screen.Bounds);
+            Location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, Size, cursor, atCursor, autoHideEdge);
         }
         finally { positioning = false; }
     }
