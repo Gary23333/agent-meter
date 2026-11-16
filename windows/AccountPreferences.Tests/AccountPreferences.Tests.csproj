@@ -19,6 +19,7 @@
     <Compile Include="..\AgentMeter.Windows\UsageBreakdown.cs" Link="UsageBreakdown.cs" />
     <Compile Include="..\AgentMeter.Windows\ReportComparison.cs" Link="ReportComparison.cs" />
     <Compile Include="..\AgentMeter.Windows\StartupRegistration.cs" Link="StartupRegistration.cs" />
+    <Compile Include="..\AgentMeter.Windows\SingleInstanceSignal.cs" Link="SingleInstanceSignal.cs" />
     <Compile Include="..\AgentMeter.Windows\TrayIndicator.cs" Link="TrayIndicator.cs" />
     <Compile Include="..\AgentMeter.Windows\TrayIndicatorIcon.cs" Link="TrayIndicatorIcon.cs" />
     <Compile Include="..\AgentMeter.Windows\ApplicationOverview.cs" Link="ApplicationOverview.cs" />

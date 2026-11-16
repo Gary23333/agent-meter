@@ -76,9 +76,13 @@ internal static class Program
             return;
         }
         bool demo = args.Contains("--demo");
+        if (demo) { Application.Run(new MeterContext(true, args.Contains("--window"), args.Contains("--background"))); return; }
         using var mutex = new Mutex(true, "Local\\AgentMeterWindows", out bool first);
-        if (!first && !demo) return;
-        Application.Run(new MeterContext(demo, args.Contains("--window"), args.Contains("--background")));
+        using var signal = new SingleInstanceSignal(SingleInstanceSignal.DefaultName);
+        if (!first) { signal.Notify(); return; }
+        using var appContext = new MeterContext(false, args.Contains("--window"), args.Contains("--background"));
+        signal.Listen(appContext.ActivateFromOtherInstance);
+        Application.Run(appContext);
     }
 
     static void RunWebViewSmoke()
@@ -386,6 +390,12 @@ internal sealed partial class MeterContext : ApplicationContext
         }
     }
     void ShowPanel(bool atCursor = false) { window.PlaceAtTray(atCursor); window.Show(); window.Activate(); }
+    internal void ActivateFromOtherInstance()
+    {
+        if (quitting || window.IsDisposed || !window.IsHandleCreated) return;
+        try { window.BeginInvoke(() => { if (!quitting && !window.IsDisposed) ShowPanel(true); }); }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException) { }
+    }
     protected override void ExitThreadCore()
     {
         quitting = true; indicatorTimer.Dispose(); pet?.Dispose(); pet = null; tray.Visible = false; tray.Dispose();

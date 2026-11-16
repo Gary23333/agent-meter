@@ -12,6 +12,17 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    string signalName = "Local\\AgentMeterTest-" + Guid.NewGuid().ToString("N");
+    using (var listener = new SingleInstanceSignal(signalName))
+    using (var sender = new SingleInstanceSignal(signalName))
+    using (var received = new ManualResetEventSlim())
+    {
+        sender.Notify(); // 先发信号，再开始监听，覆盖首次启动尚未完成的竞争情况。
+        listener.Listen(() => received.Set());
+        if (!received.Wait(TimeSpan.FromSeconds(5))) throw new InvalidOperationException("已有实例未收到唤起信号");
+        received.Reset(); sender.Notify();
+        if (!received.Wait(TimeSpan.FromSeconds(5))) throw new InvalidOperationException("已有实例无法再次收到唤起信号");
+    }
     using (var totals = JsonDocument.Parse("""{"fresh_input":40,"output":10,"reasoning":5,"cache_read":30,"cache_write":15,"total_tokens":100}"""))
     {
         if (!UsageBreakdown.TryRead(totals.RootElement, 100, out var parts) || !parts.SequenceEqual(new double[] { 40, 15, 30, 15, 0 }) ||
