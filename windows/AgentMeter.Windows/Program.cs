@@ -197,7 +197,7 @@ internal sealed partial class MeterContext : ApplicationContext
             menu.Items.Add("预算与异常提醒", null, async (_, _) =>
             {
                 ShowPanel(true);
-                using var editor = new BudgetDialog(AccountPreferences.DefaultDirectory);
+                using var editor = new BudgetDialog(AccountPreferences.DefaultDirectory) { Icon = window.Icon };
                 if (editor.ShowDialog(window) == DialogResult.OK) await window.RefreshAfterBudgetChange();
             });
             menu.Items.Add("管理 MiniMax 账户", null, async (_, _) =>

@@ -10,11 +10,11 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.42) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.43) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 42**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 43**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 42 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.42) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
+1. 从 [Alpha 43 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.43) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；3D 桌宠以及 WorkBuddy、小米 MiMo、Qoder 和 TRAE 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -49,13 +49,15 @@
 | --- | --- |
 | 账户 | 各服务剩余额度、周期重置时间、可用的套餐与余额，以及独立标注的本机统计 |
 | 应用 | 工具覆盖情况、近期有更新的活动记录；支持筛选和展开数据来源 |
-| 用量 | 今日、近 7 天、近 30 天和累计 Token、API 等价估算、输入／输出／缓存构成、按应用来源对比及缓存命中率，并提供 7 日模型排行和自然日趋势；支持导出 JSON / CSV 汇总 |
+| 用量 | 今日、近 7 天、近 30 天和累计 Token、API 等价估算、输入／输出／缓存构成、按应用来源对比及可选预算进度，并提供 7 日模型排行和自然日趋势；支持导出 JSON / CSV 汇总 |
 | 报告 | 本周、上周、本月和上月汇总；比较已结束的相同自然日，导出 Markdown 或 PNG 分享图 |
 | 预测 | 主动开启后查看第三方 24 / 48 小时预测、上游加权中位数、明确时间窗口与历史事件 |
 | 桌宠 | 查看状态，预览并切换七个内置形象，控制桌面显示；显示时同步动态画面 |
 | 收集 | 本机用量、图片文件和 API 等价估算花费徽章、5 小时和 7 天额度窗口的掉落卡片；更多类别仍在移植 |
 
 还提供默认关闭的低额度通知、独立的 Codex 重置卡到期提醒，以及上游「麻薯」「比特」精灵图和五套 3D 桌宠。在桌宠页或托盘菜单选择形象并显示桌宠，单击可打开面板，拖动可调整位置。账户和本机账本默认每 15 分钟刷新，可在托盘菜单选择 5、15 或 30 分钟，也可手动刷新；应用页可见时每分钟单独检查本机活动。桌宠完整互动、通知效果和高 DPI 仍需实机验收。
+
+在托盘菜单的「预算与异常提醒」中可选设人民币日／周预算，预算和通知默认关闭。进度按北京时间及本机 API 等价估算计算，美元使用固定汇率 1:7.25；它不是实际账单。周统计使用每天最后一次记录，缺失日期会标记为部分；异常速度在数据不足时不判断。启用后仅在本机保存设置和每日汇总，关闭功能不会自动删除已有历史。系统通知是否显示取决于 Windows 设置。
 
 <p align="center">
   <img src="windows/assets/pets/gauge.png" width="110" alt="量量">

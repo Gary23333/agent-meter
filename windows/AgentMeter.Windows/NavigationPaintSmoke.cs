@@ -147,16 +147,23 @@ internal sealed partial class MeterWindow
         loadingPicture.Save(Path.Combine(output, "accounts-loading.png"), ImageFormat.Png);
         SetView(View.Usage);
         var withBudget = System.Text.Json.Nodes.JsonNode.Parse(DemoData)!.AsObject();
-        withBudget["budget"] = System.Text.Json.Nodes.JsonNode.Parse("""{"status":"ok","daily":{"budget_cny":"10","spent_cny":"3.625","partial":false},"weekly":{"budget_cny":"100","spent_cny":"15","partial":true}}""");
+        withBudget["budget"] = System.Text.Json.Nodes.JsonNode.Parse("""{"status":"ok","daily":{"budget_cny":"20","spent_cny":"17.864","partial":true},"weekly":{"budget_cny":"100","spent_cny":"42","partial":true}}""");
         using (var document = System.Text.Json.JsonDocument.Parse(withBudget.ToJsonString())) Render(document.RootElement);
         content.AutoScrollPosition = Point.Empty; await Task.Delay(200);
         var budgetCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "budget-progress");
-        if (!budgetCard.Controls.OfType<Label>().Any(label => label.Text.Contains("¥3.63 / ¥10")) ||
-            !budgetCard.Controls.OfType<Label>().Any(label => label.Text.Contains("¥15 / ¥100 · 部分")))
+        if (!budgetCard.Controls.OfType<Label>().Any(label => label.Text.Contains("¥17.86 / ¥20 · 部分")) ||
+            !budgetCard.Controls.OfType<Label>().Any(label => label.Text.Contains("¥42 / ¥100 · 部分")))
             throw new InvalidOperationException("预算进度显示错误");
         using var budgetPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(budgetPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
         budgetPicture.Save(Path.Combine(output, "budget-progress.png"), ImageFormat.Png);
+        Size = new Size(380, 680); SetTheme(VisualThemes.Find("porcelain")); content.AutoScrollPosition = Point.Empty; await Task.Delay(200);
+        budgetCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "budget-progress");
+        foreach (var value in budgetCard.Controls.OfType<Label>().Where(label => label.Name is "budget-first" or "budget-second"))
+            if (value.Left < 85 || value.Right > budgetCard.ClientSize.Width) throw new InvalidOperationException("窄弹层预算数值布局错误");
+        using var lightBudgetPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(lightBudgetPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+        lightBudgetPicture.Save(Path.Combine(output, "budget-progress-porcelain-narrow.png"), ImageFormat.Png);
         string testDirectory = Path.Combine(Path.GetTempPath(), "AgentMeterBudgetSmoke-" + Guid.NewGuid().ToString("N"));
         using (var dialog = new BudgetDialog(testDirectory) { StartPosition = FormStartPosition.Manual, Location = new Point(40, 40), TopMost = true })
         {
