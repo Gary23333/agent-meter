@@ -592,7 +592,13 @@ internal sealed partial class MeterWindow : Form
         if (pagePetPreferences.Pack != "cat") throw new InvalidOperationException("桌宠形象切换失败");
         content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "pet-toggle").PerformClick();
         if (!pagePetPreferences.Enabled) throw new InvalidOperationException("桌宠显示开关失败");
-        Size = new Size(380, 680); SavePreview("aurora-pet-narrow");
+        Size = new Size(380, 680); Application.DoEvents();
+        if (content.HorizontalScroll.Visible)
+        {
+            string children = string.Join(",", content.Controls.Cast<Control>().Select(item => $"{item.GetType().Name}:{item.Width}+{item.Margin.Horizontal}"));
+            throw new InvalidOperationException($"桌宠页面出现横向滚动条：content={content.Width} viewport={contentViewport.Width} display={content.DisplayRectangle.Width} controls={children}");
+        }
+        SavePreview("aurora-pet-narrow");
         SetPetPreferences(PetPreferences.Default);
         Size = new Size(500, 1100);
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Accounts);

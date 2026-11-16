@@ -68,7 +68,16 @@ internal static class PetArt
         if (pack is "mochi" or "bit")
         {
             using var sprite = new SpritePet(pack);
-            return new Bitmap(sprite.Frame("idle", 0, 240));
+            var frame = sprite.Frame("idle", 0, 240);
+            int left = frame.Width, top = frame.Height, right = -1, bottom = -1;
+            for (int y = 0; y < frame.Height; y++) for (int x = 0; x < frame.Width; x++)
+                if (frame.GetPixel(x, y).A > 8)
+                { left = Math.Min(left, x); top = Math.Min(top, y); right = Math.Max(right, x); bottom = Math.Max(bottom, y); }
+            if (right < left || bottom < top) return new Bitmap(frame);
+            int padding = Math.Max(3, Math.Max(right - left, bottom - top) / 9);
+            left = Math.Max(0, left - padding); top = Math.Max(0, top - padding);
+            right = Math.Min(frame.Width - 1, right + padding); bottom = Math.Min(frame.Height - 1, bottom + padding);
+            return frame.Clone(new Rectangle(left, top, right - left + 1, bottom - top + 1), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
         }
         using var stream = typeof(PetArt).Assembly.GetManifestResourceStream($"AgentMeter.PetPreview.{pack}.png")
             ?? throw new InvalidDataException("桌宠预览资源缺失");
