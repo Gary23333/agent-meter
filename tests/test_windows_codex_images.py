@@ -4,7 +4,10 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 from zoneinfo import ZoneInfo
+import stat
 
 from agent_meter.model import SourceError
 from windows.codex_image_files import image_files
@@ -21,7 +24,8 @@ class CodexImageFileTests(unittest.TestCase):
             image.write_bytes(b"not read as image")
             os.utime(image, (NOW - 60, NOW - 60))
             (root / "ignore.jpg").write_bytes(b"ignored")
-            result = image_files(root, NOW)
+            with mock.patch("builtins.open", side_effect=AssertionError("不应读取图片内容")):
+                result = image_files(root, NOW)
             self.assertEqual(result["status"], "available")
             self.assertEqual(result["value"]["periods"]["today"]["files"], 1)
             self.assertEqual(result["value"]["daily_buckets"], [{"date": "2026-11-16", "images": 1}])
@@ -40,6 +44,13 @@ class CodexImageFileTests(unittest.TestCase):
             (root / "nested").mkdir()
             self.assertEqual(image_files(root, NOW, max_dirs=1)["status"], "partial")
         with self.assertRaises(SourceError): image_files(Path(tmp) / "absent", NOW)
+
+    def test_redirected_root_is_not_scanned(self):
+        info = SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+        with mock.patch.object(Path, "is_dir", return_value=True), mock.patch("windows.codex_image_files.os.stat", return_value=info):
+            with self.assertRaises(SourceError) as error:
+                image_files(Path("synthetic"), NOW)
+        self.assertEqual(error.exception.code, "codex_images_redirected")
 
     def test_image_only_medals_and_private_projection(self):
         with tempfile.TemporaryDirectory() as tmp:
