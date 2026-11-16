@@ -349,6 +349,7 @@ internal sealed partial class MeterContext : ApplicationContext
                 ? new PetWindow(petPreferences.Pack, location)
                 : new Pet3dWindow(petPreferences.Pack, location, AccountPreferences.DefaultDirectory, petPreferences.FollowCursor);
             instance.OpenRequested += () => ShowPanel(true);
+            instance.FrameUpdated += (frame, mood) => window.UpdatePetPreview(frame, mood);
             instance.RefreshRequested += async () => await window.RefreshData();
             instance.HideRequested += () => ChangePet(petPreferences with { Enabled = false });
             instance.PositionChanged += position =>
@@ -599,6 +600,18 @@ internal sealed partial class MeterWindow : Form
             }
         }
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Pet);
+        using (var hiddenFrame = PetArt.Load("cat")) UpdatePetPreview(hiddenFrame, new PetMood("idle", "待机"));
+        if (content.Controls.OfType<PetHero>().Single().IsLive) throw new InvalidOperationException("隐藏桌宠时不应显示动态预览");
+        SetPetPreferences(PetPreferences.Default with { Enabled = true });
+        using (var spritePreview = new SpritePet("mochi"))
+        {
+            UpdatePetPreview(spritePreview.Frame("idle", 0, 240), new PetMood("idle", "待机"));
+            UpdatePetPreview(spritePreview.Frame("idle", 1, 240), new PetMood("working", "近期本机记录有更新"));
+            var spriteHero = content.Controls.OfType<PetHero>().Single();
+            if (!spriteHero.IsLive || spriteHero.AccessibleName != "桌宠预览 · 近期本机记录有更新")
+                throw new InvalidOperationException("精灵图画面或状态未同步到页面预览");
+        }
+        SetPetPreferences(PetPreferences.Default);
         var petGrid = content.Controls.OfType<TableLayoutPanel>().Single(item => item.Name == "pet-choices");
         if (petGrid.Controls.Count != 7) throw new InvalidOperationException("桌宠形象列表不完整");
         if (pagePetPreferences.FollowCursor || content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
@@ -615,6 +628,9 @@ internal sealed partial class MeterWindow : Form
         content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "pet-toggle").PerformClick();
         if (!pagePetPreferences.Enabled) throw new InvalidOperationException("桌宠显示开关失败");
         Size = new Size(380, 680); content.AutoScrollPosition = Point.Empty; Application.DoEvents();
+        using (var syntheticFrame = PetArt.Load("cat")) UpdatePetPreview(syntheticFrame, new PetMood("idle", "待机"));
+        if (!content.Controls.OfType<PetHero>().Single().IsLive) throw new InvalidOperationException("显示中的桌宠没有同步到页面预览");
+        SavePreview("aurora-pet-live");
         if (content.HorizontalScroll.Visible)
         {
             string children = string.Join(",", content.Controls.Cast<Control>().Select(item => $"{item.GetType().Name}:{item.Width}+{item.Margin.Horizontal}"));
@@ -629,6 +645,7 @@ internal sealed partial class MeterWindow : Form
         if (content.HorizontalScroll.Visible) throw new InvalidOperationException("反复缩放后出现横向滚动条");
         SavePreview("aurora-pet-narrow");
         SetPetPreferences(PetPreferences.Default);
+        if (content.Controls.OfType<PetHero>().Single().IsLive) throw new InvalidOperationException("隐藏桌宠后未恢复静态预览");
         Size = new Size(500, 1100);
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Accounts);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())

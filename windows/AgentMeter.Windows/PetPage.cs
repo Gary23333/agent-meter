@@ -22,6 +22,15 @@ internal sealed partial class MeterWindow
         if (demo) SetPetPreferences(value);
         else PetChangeRequested?.Invoke(value);
     }
+    public void UpdatePetPreview(Bitmap frame, PetMood mood)
+    {
+        if (!Visible || IsDisposed || Disposing || view != View.Pet || !pagePetPreferences.Enabled) return;
+        var hero = content.Controls.OfType<PetHero>().FirstOrDefault();
+        if (hero is null || hero.IsDisposed || hero.Bottom <= 0 || hero.Top >= content.ClientSize.Height) return;
+        try { hero.SetLiveFrame(frame, mood); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Runtime.InteropServices.ExternalException)
+        { hero.UseStaticFrame(); }
+    }
 
     void AddPetPage(JsonElement root)
     {
@@ -66,8 +75,8 @@ internal sealed partial class MeterWindow
         followCard.Resize += (_, _) => followToggle.Location = new Point(Math.Max(180, followCard.Width - 92), 29);
         followToggle.Click += (_, _) => RequestPetChange(pagePetPreferences with { FollowCursor = !pagePetPreferences.FollowCursor });
         followCard.Controls.AddRange([followTitle, followNote, followToggle]); content.Controls.Add(followCard);
-        AddCard("桌宠状态", mood.Description, mood.Remaining.HasValue ? $"最低有效额度 {mood.Remaining.Value:0.#}% · 不同服务不能比较绝对额度" : "额度未知时不虚构数字", null,
-            "状态依据近期额度和本机记录更新；形象预览为静态图");
+        AddCard("状态依据", "近期额度与本机活动", "最低有效百分比用于提示，不比较各服务的绝对额度", null,
+            "显示桌宠时同步状态与画面；没有额度时不虚构数字");
     }
 }
 
@@ -80,20 +89,24 @@ internal static class PetArt
         {
             using var sprite = new SpritePet(pack);
             var frame = sprite.Frame("idle", 0, 240);
-            int left = frame.Width, top = frame.Height, right = -1, bottom = -1;
-            for (int y = 0; y < frame.Height; y++) for (int x = 0; x < frame.Width; x++)
-                if (frame.GetPixel(x, y).A > 8)
-                { left = Math.Min(left, x); top = Math.Min(top, y); right = Math.Max(right, x); bottom = Math.Max(bottom, y); }
-            if (right < left || bottom < top) return new Bitmap(frame);
-            int padding = Math.Max(3, Math.Max(right - left, bottom - top) / 9);
-            left = Math.Max(0, left - padding); top = Math.Max(0, top - padding);
-            right = Math.Min(frame.Width - 1, right + padding); bottom = Math.Min(frame.Height - 1, bottom + padding);
-            return frame.Clone(new Rectangle(left, top, right - left + 1, bottom - top + 1), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            return frame.Clone(AlphaBounds(frame), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
         }
         using var stream = typeof(PetArt).Assembly.GetManifestResourceStream($"AgentMeter.PetPreview.{pack}.png")
             ?? throw new InvalidDataException("桌宠预览资源缺失");
         using var image = Image.FromStream(stream);
         return new Bitmap(image);
+    }
+    public static Rectangle AlphaBounds(Bitmap frame)
+    {
+        int left = frame.Width, top = frame.Height, right = -1, bottom = -1;
+        for (int y = 0; y < frame.Height; y++) for (int x = 0; x < frame.Width; x++)
+            if (frame.GetPixel(x, y).A > 8)
+            { left = Math.Min(left, x); top = Math.Min(top, y); right = Math.Max(right, x); bottom = Math.Max(bottom, y); }
+        if (right < left || bottom < top) return new Rectangle(0, 0, frame.Width, frame.Height);
+        int padding = Math.Max(3, Math.Max(right - left, bottom - top) / 9);
+        left = Math.Max(0, left - padding); top = Math.Max(0, top - padding);
+        right = Math.Min(frame.Width - 1, right + padding); bottom = Math.Min(frame.Height - 1, bottom + padding);
+        return new Rectangle(left, top, right - left + 1, bottom - top + 1);
     }
     public static GraphicsPath Round(Rectangle bounds, int radius)
     {
@@ -110,11 +123,16 @@ internal static class PetArt
 internal sealed class PetHero : Control
 {
     readonly VisualTheme theme;
-    readonly PetMood mood;
+    PetMood mood;
     readonly Bitmap art;
+    readonly bool sprite;
+    readonly bool pixelated;
+    readonly Dictionary<Bitmap, Rectangle> spriteBounds = new(ReferenceEqualityComparer.Instance);
+    Bitmap? liveArt;
+    internal bool IsLive => liveArt is not null;
     public PetHero(VisualTheme theme, string pack, PetMood mood)
     {
-        this.theme = theme; this.mood = mood; art = PetArt.Load(pack); DoubleBuffered = true;
+        this.theme = theme; this.mood = mood; art = PetArt.Load(pack); sprite = pack is "mochi" or "bit"; pixelated = pack == "bit"; DoubleBuffered = true;
         AccessibleName = "桌宠预览 · " + mood.Description;
     }
     protected override void OnPaint(PaintEventArgs e)
@@ -130,17 +148,32 @@ internal sealed class PetHero : Control
         using var shape = PetArt.Round(stage, 20);
         using var fill = new LinearGradientBrush(stage, theme.CardEnd, theme.Background, 90F);
         e.Graphics.FillPath(fill, shape);
-        int h = Math.Min(stage.Height - 6, 155), w = h * art.Width / art.Height;
-        e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        e.Graphics.DrawImage(art, new Rectangle(stage.Left + (stage.Width - w) / 2, stage.Top + (stage.Height - h) / 2, w, h));
+        var shown = liveArt ?? art;
+        int h = Math.Min(stage.Height - 6, 155), w = h * shown.Width / shown.Height;
+        e.Graphics.InterpolationMode = pixelated ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBicubic;
+        if (pixelated) e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
+        e.Graphics.DrawImage(shown, new Rectangle(stage.Left + (stage.Width - w) / 2, stage.Top + (stage.Height - h) / 2, w, h));
         using var titleFont = new Font(Font.FontFamily, 10F, FontStyle.Bold);
         TextRenderer.DrawText(e.Graphics, mood.Description, titleFont, new Rectangle(17, 12, Width - 34, 26), theme.Primary,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
         string info = mood.Remaining.HasValue ? $"最低有效额度 {mood.Remaining.Value:0.#}%" : "额度未知 · 等待数据";
-        TextRenderer.DrawText(e.Graphics, info + " · 静态预览", Font, new Rectangle(17, Height - 39, Width - 34, 25), theme.Secondary,
+        TextRenderer.DrawText(e.Graphics, info + (IsLive ? " · 动态预览" : " · 静态预览"), Font, new Rectangle(17, Height - 39, Width - 34, 25), theme.Secondary,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
     }
-    protected override void Dispose(bool disposing) { if (disposing) art.Dispose(); base.Dispose(disposing); }
+    public void SetLiveFrame(Bitmap frame, PetMood value)
+    {
+        Bitmap next;
+        if (sprite)
+        {
+            if (!spriteBounds.TryGetValue(frame, out var bounds))
+            { bounds = PetArt.AlphaBounds(frame); spriteBounds[frame] = bounds; }
+            next = frame.Clone(bounds, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        }
+        else next = new Bitmap(frame);
+        var previous = liveArt; liveArt = next; mood = value; AccessibleName = "桌宠预览 · " + mood.Description; previous?.Dispose(); Invalidate();
+    }
+    public void UseStaticFrame() { var previous = liveArt; liveArt = null; previous?.Dispose(); Invalidate(); }
+    protected override void Dispose(bool disposing) { if (disposing) { art.Dispose(); liveArt?.Dispose(); spriteBounds.Clear(); } base.Dispose(disposing); }
 }
 
 internal sealed class PetChoiceButton : Button
@@ -148,10 +181,11 @@ internal sealed class PetChoiceButton : Button
     readonly VisualTheme theme;
     readonly Bitmap art;
     readonly bool selected;
+    readonly bool pixelated;
     readonly string kind;
     public PetChoiceButton(VisualTheme theme, string pack, string name, bool selected)
     {
-        this.theme = theme; this.selected = selected; art = PetArt.Load(pack); Text = name;
+        this.theme = theme; this.selected = selected; pixelated = pack == "bit"; art = PetArt.Load(pack); Text = name;
         kind = pack is "mochi" or "bit" ? "精灵图" : "3D";
         AccessibleName = name + " · " + kind + (selected ? " · 已选择" : "");
         AccessibleRole = AccessibleRole.PushButton; FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; DoubleBuffered = true;
@@ -164,7 +198,8 @@ internal sealed class PetChoiceButton : Button
         using var fill = new SolidBrush(theme.Card); using var border = new Pen(selected ? theme.Accent : theme.Border, selected ? 2 : 1);
         e.Graphics.FillPath(fill, shape); e.Graphics.DrawPath(border, shape);
         int h = Math.Min(68, Height - 38), w = h * art.Width / art.Height;
-        e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        e.Graphics.InterpolationMode = pixelated ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBicubic;
+        if (pixelated) e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
         e.Graphics.DrawImage(art, new Rectangle((Width - w) / 2, 4, w, h));
         TextRenderer.DrawText(e.Graphics, Text, Font, new Rectangle(4, h + 3, Width - 8, 21), theme.Primary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);

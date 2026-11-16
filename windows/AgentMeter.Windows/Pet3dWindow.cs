@@ -25,6 +25,7 @@ internal sealed class Pet3dWindow : Form, IPetWindow
     internal TaskCompletionSource<bool> FirstFrame { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public event Action? OpenRequested, RefreshRequested, HideRequested, RenderingFailed;
     public event Action<Point>? PositionChanged;
+    public event Action<Bitmap, PetMood>? FrameUpdated;
 
     public Pet3dWindow(string pack, Point position, string directory, bool followCursor = false)
     {
@@ -122,7 +123,7 @@ internal sealed class Pet3dWindow : Form, IPetWindow
     void DrawFrame()
     {
         if (lastFrame is null || !IsHandleCreated || IsDisposed) return;
-        try { LayeredWindow.Draw(Handle, lastFrame, Location); FirstFrame.TrySetResult(true); }
+        try { LayeredWindow.Draw(Handle, lastFrame, Location); FrameUpdated?.Invoke(lastFrame, mood); FirstFrame.TrySetResult(true); }
         catch (Exception ex) when (ex is Win32Exception or ExternalException or ArgumentException) { Fail(); }
     }
     void Fail()

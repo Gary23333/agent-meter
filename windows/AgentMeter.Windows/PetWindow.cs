@@ -9,6 +9,7 @@ internal interface IPetWindow : IDisposable
 {
     event Action? OpenRequested, RefreshRequested, HideRequested, RenderingFailed;
     event Action<Point>? PositionChanged;
+    event Action<Bitmap, PetMood>? FrameUpdated;
     void SetSnapshot(string value);
     void SetFollowCursor(bool value);
     void Show();
@@ -23,12 +24,14 @@ internal sealed class PetWindow : Form, IPetWindow
     readonly ContextMenuStrip menu = new();
     string? snapshot;
     string state = "idle";
+    PetMood mood = new("idle", "待机");
     int frame;
     DateTime lastStateCheck = DateTime.MinValue;
     Point dragCursor, dragOrigin;
     bool dragging, pressed;
     public event Action? OpenRequested, RefreshRequested, HideRequested;
     public event Action<Point>? PositionChanged;
+    public event Action<Bitmap, PetMood>? FrameUpdated;
     public event Action? RenderingFailed;
 
     public PetWindow(string pack, Point position)
@@ -79,11 +82,11 @@ internal sealed class PetWindow : Form, IPetWindow
             try
             {
                 using var document = JsonDocument.Parse(snapshot);
-                var mood = PetState.Select(document.RootElement, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                mood = PetState.Select(document.RootElement, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                 if (mood.Animation != state) { state = mood.Animation; frame = 0; timer.Interval = Math.Max(34, 1000 / sprite.FramesPerSecond(state)); }
                 AccessibleName = "Agent Meter 桌宠 · " + mood.Description;
             }
-            catch (JsonException) { state = "idle"; }
+            catch (JsonException) { state = "idle"; mood = new("idle", "待机"); }
         }
         frame = (frame + 1) % sprite.FrameCount(state);
         DrawFrame();
@@ -91,7 +94,11 @@ internal sealed class PetWindow : Form, IPetWindow
     void DrawFrame()
     {
         if (!IsHandleCreated || IsDisposed) return;
-        try { LayeredWindow.Draw(Handle, sprite.Frame(state, frame, Side), Location); }
+        try
+        {
+            var image = sprite.Frame(state, frame, Side);
+            LayeredWindow.Draw(Handle, image, Location); FrameUpdated?.Invoke(image, mood);
+        }
         catch (Exception ex) when (ex is Win32Exception or InvalidDataException or ExternalException or ArgumentException)
         { timer.Stop(); Hide(); RenderingFailed?.Invoke(); }
     }

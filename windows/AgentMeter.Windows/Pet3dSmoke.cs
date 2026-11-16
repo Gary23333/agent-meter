@@ -81,9 +81,16 @@ internal static class Pet3dSmoke
             first.Save(Path.Combine(outputDirectory, pack + ".png"), ImageFormat.Png);
         }
         using var pet = new Pet3dWindow("cat", new Point(-32000, -32000), directory);
+        int frames = 0; pet.FrameUpdated += (_, _) => frames++;
         pet.SetSnapshot("{\"observed_at\":" + DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ",\"account\":{\"status\":\"available\",\"quota\":{\"value\":[{\"remaining_percent\":10}]}}}");
         pet.Show();
         if (!await pet.FirstFrame.Task.WaitAsync(TimeSpan.FromSeconds(30))) throw new InvalidOperationException("原生桌宠窗口绘制失败");
+        if (frames == 0) throw new InvalidOperationException("三维桌宠没有通知页面更新画面");
+        using var sprite = new PetWindow("mochi", new Point(-32000, -32000));
+        int spriteFrames = 0; sprite.FrameUpdated += (_, _) => spriteFrames++;
+        sprite.Show();
+        for (int i = 0; i < 50 && spriteFrames == 0; i++) await Task.Delay(100);
+        if (spriteFrames == 0) throw new InvalidOperationException("精灵图桌宠没有通知页面更新画面");
     }
     static int DifferentPixels(Bitmap a, Bitmap b)
     {
