@@ -14,6 +14,14 @@ New-Item -ItemType Directory -Path 'windows\dist\AgentMeter\backend' -Force | Ou
 Copy-Item -Path 'windows\dist\AgentMeterBackend\*' -Destination 'windows\dist\AgentMeter\backend' -Recurse -Force
 Copy-Item -LiteralPath LICENSE,THIRD_PARTY_NOTICES.md -Destination 'windows\dist\AgentMeter' -Force
 Copy-Item -LiteralPath 'windows\QUICK_START.md' -Destination 'windows\dist\AgentMeter' -Force
+# 桌宠运行时只打包内置形象和离线渲染所需文件，不包含构建工具或第三方资料。
+$petRoot = 'windows\dist\AgentMeter\pet'
+New-Item -ItemType Directory -Path "$petRoot\runtime\vendor", "$petRoot\presets" -Force | Out-Null
+Copy-Item -LiteralPath 'pets\runtime\index.html', 'pets\runtime\css', 'pets\runtime\js' -Destination "$petRoot\runtime" -Recurse -Force
+Copy-Item -LiteralPath 'pets\runtime\vendor\three.pet.min.js', 'pets\runtime\vendor\LICENSE.three.txt' -Destination "$petRoot\runtime\vendor" -Force
+foreach ($pack in @('gauge', 'cat', 'bot', 'tibo', 'blob')) {
+    Copy-Item -LiteralPath "pets\presets\$pack" -Destination "$petRoot\presets" -Recurse -Force
+}
 $licenses = 'windows\dist\AgentMeter\licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
 $basePython = (& $python -c 'import sys; print(sys.base_prefix)').Trim()

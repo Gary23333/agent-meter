@@ -194,6 +194,22 @@ jobs:
             if (-not $app.WaitForExit(30000)) { throw 'Tray indicator smoke timed out' }
             if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Tray indicator switching failed' }
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - name: Check 3D pet rendering in an isolated profile
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/pet3d-smoke-errors.txt"
+          $output = "$env:RUNNER_TEMP/agentmeter-pet3d"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--pet3d-smoke', $output -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(90000)) { throw '3D pet smoke timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw "3D pet smoke failed ($($app.ExitCode))" }
+            if (@(Get-ChildItem "$output/*.png").Count -ne 5) { throw '3D pet previews missing' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMeter-3D-pet-previews
+          path: ${{ runner.temp }}/agentmeter-pet3d/*.png
+          if-no-files-found: error
       - name: Render isolated demo previews
         shell: pwsh
         run: |
