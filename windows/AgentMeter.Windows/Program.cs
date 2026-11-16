@@ -709,6 +709,12 @@ internal sealed partial class MeterWindow : Form
         Size = new Size(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Usage);
+        var usageComposition = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-breakdown");
+        if (!usageComposition.Controls.OfType<UsageCompositionRing>().Any(ring => ring.AccessibleName == "用量构成，缓存命中 75%") ||
+            !usageComposition.Controls.OfType<Label>().Any(label => label.Name == "usage-part-0" && label.Text == "400K") ||
+            !usageComposition.Controls.OfType<Label>().Any(label => label.Name == "usage-part-2" && label.Text == "1.2M"))
+            throw new InvalidOperationException("用量构成或缓存命中显示错误");
+        content.AutoScrollPosition = Point.Empty; SavePreview("aurora-usage-breakdown");
         var usageExport = content.Controls.OfType<Button>().Single(button => button.Name == "usage-export-data");
         content.ScrollControlIntoView(usageExport); Application.DoEvents(); SavePreview("aurora-usage-export-narrow");
         using (var snapshot = JsonDocument.Parse(lastSnapshot!))
@@ -737,6 +743,18 @@ internal sealed partial class MeterWindow : Form
             throw new InvalidOperationException("缺失的用量周期不能显示为零");
         SavePreview("aurora-usage-period-unknown");
         usagePeriod = "today";
+        using (var snapshot = JsonDocument.Parse(fullUsageSnapshot)) Render(snapshot.RootElement);
+        var invalidBreakdown = JsonNode.Parse(fullUsageSnapshot)!;
+        invalidBreakdown["history"]!["Codex"]!["value"]!["periods"]!["today"]!["totals"]!["fresh_input"] = null;
+        using (var snapshot = JsonDocument.Parse(invalidBreakdown.ToJsonString())) Render(snapshot.RootElement);
+        if (content.Controls.OfType<RoundedCard>().Any(card => card.Name == "usage-breakdown") ||
+            !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "拆分数据不完整"))
+            throw new InvalidOperationException("未知构成不应显示完整圆环");
+        var partialZero = JsonNode.Parse(fullUsageSnapshot)!;
+        partialZero["history"] = JsonNode.Parse("""{"A":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":0}}}}},"B":{"status":"error"}}""");
+        using (var snapshot = JsonDocument.Parse(partialZero.ToJsonString())) Render(snapshot.RootElement);
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "已读取来源为零，部分来源不完整"))
+            throw new InvalidOperationException("部分来源缺失时不能断言没有消耗");
         using (var snapshot = JsonDocument.Parse(fullUsageSnapshot)) Render(snapshot.RootElement);
         SetView(View.Report);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "+25%"))
@@ -2116,20 +2134,21 @@ internal sealed partial class MeterWindow : Form
             var totals = GetValue(GetValue(GetValue(GetValue(item.Value, "value"), "periods"), usagePeriod), "totals");
             var amount = GetNumber(totals, "total_tokens");
             if (!amount.HasValue || !double.IsFinite(amount.Value) || amount.Value < 0) { partial = true; continue; }
+            if (!double.IsFinite(total + amount.Value)) { partial = true; continue; }
             total += amount.Value; sources++;
-            double[] values = [GetNumber(totals, "fresh_input") ?? 0,
-                (GetNumber(totals, "output") ?? 0) + (GetNumber(totals, "reasoning") ?? 0),
-                GetNumber(totals, "cache_read") ?? 0, GetNumber(totals, "cache_write") ?? 0,
-                GetNumber(totals, "unclassified") ?? 0];
-            if (Math.Abs(values.Sum() - amount.Value) > 0.5) complete = false;
-            for (int i = 0; i < parts.Length; i++) parts[i] += values[i];
+            if (!UsageBreakdown.TryRead(totals, amount.Value, out var values)) complete = false;
+            else for (int i = 0; i < parts.Length; i++)
+            {
+                parts[i] += values[i];
+                if (!double.IsFinite(parts[i])) complete = false;
+            }
         }
         if (sources == 0)
         {
             AddCard(UsagePeriodLabel + " Token 总量", "暂无数据", partial ? "部分来源读取失败或未提供该周期" : "没有可读取的本机用量汇总", null);
             return;
         }
-        var box = new RoundedCard(theme) { Height = 190, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme) { Height = 112, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         var totalTitle = new Label { Text = UsagePeriodLabel + " Token 总量", Height = 22, AutoEllipsis = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) };
         var totalValue = new Label { Name = "usage-total", Text = FormatNumber(total), Height = 38, AutoEllipsis = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) };
         box.Controls.AddRange([totalTitle, totalValue]);
@@ -2146,17 +2165,38 @@ internal sealed partial class MeterWindow : Form
             costTitle.Width = costValue.Width = costNote.Width = Math.Max(0, box.ClientSize.Width - x - 16);
         };
         box.Controls.Add(new Label { Text = $"{sources} 个本机账本相加" + (partial ? " · 含不完整来源" : ""), AutoSize = true, ForeColor = Muted, Location = new Point(16, 82) });
-        if (complete && total > 0)
+        StyleCard(box); content.Controls.Add(box);
+        if (complete && total > 0) AddUsageBreakdown(parts, partial);
+        else if (complete && total == 0 && !partial) AddCard("用量构成", "本周期暂无 Token 消耗", "暂无可计算的构成比例", null);
+        else if (complete && total == 0) AddCard("用量构成", "暂无法计算", "已读取来源为零，部分来源不完整", null);
+        else AddCard("用量构成", "拆分数据不完整", "部分来源未提供一致的输入、输出或缓存拆分", null);
+    }
+    void AddUsageBreakdown(double[] parts, bool partial)
+    {
+        var box = new RoundedCard(theme) { Name = "usage-breakdown", Height = 216, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var title = new Label { Text = "用量构成", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
+            ForeColor = Primary, Location = new Point(16, 12) };
+        var note = new Label { Text = partial ? "部分来源不完整" : "已读取的本机账本", AutoSize = false, AutoEllipsis = true,
+            Height = 20, TextAlign = ContentAlignment.MiddleRight, ForeColor = Muted, Font = new Font(Font.FontFamily, 8F), Top = 13 };
+        var ring = new UsageCompositionRing(parts, theme) { Location = new Point(17, 51), Size = new Size(126, 126) };
+        box.Controls.AddRange([title, note, ring]);
+        string[] labels = ["新输入", "输出含推理", "缓存读取", "缓存写入", "未拆分"];
+        var colors = UsagePalette.ColorsFor(theme);
+        for (int i = 0; i < labels.Length; i++)
         {
-            var bar = new BreakdownBar(parts, theme) { Location = new Point(16, 116), Height = 9, AccessibleName = UsagePeriodLabel + "用量构成：输入、输出、缓存读取、缓存写入和未拆分" };
-            box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(bar);
-            var legend = new FlowLayoutPanel { Location = new Point(16, 137), Height = 48, WrapContents = true, BackColor = Color.Transparent };
-            string[] labels = ["输入", "输出", "缓存读取", "缓存写入", "未拆分"];
-            for (int i = 0; i < labels.Length; i++)
-                legend.Controls.Add(new Label { Text = "● " + labels[i], AutoSize = true, Font = new Font(Font.FontFamily, 8F), ForeColor = BreakdownBar.ColorsFor(theme)[i], Margin = new Padding(0, 0, 8, 0) });
-            box.Resize += (_, _) => legend.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(legend);
+            var dot = new Label { Text = "●", AutoSize = false, Size = new Size(16, 20), Location = new Point(157, 48 + i * 27), ForeColor = colors[i] };
+            var name = new Label { Text = labels[i], AutoSize = false, AutoEllipsis = true, Height = 20, Location = new Point(173, 48 + i * 27), ForeColor = Muted };
+            var value = new Label { Name = "usage-part-" + i, Text = FormatNumber(parts[i]), AutoSize = false, AutoEllipsis = true,
+                Height = 20, TextAlign = ContentAlignment.MiddleRight, Top = 48 + i * 27, ForeColor = Primary };
+            popupTips.SetToolTip(value, labels[i] + " · " + FormatNumber(parts[i]));
+            box.Resize += (_, _) => {
+                value.Left = Math.Max(230, box.ClientSize.Width - 102); value.Width = Math.Max(0, box.ClientSize.Width - value.Left - 16);
+                name.Width = Math.Max(0, value.Left - name.Left - 4);
+            };
+            box.Controls.AddRange([dot, name, value]);
         }
-        else box.Controls.Add(new Label { Text = total == 0 && complete ? "本周期暂无 Token 消耗" : "部分来源未提供完整拆分", AutoSize = true, ForeColor = Muted, Location = new Point(16, 125) });
+        box.Resize += (_, _) => { note.Left = Math.Max(145, box.ClientSize.Width - 160); note.Width = Math.Max(0, box.ClientSize.Width - note.Left - 16); };
+        popupTips.SetToolTip(ring, "缓存命中 = 缓存读取 ÷（新输入 + 缓存读取 + 缓存写入）；未拆分数据存在时不计算");
         StyleCard(box); content.Controls.Add(box);
     }
     void AddDailyTrend(JsonElement trend)
@@ -2550,26 +2590,6 @@ internal sealed class DailyChart : Control
         }
     }
 }
-internal sealed class BreakdownBar : Control
-{
-    readonly double[] values;
-    readonly Color[] colors;
-    static readonly Color[] DarkColors = [Color.FromArgb(95, 164, 255), Color.FromArgb(166, 112, 255), Color.FromArgb(69, 208, 185), Color.FromArgb(255, 176, 73), Color.FromArgb(151, 154, 168)];
-    static readonly Color[] LightColors = [Color.FromArgb(35, 94, 180), Color.FromArgb(105, 55, 160), Color.FromArgb(15, 111, 97), Color.FromArgb(149, 84, 0), Color.FromArgb(89, 95, 112)];
-    public static Color[] ColorsFor(VisualTheme theme) => theme.Light ? LightColors : DarkColors;
-    public BreakdownBar(double[] values, VisualTheme theme) { this.values = values; colors = ColorsFor(theme); DoubleBuffered = true; AccessibleName = "今日用量构成：输入、输出、缓存读取、缓存写入和未拆分"; }
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        base.OnPaint(e); double total = values.Sum(), start = 0;
-        if (total <= 0) return;
-        for (int i = 0; i < values.Length; i++)
-        {
-            float left = (float)(Width * start / total), right = (float)(Width * (start + values[i]) / total);
-            using var brush = new SolidBrush(colors[i]); e.Graphics.FillRectangle(brush, left, 0, Math.Max(0, right - left), Height); start += values[i];
-        }
-    }
-}
-
 /// <summary>本地只读工作进程在刷新之间保留已解析的用量缓存。</summary>
 internal sealed class HistoryWorker : IDisposable
 {

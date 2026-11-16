@@ -12,6 +12,21 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    using (var totals = JsonDocument.Parse("""{"fresh_input":40,"output":10,"reasoning":5,"cache_read":30,"cache_write":15,"total_tokens":100}"""))
+    {
+        if (!UsageBreakdown.TryRead(totals.RootElement, 100, out var parts) || !parts.SequenceEqual(new double[] { 40, 15, 30, 15, 0 }) ||
+            Math.Abs((UsageBreakdown.CacheHitRate(parts) ?? -1) - 30.0 / 85.0) > 0.00001)
+            throw new InvalidOperationException("用量构成或缓存命中计算错误");
+    }
+    using (var unclassified = JsonDocument.Parse("""{"fresh_input":40,"cache_read":30,"unclassified":30}"""))
+        if (!UsageBreakdown.TryRead(unclassified.RootElement, 100, out var parts) || UsageBreakdown.CacheHitRate(parts) is not null)
+            throw new InvalidOperationException("未拆分数据不能推断缓存命中率");
+    foreach (string json in new[] { "{\"fresh_input\":-1,\"cache_read\":11}", "{\"fresh_input\":null,\"cache_read\":10}", "{\"cache_read\":9}" })
+    {
+        using var invalid = JsonDocument.Parse(json);
+        if (UsageBreakdown.TryRead(invalid.RootElement, 10, out _)) throw new InvalidOperationException("异常或不匹配的拆分不能显示为完整构成");
+    }
+    if (UsageBreakdown.CacheHitRate([0, 3, 0, 0, 0]) is not null) throw new InvalidOperationException("没有输入时缓存命中率应为未知");
     using (var costs = JsonDocument.Parse("""{"A":{"status":"available","value":{"periods":{"7d":{"totals":{"total_tokens":42}}}},"estimates":{"7d":{"amount_usd":"1.25","partial":false}}},"B":{"status":"partial","value":{"periods":{"7d":{"totals":{"total_tokens":9}}}}}}"""))
     {
         var totalCost = UsageCostSummary.Read(costs.RootElement, "7d");
