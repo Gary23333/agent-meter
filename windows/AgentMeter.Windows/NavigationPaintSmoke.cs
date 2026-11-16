@@ -25,6 +25,7 @@ internal sealed partial class MeterWindow
 {
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr handle, int command);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+    [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
     static void ClickOnIsolatedDesktop(Control target)
     {
         Cursor.Position = target.PointToScreen(new Point(target.Width / 2, target.Height / 2));
@@ -77,6 +78,25 @@ internal sealed partial class MeterWindow
                     CheckTabPixel(afterClick, choices[i], i == 1);
                 }
             }
+        }
+        // 真实键盘事件检查自绘控件的可操作性，再逐个核对七种主题的高亮。
+        if (!reportTab.Focus()) throw new InvalidOperationException("无法聚焦导航按钮");
+        keybd_event(0x20, 0, 0, UIntPtr.Zero);
+        keybd_event(0x20, 0, 0x0002, UIntPtr.Zero);
+        await Task.Delay(350);
+        if (view != View.Report) throw new InvalidOperationException("键盘空格没有切换页面");
+        foreach (var option in VisualThemes.All)
+        {
+            if (!SetTheme(option)) throw new InvalidOperationException("无法切换主题");
+            ClickOnIsolatedDesktop(accountTab);
+            await Task.Delay(350);
+            Cursor.Position = new Point(1, 1);
+            await Task.Delay(100);
+            if (view != View.Accounts) throw new InvalidOperationException("主题切换后导航无法点击");
+            using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(picture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+            picture.Save(Path.Combine(output, $"theme-{option.Id}.png"), ImageFormat.Png);
+            for (int i = 0; i < tabs.Length; i++) CheckTabPixel(picture, tabs[i], i == 0);
         }
     }
 
