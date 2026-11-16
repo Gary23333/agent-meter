@@ -7,6 +7,7 @@ internal sealed class NavigationTab : Button
 {
     VisualTheme theme = VisualThemes.Find("aurora");
     bool selected, hovering;
+    internal bool IsSelected => selected;
     public NavigationTab()
     {
         // 子按钮使用不透明底色，避免 Windows 实时重绘时把父容器和旧文字重复绘制到每个按钮上。
@@ -22,7 +23,11 @@ internal sealed class NavigationTab : Button
     }
     protected override void OnMouseEnter(EventArgs e) { hovering = true; base.OnMouseEnter(e); Invalidate(); }
     protected override void OnMouseLeave(EventArgs e) { hovering = false; base.OnMouseLeave(e); Invalidate(); }
-    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(theme.Card);
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        using var background = new SolidBrush(theme.Card);
+        e.Graphics.FillRectangle(background, ClientRectangle);
+    }
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -36,7 +41,8 @@ internal sealed class NavigationTab : Button
         using var fill = new SolidBrush(selected ? theme.Selected : hovering ? theme.Border : theme.Card);
         if (selected || hovering) e.Graphics.FillPath(fill, path);
         TextRenderer.DrawText(e.Graphics, Text, Font, bounds, selected ? Color.White : theme.Primary,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis |
+            TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform);
         if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(bounds, -5, -5));
     }
 }
@@ -45,7 +51,8 @@ internal sealed class NavigationStrip : Panel
 {
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        e.Graphics.Clear(Parent?.BackColor ?? BackColor);
+        using var background = new SolidBrush(Parent?.BackColor ?? BackColor);
+        e.Graphics.FillRectangle(background, ClientRectangle);
         if (Width < Height || Height < 2) return;
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using var path = new GraphicsPath();

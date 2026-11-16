@@ -40,7 +40,11 @@ internal sealed partial class MeterWindow
             using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(picture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
             picture.Save(Path.Combine(output, $"navigation-{selected}.png"), ImageFormat.Png);
-            for (int i = 0; i < tabs.Length; i++) CheckTabPixel(picture, tabs[i], i == selected);
+            for (int i = 0; i < tabs.Length; i++)
+            {
+                if (tabs[i].IsSelected != (i == selected)) throw new InvalidOperationException("导航选中状态错误");
+                CheckTabPixel(picture, tabs[i], i == selected);
+            }
             if (page == View.Usage)
             {
                 var strip = content.Controls.OfType<NavigationStrip>().Single(item => item.Name == "usage-period-selector");
@@ -58,6 +62,6 @@ internal sealed partial class MeterWindow
             throw new InvalidOperationException("导航测试位置超出窗口");
         Color actual = picture.GetPixel(point.X, point.Y), expected = selected ? theme.Selected : theme.Card;
         int delta = Math.Abs(actual.R - expected.R) + Math.Abs(actual.G - expected.G) + Math.Abs(actual.B - expected.B);
-        if (delta > 45) throw new InvalidOperationException($"导航重绘异常：{tab.Text}，颜色差 {delta}");
+        if (delta > 45) throw new InvalidOperationException($"导航重绘异常：{tab.Text}，选中={tab.IsSelected}，实际={actual.R},{actual.G},{actual.B}，预期={expected.R},{expected.G},{expected.B}，差={delta}");
     }
 }
