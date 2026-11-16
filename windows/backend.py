@@ -32,6 +32,7 @@ from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
 from windows.forecast import forecast_summary
+from windows.cost_medals import daily_cost_metric
 from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, save_ledger, track_windows
 from agent_meter.deepseek import collect_deepseek
 from agent_meter.web_sources import collect_workbuddy, collect_qoder_web, collect_trae
@@ -501,10 +502,11 @@ def calendar_report(result):
     return {"periods": out, "sources": sources, "incomplete": incomplete, "timezone": "Asia/Shanghai"} if sources else None
 
 
-def local_medals(result):
+def local_medals(result, price_table=None):
     """按上游规则计算可由本机逐日账本支持的徽章，不推断缺失来源。"""
     today = datetime.fromtimestamp(result["observed_at"], DISPLAY_ZONE).date()
     sources, incomplete = [], False
+    cost_incomplete = price_table is None
     for name, item in result.get("history", {}).items():
         status, reason = item.get("status"), item.get("reason") or ""
         if status in {"error", "partial"} or (status == "unavailable" and reason and not reason.endswith("_not_found")):
@@ -513,9 +515,11 @@ def local_medals(result):
             continue
         value = item.get("value")
         if not isinstance(value, dict):
+            incomplete = True
             continue
         totals = value.get("periods", {}).get("all", {}).get("totals", {})
         if totals.get("requests") == 0:
+            if totals.get("total_tokens") not in (0, None): incomplete = True
             continue
         rows = value.get("daily_buckets")
         if not isinstance(rows, list):
@@ -541,14 +545,24 @@ def local_medals(result):
             incomplete = True
         if not any(row["tokens"] > 0 for row in valid):
             continue
-        sources.append({"id": name, "metrics": {"tokens": {"status": "available", "value": {"daily_buckets": valid}}}})
+        source = {"id": name, "metrics": {"tokens": {"status": "available", "value": {"daily_buckets": valid}}}}
+        try:
+            cost = daily_cost_metric(item, result["observed_at"], price_table)
+        except (TypeError, ValueError, KeyError, InvalidOperation, OverflowError):
+            cost = None
+        if cost is None: cost_incomplete = True
+        else: source["metrics"]["cost"] = cost
+        sources.append(source)
     if not sources:
         return {"medals": [], "sources": 0, "incomplete": True} if incomplete else None
     all_medals, stats = medals(sources, None, result["observed_at"])
     available = {"day_peak", "lifetime", "streak", "apps", "record"}
+    if not incomplete and not cost_incomplete:
+        available.update({"cost_day", "cost_month", "cost_life"})
     rows = [{key: medal[key] for key in ("id", "name", "category", "category_name", "target", "unit", "tier", "value", "progress", "earned", "earned_on")}
             for medal in all_medals if medal["category"] in available]
     return {"medals": rows, "sources": len(sources), "incomplete": incomplete,
+            "cost_status": "available" if not incomplete and not cost_incomplete else "incomplete",
             "earned": sum(item["earned"] for item in rows), "total": len(rows),
             "active_days": stats["active_days"], "timezone": "Asia/Shanghai"}
 
@@ -773,7 +787,7 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
     compact["daily_trend"] = recent_daily_trend(result)
     compact["calendar_report"] = calendar_report(result)
     try:
-        compact["local_medals"] = local_medals(result)
+        compact["local_medals"] = local_medals(result, table)
     except (TypeError, ValueError, OverflowError, KeyError, AttributeError):
         # 收集册属于附加展示，异常时不应阻断账户和本机用量页面。
         compact["local_medals"] = {"medals": [], "sources": 0, "incomplete": True}

@@ -36,6 +36,8 @@
 
 账户积分、Kimi 钱包及 Codex 重置卡现在收在对应账户卡片内。重置卡显示服务报告的总数和按到期顺序排列的明细，超过 3 条可展开；「已到期 · 待刷新」不会自行减少服务报告的总数。钱包与积分仍按各自单位展示，不能合并。
 
+收集册中的花费徽章以本机逐日模型用量、当前基础价格和固定汇率估算 API 等价价值，不是实际账单；价格、逐日拆分或来源不完整时不计算。
+
 本机会话较多时首次扫描可能较慢。账户额度和本机 Token 分别统计；未提供的数据不会当作零。运行 `AgentMeter.Windows.exe --demo` 可查看虚构演示数据；运行 `AgentMeter.Windows.exe --window` 可用普通任务栏窗口查看真实数据。
 
 Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek、WorkBuddy、智谱、火山方舟、MiMo、Qoder 和 TRAE 默认关闭；开关状态保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，不包含凭据。Codex 额度查询使用本机已有的 Codex 安装和登录状态。如果 Claude Code 的本地订阅凭据文件存在，程序会在内存中读取访问令牌并通过 HTTPS 向 Anthropic 用量接口查询额度，不修改或刷新登录；该功能目前仅经模拟测试。Kimi 额度查询只连接已运行的本机 Kimi 服务，目前同样仅经模拟测试。

@@ -686,6 +686,18 @@ internal sealed partial class MeterWindow : Form
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
         SetView(View.Collection); SavePreview("aurora-collection-narrow");
+        var costMedal = content.Controls.OfType<RoundedCard>().Single(card => card.Controls.OfType<Label>().Any(label => label.Text == "小试牛刀"));
+        if (!costMedal.Controls.OfType<Label>().Any(label => label.Text == "当前 145.5 / 100 元"))
+            throw new InvalidOperationException("估算花费徽章金额显示错误");
+        content.ScrollControlIntoView(costMedal); Application.DoEvents(); SavePreview("aurora-cost-medal");
+        string medalSnapshot = lastSnapshot!;
+        var noCost = JsonNode.Parse(medalSnapshot)!.AsObject();
+        noCost["local_medals"]!["cost_status"] = "incomplete";
+        ((JsonArray)noCost["local_medals"]!["medals"]!).RemoveAt(3);
+        using (var snapshot = JsonDocument.Parse(noCost.ToJsonString())) Render(snapshot.RootElement);
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "来源、逐日模型拆分或价格不完整，暂不计算"))
+            throw new InvalidOperationException("价格不完整时应隐藏花费徽章并提示原因");
+        using (var snapshot = JsonDocument.Parse(medalSnapshot)) Render(snapshot.RootElement);
         bool HasCard(string name) => content.Controls.OfType<RoundedCard>()
             .SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == name);
         var toggle = content.Controls.OfType<Button>().FirstOrDefault(button => button.Text == "查看全部额度卡片")
@@ -1037,6 +1049,9 @@ internal sealed partial class MeterWindow : Form
                 sample["observed_at"] = ForecastDemoNow.ToUnixTimeSeconds();
                 AddDemoAccountDetails(sample);
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
+                sample["local_medals"]!["cost_status"] = "available";
+                sample["local_medals"]!["earned"] = 2; sample["local_medals"]!["total"] = 4;
+                ((JsonArray)sample["local_medals"]!["medals"]!).Add(JsonNode.Parse("""{"name":"小试牛刀","category":"cost_day","category_name":"单日估算花费","tier":"bronze","target":100,"unit":"cny","value":145.5,"progress":1,"earned":true,"earned_on":"2026-11-12"}"""));
                 sample["quota_cards"] = JsonNode.Parse("""{"status":"available","distinct":1,"cards":[{"id":"q5_50","name":"热身完毕","series":"five_hour","rarity":"common","description":"5 小时窗口用量达到 50% 即掉落","count":2},{"id":"q5_80","name":"八分饱","series":"five_hour","rarity":"rare","description":"5 小时窗口用量达到 80% 即掉落","count":0}]}""");
                 using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
             }
@@ -1594,27 +1609,31 @@ internal sealed partial class MeterWindow : Form
                 sources.HasValue ? $"基于 {sources:0} 个可读取账本" : "基于可读取账本", null);
         if (GetValue(collection, "incomplete").ValueKind == JsonValueKind.True)
             AddCard("读取范围", "部分记录不完整", "徽章只反映已读取的数据", null);
+        if (GetString(collection, "cost_status", "") == "incomplete")
+            AddCard("估算花费徽章", "数据不完整", "来源、逐日模型拆分或价格不完整，暂不计算", null);
         foreach (var (category, title) in new[] { ("day_peak", "单日巅峰"), ("lifetime", "累计里程"),
-            ("streak", "连续出勤"), ("apps", "多端并用"), ("record", "个人纪录") })
+            ("streak", "连续出勤"), ("apps", "多端并用"), ("record", "个人纪录"),
+            ("cost_day", "单日估算花费"), ("cost_month", "月度估算花费"), ("cost_life", "累计估算价值") })
         {
             var rows = medals.EnumerateArray().Where(row => GetString(row, "category", "") == category).ToArray();
             if (rows.Length == 0) continue;
-            AddHeading(title, category == "streak" ? "当前连续天数与历史达成分别计算" : "按已读取的本机记录计算");
+            AddHeading(title, category.StartsWith("cost_", StringComparison.Ordinal) ? "按当前基础价格及固定汇率估算 · 非账单" :
+                category == "streak" ? "当前连续天数与历史达成分别计算" : "按已读取的本机记录计算");
             foreach (var row in rows)
             {
                 string name = GetString(row, "name", "徽章");
                 double? value = GetNumber(row, "value"), target = GetNumber(row, "target"), progress = GetNumber(row, "progress");
                 if (!value.HasValue || !target.HasValue || !progress.HasValue || !double.IsFinite(value.Value) ||
                     !double.IsFinite(target.Value) || !double.IsFinite(progress.Value) || value < 0 || target <= 0) continue;
-                string unit = GetString(row, "unit", "") switch { "tokens" => "tokens", "days" => "天", "apps" => "个应用", "times" => "次", _ => "" };
+                string unit = GetString(row, "unit", "") switch { "tokens" => "tokens", "days" => "天", "apps" => "个应用", "times" => "次", "cny" => "元", _ => "" };
                 bool hasMedal = GetValue(row, "earned").ValueKind == JsonValueKind.True;
                 string date = GetString(row, "earned_on", "");
-                string detail = $"当前 {FormatNumber(value.Value)} / {FormatNumber(target.Value)} {unit}";
+                string detail = unit == "元" ? $"当前 {value.Value:0.##} / {target.Value:0.##} 元" : $"当前 {FormatNumber(value.Value)} / {FormatNumber(target.Value)} {unit}";
                 string? dateNote = hasMedal && date.Length == 10 ? "达成于 " + date : null;
                 AddMedalCard(name, GetString(row, "tier", "bronze"), hasMedal, detail, dateNote, Math.Clamp(progress.Value * 100, 0, 100));
             }
         }
-        AddCard("尚在移植", "更多卡片与徽章", "签到、重置卡、图片、估算花费等暂未计算", null);
+        AddCard("尚在移植", "更多卡片与徽章", "签到、重置卡和图片等暂未计算", null);
     }
 
     void AddQuotaCards(JsonElement collection)
