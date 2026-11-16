@@ -152,6 +152,23 @@ jobs:
           $result = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$budgetTestDir/home" --prices-dir $budgetTestDir | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $result.budget.status -ne 'ok' -or $result.budget.daily.budget_cny -ne '10.000000' -or $null -ne $result.budget.daily.spent_cny) { throw 'Packaged budget smoke test failed' }
           if (Test-Path -LiteralPath "$budgetTestDir/budget-history.json") { throw 'Unknown budget amount should not create history' }
+          $budgetFixture = @'
+          import json, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          sessions = root / 'codex' / 'sessions'
+          sessions.mkdir(parents=True)
+          events = [{'type':'turn_context','payload':{'model':'gpt-5.3-codex'}}, {'timestamp':datetime.now(timezone.utc).isoformat(), 'type':'event_msg', 'payload':{'type':'token_count','info':{'total_token_usage':{'input_tokens':1000000,'cached_input_tokens':0,'output_tokens':0,'reasoning_output_tokens':0}}}}]
+          (sessions / 'synthetic.jsonl').write_text('\n'.join(json.dumps(item) for item in events)+'\n', encoding='utf-8')
+          prices = {'currency':'USD','models':{'gpt-5.3-codex':{'input':3,'cache_read':0.1,'cache_write':0,'output':9}}}
+          (root / 'prices.json').write_text(json.dumps(prices), encoding='utf-8')
+          '@
+          $budgetFixture | ./.venv-win/Scripts/python.exe - $budgetTestDir
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic budget fixture failed' }
+          $measured = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$budgetTestDir/home" --prices-dir $budgetTestDir | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $measured.budget.daily.spent_cny -ne '21.750000' -or -not $measured.budget.daily.exceeded) { throw 'Packaged budget calculation failed' }
+          if (-not (Test-Path -LiteralPath "$budgetTestDir/budget-history.json")) { throw 'Known budget estimate should record daily history' }
       - name: Smoke test complete refresh with an isolated profile
         shell: pwsh
         run: |

@@ -59,6 +59,8 @@
 
 在托盘菜单的「预算与异常提醒」中可选设人民币日／周预算，预算和通知默认关闭。进度按北京时间及本机 API 等价估算计算，美元使用固定汇率 1:7.25；它不是实际账单。周统计使用每天最后一次记录，缺失日期会标记为部分；异常速度在数据不足时不判断。启用后仅在本机保存设置和每日汇总，关闭功能不会自动删除已有历史。系统通知是否显示取决于 Windows 设置。
 
+![预算进度示例，虚构演示数据](windows/assets/budget-preview.png)
+
 <p align="center">
   <img src="windows/assets/pets/gauge.png" width="110" alt="量量">
   <img src="windows/assets/pets/cat.png" width="110" alt="缓存猫">
