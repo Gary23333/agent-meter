@@ -10,11 +10,11 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.34) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.35) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 34**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 35**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 34 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.34) 下载 `AgentMeter-Windows-x64.zip`。
+1. 从 [Alpha 35 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.35) 下载 `AgentMeter-Windows-x64.zip`。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；3D 桌宠以及 WorkBuddy、小米 MiMo、Qoder 和 TRAE 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -65,9 +65,16 @@
   <img src="windows/assets/pets/blob.png" width="110" alt="团团">
 </p>
 
-五套 3D 形象使用原版离线渲染资源，上图由隔离构建机生成；额度未知时圆环保持未知。3D 形象对单击、拖起、放下和右键刷新提供动作反馈；桌宠默认关闭，更多互动仍在移植。
+五套 3D 形象使用原版离线渲染资源，上图由隔离构建机生成；额度未知时圆环保持未知。3D 形象对单击、拖起、放下和右键刷新提供动作反馈，也可主动开启视线跟随光标。桌宠和视线跟随均默认关闭，更多互动仍在移植。
 
 ![桌宠页面，静态预览与虚构演示数据](windows/assets/pet-page-preview.png)
+
+<details>
+<summary>查看形象选择与视线跟随设置</summary>
+
+![七个内置形象和视线跟随设置](windows/assets/pet-follow-preview.png)
+
+</details>
 
 <details>
 <summary>展开查看账户明细、应用与用量截图</summary>
@@ -136,6 +143,7 @@ API 等价估算使用上游内置价格快照或本机自定义美元价格，�
 - 本机历史只在本机处理，界面使用汇总指标，不上传会话记录，也不要求注册 Agent Meter 账户。
 - Codex、Kimi、Claude 查询默认开启；MiniMax、DeepSeek、WorkBuddy、智谱 Coding Plan、火山方舟 Coding Plan、小米 MiMo、Qoder、TRAE、第三方预测、通知和桌宠默认关闭。账户开关不影响本机账本读取。
 - 启用账户查询时会联系对应服务。Codex 使用已有登录，Claude 使用已有本地订阅凭据；MiniMax、DeepSeek、智谱 Coding Plan 密钥及火山方舟 AccessKey 对保存在 Windows 凭据管理器。WorkBuddy、小米 MiMo、Qoder 和 TRAE 分别使用独立的 WebView2 登录目录。TRAE 启用后会在应用内后台打开官网页面以尝试更新短期凭据。
+- 3D 桌宠视线跟随默认关闭；开启后只在桌宠显示时读取当前鼠标位置用于本地动画，不保存或上传位置。
 - Windows 界面尚未开放自动领取或兑换积分。托盘来源设置只保存模式，切换或更新图标不额外联网。
 
 凭据传递方式、网络域名、本地缓存、删除与退出登录的区别，见[隐私与本地数据说明](windows/PRIVACY.md)。安全问题请按 [SECURITY.md](SECURITY.md) 反馈。
