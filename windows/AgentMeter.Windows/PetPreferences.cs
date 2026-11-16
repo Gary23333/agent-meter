@@ -15,7 +15,7 @@ internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y)
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("enabled", out var enabled) ||
                 enabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
                 !root.TryGetProperty("pack", out var pack) || pack.ValueKind != JsonValueKind.String ||
-                pack.GetString() is not ("mochi" or "bit")) return Default;
+                !ValidPack(pack.GetString())) return Default;
             int? Coordinate(string name)
             {
                 if (!root.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) return null;
@@ -27,7 +27,7 @@ internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y)
     }
     public void Save(string directory)
     {
-        if (Pack is not ("mochi" or "bit") || X is < -100000 or > 100000 || Y is < -100000 or > 100000)
+        if (!ValidPack(Pack) || X is < -100000 or > 100000 || Y is < -100000 or > 100000)
             throw new InvalidDataException("桌宠设置无效");
         Directory.CreateDirectory(directory);
         string temporary = Path.Combine(directory, Path.GetRandomFileName());
@@ -46,4 +46,5 @@ internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y)
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
         }
     }
+    internal static bool ValidPack(string? pack) => pack is "mochi" or "bit" or "gauge" or "cat" or "bot" or "tibo" or "blob";
 }

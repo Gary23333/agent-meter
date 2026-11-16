@@ -117,8 +117,13 @@ internal sealed partial class MeterContext : ApplicationContext
     readonly MeterWindow window;
     readonly ToolStripMenuItem petVisible = new("显示桌宠");
     readonly ToolStripMenuItem petMochi = new("麻薯"), petBit = new("比特");
+    readonly Dictionary<string, ToolStripMenuItem> pet3dItems = new()
+    {
+        ["gauge"] = new("量量 · 3D"), ["cat"] = new("缓存猫 · 3D"), ["bot"] = new("码码 · 3D"),
+        ["tibo"] = new("Tibo · 3D"), ["blob"] = new("团团 · 3D")
+    };
     PetPreferences petPreferences;
-    PetWindow? pet;
+    IPetWindow? pet;
     bool quitting;
     public MeterContext(bool demo, bool windowed, bool background = false)
     {
@@ -264,6 +269,13 @@ internal sealed partial class MeterContext : ApplicationContext
             petMochi.Click += (_, _) => ChangePet(petPreferences with { Pack = "mochi" });
             petBit.Click += (_, _) => ChangePet(petPreferences with { Pack = "bit" });
             pets.DropDownItems.AddRange([petVisible, new ToolStripSeparator(), petMochi, petBit]);
+            pets.DropDownItems.Add(new ToolStripSeparator());
+            foreach (var (pack, item) in pet3dItems)
+            {
+                item.Checked = petPreferences.Pack == pack;
+                item.Click += (_, _) => ChangePet(petPreferences with { Pack = pack });
+                pets.DropDownItems.Add(item);
+            }
             menu.Items.Add(pets);
         }
         menu.Items.Add(new ToolStripSeparator());
@@ -298,6 +310,7 @@ internal sealed partial class MeterContext : ApplicationContext
         { window.ShowNotice("无法保存桌宠设置"); return; }
         bool restart = next.Enabled && (!petPreferences.Enabled || next.Pack != petPreferences.Pack);
         petPreferences = next; petVisible.Checked = next.Enabled; petMochi.Checked = next.Pack == "mochi"; petBit.Checked = next.Pack == "bit";
+        foreach (var (pack, item) in pet3dItems) item.Checked = next.Pack == pack;
         if (!next.Enabled) { pet?.Dispose(); pet = null; }
         else if (restart) StartPet();
     }
@@ -321,7 +334,9 @@ internal sealed partial class MeterContext : ApplicationContext
                 else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, new Size(240, 240), Point.Empty, false);
             }
             else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, new Size(240, 240), Point.Empty, false);
-            var instance = new PetWindow(petPreferences.Pack, location);
+            IPetWindow instance = petPreferences.Pack is "mochi" or "bit"
+                ? new PetWindow(petPreferences.Pack, location)
+                : new Pet3dWindow(petPreferences.Pack, location, AccountPreferences.DefaultDirectory);
             instance.OpenRequested += () => ShowPanel(true);
             instance.RefreshRequested += async () => await window.RefreshData();
             instance.HideRequested += () => ChangePet(petPreferences with { Enabled = false });

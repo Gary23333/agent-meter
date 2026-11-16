@@ -358,6 +358,14 @@ try
     var petSettings = new PetPreferences(true, "bit", -1200, 200);
     petSettings.Save(directory);
     if (PetPreferences.Load(directory) != petSettings) throw new InvalidOperationException("桌宠设置未正确保存");
+    foreach (string pack in new[] { "gauge", "cat", "bot", "tibo", "blob" })
+    {
+        var threePetSettings = new PetPreferences(true, pack, 30, 40);
+        threePetSettings.Save(directory);
+        if (PetPreferences.Load(directory) != threePetSettings) throw new InvalidOperationException("3D 桌宠形象未正确保存");
+    }
+    File.WriteAllText(Path.Combine(directory, "pet-settings.json"), "{\"enabled\":true,\"pack\":\"../other\"}");
+    if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("桌宠形象必须限制为内置选择");
     File.WriteAllText(Path.Combine(directory, "pet-settings.json"), "broken");
     if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("损坏的桌宠设置应默认隐藏");
     var alerts = new QuotaAlerts();
@@ -523,6 +531,14 @@ try
     if (PetState.Select(lowPetData.RootElement, 10030).Animation != "alarm" || PetState.Select(lowPetData.RootElement, 11001).Animation != "idle" ||
         PetState.Select(lowPetData.RootElement, 11201).Animation != "idle")
         throw new InvalidOperationException("桌宠应识别低额度，并忽略过期快照");
+    if (PetState.Select(lowPetData.RootElement, 10030).Remaining != 10 || PetState.Select(lowPetData.RootElement, 11001).Remaining is not null ||
+        PetState.Select(noPetData.RootElement, 10000).Remaining is not null)
+        throw new InvalidOperationException("桌宠额度应只使用新鲜且未重置的真实数据");
+    using var multiplePetData = JsonDocument.Parse("""
+    {"observed_at":10000,"account":{"status":"available","quota":{"value":[{"remaining_percent":87},{"remaining_percent":101}]}},"other_accounts":{"A":{"status":"available","quota":{"value":[{"remaining_percent":42},{"remaining_percent":-1}]}}}}
+    """);
+    if (PetState.Select(multiplePetData.RootElement, 10001).Remaining != 42 || PetState.Select(multiplePetData.RootElement, 11201).Remaining is not null)
+        throw new InvalidOperationException("桌宠应使用有效额度的最小值并忽略异常及过期数据");
     using var activePetData = JsonDocument.Parse("""
     {"activity":{"status":"available","apps":[{"last_updated":9500}]}}
     """);

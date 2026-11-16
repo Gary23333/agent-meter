@@ -5,8 +5,16 @@ using System.Text.Json;
 
 namespace AgentMeter.Windows;
 
+internal interface IPetWindow : IDisposable
+{
+    event Action? OpenRequested, RefreshRequested, HideRequested, RenderingFailed;
+    event Action<Point>? PositionChanged;
+    void SetSnapshot(string value);
+    void Show();
+}
+
 /// <summary>使用逐像素透明的原生悬浮窗；透明区域由 Windows 正常穿透。</summary>
-internal sealed class PetWindow : Form
+internal sealed class PetWindow : Form, IPetWindow
 {
     const int Side = 240;
     readonly SpritePet sprite;
