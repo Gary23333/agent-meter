@@ -24,6 +24,13 @@ internal static class NavigationPaintSmoke
 internal sealed partial class MeterWindow
 {
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr handle, int command);
+    [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+    static void ClickOnIsolatedDesktop(Control target)
+    {
+        Cursor.Position = target.PointToScreen(new Point(target.Width / 2, target.Height / 2));
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+    }
     internal async Task SyntheticNavigationPaintAsync(string output)
     {
         if (!demo) throw new InvalidOperationException("仅允许演示数据检查绘制");
@@ -35,8 +42,12 @@ internal sealed partial class MeterWindow
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
         foreach (var (selected, page) in new[] { (0, View.Accounts), (1, View.Applications), (2, View.Usage), (5, View.Pet) })
         {
-            SetView(page); navigationStrip.Invalidate(true); Update();
+            ClickOnIsolatedDesktop(tabs[selected]);
             await Task.Delay(350);
+            Cursor.Position = new Point(1, 1);
+            if (view != page) throw new InvalidOperationException("导航鼠标点击没有切换页面");
+            navigationStrip.Invalidate(true); Update();
+            await Task.Delay(100);
             using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(picture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
             picture.Save(Path.Combine(output, $"navigation-{selected}.png"), ImageFormat.Png);
@@ -51,8 +62,10 @@ internal sealed partial class MeterWindow
                 var strip = content.Controls.OfType<NavigationStrip>().Single(item => item.Name == name);
                 var choices = strip.Controls.OfType<NavigationTab>().ToArray();
                 for (int i = 0; i < choices.Length; i++) CheckTabPixel(picture, choices[i], i == 0);
-                choices[1].PerformClick();
+                ClickOnIsolatedDesktop(choices[1]);
                 await Task.Delay(350);
+                Cursor.Position = new Point(1, 1);
+                await Task.Delay(100);
                 strip = content.Controls.OfType<NavigationStrip>().Single(item => item.Name == name);
                 choices = strip.Controls.OfType<NavigationTab>().ToArray();
                 using var afterClick = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
