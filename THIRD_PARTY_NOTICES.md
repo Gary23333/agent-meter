@@ -39,6 +39,8 @@ SOFTWARE.
 
 The desktop pet (`pets/runtime/`) renders 3D characters with [three.js](https://threejs.org/) r187 (npm `three@0.187.0`), shipped as a curated, tree-shaken single-file build `pets/runtime/vendor/three.pet.min.js`; the export list and the reproducible build recipe are in `pets/runtime/vendor/`. The build includes `RoundedBoxGeometry` from the same package's `examples/jsm`. The app bundle carries the license text at `Contents/Resources/Pet/runtime/vendor/LICENSE.three.txt`.
 
+Windows 便携包中的许可证位置为 `pet/runtime/vendor/LICENSE.three.txt`；3D 桌宠使用上游内置形象和本地渲染资源。
+
 The MIT License
 
 Copyright © 2010-2026 three.js authors
