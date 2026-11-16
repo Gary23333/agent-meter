@@ -774,6 +774,11 @@ internal sealed partial class MeterWindow : Form
         if (!unknownHitCard.Controls.OfType<UsageCompositionRing>().Any(ring => ring.AccessibleName == "用量构成，缓存命中 未知") ||
             !unknownHitCard.Controls.OfType<Label>().Any(label => label.Text == "存在未拆分 Token，缓存命中未知"))
             throw new InvalidOperationException("未拆分 Token 时不能显示缓存命中率");
+        var unknownCost = content.Controls.OfType<TableLayoutPanel>().Where(row => row.Name == "usage-summary")
+            .SelectMany(row => row.Controls.OfType<RoundedCard>()).SelectMany(card => card.Controls.OfType<Label>()).ToArray();
+        if (!unknownCost.Any(label => label.Name == "usage-cost-total" && label.Text == "—") ||
+            !unknownCost.Any(label => label.Text == "非账单 · 暂无金额"))
+            throw new InvalidOperationException("缺失费用不能显示为零或真实账单");
         using (var snapshot = JsonDocument.Parse(fullUsageSnapshot)) Render(snapshot.RootElement);
         SetView(View.Report);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "+25%"))
