@@ -755,6 +755,13 @@ internal sealed partial class MeterWindow : Form
         using (var snapshot = JsonDocument.Parse(partialZero.ToJsonString())) Render(snapshot.RootElement);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "已读取来源为零，部分来源不完整"))
             throw new InvalidOperationException("部分来源缺失时不能断言没有消耗");
+        var unknownHit = JsonNode.Parse(fullUsageSnapshot)!;
+        unknownHit["history"] = JsonNode.Parse("""{"A":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":100,"fresh_input":40,"cache_read":30,"unclassified":30}}}}}}""");
+        using (var snapshot = JsonDocument.Parse(unknownHit.ToJsonString())) Render(snapshot.RootElement);
+        var unknownHitCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-breakdown");
+        if (!unknownHitCard.Controls.OfType<UsageCompositionRing>().Any(ring => ring.AccessibleName == "用量构成，缓存命中 未知") ||
+            !unknownHitCard.Controls.OfType<Label>().Any(label => label.Text == "存在未拆分 Token，缓存命中未知"))
+            throw new InvalidOperationException("未拆分 Token 时不能显示缓存命中率");
         using (var snapshot = JsonDocument.Parse(fullUsageSnapshot)) Render(snapshot.RootElement);
         SetView(View.Report);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "+25%"))
@@ -2196,6 +2203,11 @@ internal sealed partial class MeterWindow : Form
             box.Controls.AddRange([dot, name, value]);
         }
         box.Resize += (_, _) => { note.Left = Math.Max(145, box.ClientSize.Width - 160); note.Width = Math.Max(0, box.ClientSize.Width - note.Left - 16); };
+        var formula = new Label { Text = parts[4] > 0 ? "存在未拆分 Token，缓存命中未知" : UsageBreakdown.CacheHitRate(parts).HasValue
+                ? "缓存命中 = 缓存读取 ÷ 已分类输入" : "没有可计算的输入，缓存命中未知",
+            AutoSize = false, AutoEllipsis = true, Height = 18, Location = new Point(17, 188), ForeColor = Muted,
+            Font = new Font(Font.FontFamily, 8F) };
+        box.Resize += (_, _) => formula.Width = Math.Max(0, box.ClientSize.Width - 34); box.Controls.Add(formula);
         popupTips.SetToolTip(ring, "缓存命中 = 缓存读取 ÷（新输入 + 缓存读取 + 缓存写入）；未拆分数据存在时不计算");
         StyleCard(box); content.Controls.Add(box);
     }
