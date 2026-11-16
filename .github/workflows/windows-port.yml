@@ -171,10 +171,11 @@ jobs:
       - name: Smoke test activity refresh lifecycle with synthetic data
         shell: pwsh
         run: |
-          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--activity-ui-smoke' -WindowStyle Hidden -PassThru
+          $errors = "$env:RUNNER_TEMP/activity-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--activity-ui-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
           try {
             if (-not $app.WaitForExit(30000)) { throw 'Activity refresh smoke test timed out' }
-            if ($app.ExitCode -ne 0) { throw "Activity refresh smoke test failed ($($app.ExitCode))" }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw "Activity refresh smoke test failed ($($app.ExitCode))" }
           } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
       - name: Smoke test tray popup lifecycle with synthetic data
         shell: pwsh

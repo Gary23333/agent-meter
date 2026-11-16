@@ -118,8 +118,8 @@ internal static class Program
         using var window = new MeterWindow(demo: true, windowed: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) };
         window.Shown += async (_, _) =>
         {
-            try { await window.SyntheticActivitySmokeAsync(); }
-            catch (Exception) { Environment.ExitCode = 1; }
+            try { await window.SyntheticActivitySmokeAsync(); await window.SyntheticRefreshPartsSmokeAsync(); }
+            catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
             finally { window.Close(); }
         };
         Application.Run(window);
@@ -1217,7 +1217,6 @@ internal sealed partial class MeterWindow : Form
             }
             else
             {
-                bool partialFailure = false;
                 accountCancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
                 string? accountInput = null; bool profilesInvalid = false;
                 if (preferences.MiniMax)
@@ -1267,128 +1266,40 @@ internal sealed partial class MeterWindow : Form
                     deepseekTask = RunCollector("--deepseek-only", accountCancellation.Token, secretInput);
                     secretInput = null;
                 }
-                JsonObject combined;
-                try { combined = JsonNode.Parse(await accountTask)!.AsObject(); }
-                catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                {
-                    partialFailure = true;
-                    combined = new JsonObject { ["observed_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                        ["account"] = new JsonObject { ["status"] = "error", ["reason"] = "account_read_failed" } };
-                }
-                if (profilesInvalid)
-                {
-                    if (combined["other_accounts"] is not JsonObject) combined["other_accounts"] = new JsonObject();
-                    combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
-                }
-                if (combined["other_accounts"] is not JsonObject) combined["other_accounts"] = new JsonObject();
-                combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = preferences.DeepSeek ? "loading" : "disabled" };
-                combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = preferences.WorkBuddy ? "loading" : "disabled" };
-                combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = preferences.ZCode ? "loading" : "disabled" };
-                combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = preferences.Volcengine ? "loading" : "disabled" };
-                combined["other_accounts"]!["MiMo"] = new JsonObject { ["status"] = preferences.MiMo ? "loading" : "disabled" };
-                combined["other_accounts"]!["Qoder CN"] = new JsonObject { ["status"] = preferences.Qoder ? "loading" : "disabled" };
-                combined["other_accounts"]!["TRAE CN"] = new JsonObject { ["status"] = preferences.Trae ? "loading" : "disabled" };
+                var combined = new JsonObject {
+                    ["observed_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    ["account"] = new JsonObject { ["status"] = "loading" },
+                    ["other_accounts"] = new JsonObject {
+                        ["Kimi Code"] = new JsonObject { ["status"] = "loading" },
+                        ["Claude Code"] = new JsonObject { ["status"] = "loading" },
+                        ["MiniMax Code"] = new JsonObject { ["status"] = "loading" },
+                        ["DeepSeek API"] = new JsonObject { ["status"] = preferences.DeepSeek ? "loading" : "disabled" },
+                        ["WorkBuddy"] = new JsonObject { ["status"] = preferences.WorkBuddy ? "loading" : "disabled" },
+                        ["ZCode"] = new JsonObject { ["status"] = preferences.ZCode ? "loading" : "disabled" },
+                        ["Volcengine"] = new JsonObject { ["status"] = preferences.Volcengine ? "loading" : "disabled" },
+                        ["MiMo"] = new JsonObject { ["status"] = preferences.MiMo ? "loading" : "disabled" },
+                        ["Qoder CN"] = new JsonObject { ["status"] = preferences.Qoder ? "loading" : "disabled" },
+                        ["TRAE CN"] = new JsonObject { ["status"] = preferences.Trae ? "loading" : "disabled" }
+                    },
+                    ["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } },
+                    ["forecast"] = new JsonObject { ["status"] = forecastEnabled ? "loading" : "disabled" },
+                    ["quota_cards"] = new JsonObject { ["status"] = "loading" },
+                    ["local_medals"] = new JsonObject { ["status"] = "loading" }
+                };
+                if (profilesInvalid) combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
                 ApplyAccountPreferences(combined);
-                string? cardInput = CardInput.Create(combined);
-                var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
-                cardInput = null;
-                combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };
-                combined["forecast"] = new JsonObject { ["status"] = forecastEnabled ? "loading" : "disabled" };
-                combined["quota_cards"] = new JsonObject { ["status"] = "loading" };
-                combined["local_medals"] = new JsonObject { ["status"] = "loading" };
-                using (var first = JsonDocument.Parse(combined.ToJsonString())) { Render(first.RootElement); NotifyLowQuota(first.RootElement); }
-                status.Text = "账户读取完成 · 正在扫描本机会话记录…";
-                if (deepseekTask is not null)
-                {
-                    try { combined["other_accounts"]!["DeepSeek API"] = JsonNode.Parse(await deepseekTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement);
-                }
-                if (zcodeTask is not null)
-                {
-                    try { combined["other_accounts"]!["ZCode"] = JsonNode.Parse(await zcodeTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["other_accounts"]!["ZCode"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
-                }
-                if (volcengineTask is not null)
-                {
-                    try { combined["other_accounts"]!["Volcengine"] = JsonNode.Parse(await volcengineTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["other_accounts"]!["Volcengine"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
-                }
-                if (mimoTask is not null)
-                {
-                    try { combined["other_accounts"]!["MiMo"] = JsonNode.Parse(await mimoTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["other_accounts"]!["MiMo"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
-                }
-                if (qoderTask is not null)
-                {
-                    try { combined["other_accounts"]!["Qoder CN"] = JsonNode.Parse(await qoderTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["other_accounts"]!["Qoder CN"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
-                }
-                if (traeTask is not null)
-                {
-                    try { combined["other_accounts"]!["TRAE CN"] = JsonNode.Parse(await traeTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["other_accounts"]!["TRAE CN"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement); NotifyLowQuota(accountSnapshot.RootElement);
-                }
-                try
-                {
-                    var local = JsonNode.Parse(await historyTask)!.AsObject();
-                    combined["history"] = local["history"]?.DeepClone();
-                    combined["local_credits"] = local["local_credits"]?.DeepClone();
-                    combined["image_files"] = local["image_files"]?.DeepClone();
-                    combined["daily_trend"] = local["daily_trend"]?.DeepClone();
-                    combined["calendar_report"] = local["calendar_report"]?.DeepClone();
-                    combined["local_medals"] = local["local_medals"]?.DeepClone();
-                    combined["activity"] = local["activity"]?.DeepClone();
-                    lastActivityAttempt = DateTimeOffset.UtcNow;
-                    combined["price_status"] = local["price_status"]?.DeepClone();
-                }
-                catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                {
-                    partialFailure = true;
-                    combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "error", ["reason"] = "history_scan_failed" } };
-                    combined["local_medals"] = new JsonObject { ["status"] = "error", ["incomplete"] = true, ["medals"] = new JsonArray() };
-                }
-                ApplyAccountPreferences(combined);
-                using (var localSnapshot = JsonDocument.Parse(combined.ToJsonString())) Render(localSnapshot.RootElement);
-                status.Text = partialFailure ? "部分数据读取失败 · 请稍后刷新" : $"更新于 {DateTime.Now:HH:mm:ss}  ·  本机历史 ≠ 账户总用量";
-                try { combined["quota_cards"] = JsonNode.Parse(await cardTask); }
-                catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                { combined["quota_cards"] = new JsonObject { ["status"] = "error" }; }
-                ApplyAccountPreferences(combined);
-                using (var cardsSnapshot = JsonDocument.Parse(combined.ToJsonString())) Render(cardsSnapshot.RootElement);
-                if (workbuddyTask is not null)
-                {
-                    try { combined["other_accounts"]!["WorkBuddy"] = JsonNode.Parse(await workbuddyTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var workbuddySnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(workbuddySnapshot.RootElement); NotifyLowQuota(workbuddySnapshot.RootElement);
-                }
-                if (forecastTask is not null)
-                {
-                    try { combined["forecast"] = JsonNode.Parse(await forecastTask); }
-                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
-                    { combined["forecast"] = new JsonObject { ["status"] = "error" }; }
-                    ApplyAccountPreferences(combined);
-                    using var final = JsonDocument.Parse(combined.ToJsonString()); Render(final.RootElement);
-                }
+                using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement);
+                var pending = new List<(string Name, Task<string> Task)> { ("accounts", accountTask), ("history", historyTask) };
+                if (deepseekTask is not null) pending.Add(("DeepSeek API", deepseekTask));
+                if (zcodeTask is not null) pending.Add(("ZCode", zcodeTask));
+                if (volcengineTask is not null) pending.Add(("Volcengine", volcengineTask));
+                if (workbuddyTask is not null) pending.Add(("WorkBuddy", workbuddyTask));
+                if (mimoTask is not null) pending.Add(("MiMo", mimoTask));
+                if (qoderTask is not null) pending.Add(("Qoder CN", qoderTask));
+                if (traeTask is not null) pending.Add(("TRAE CN", traeTask));
+                if (forecastTask is not null) pending.Add(("forecast", forecastTask));
+                await ApplyRefreshPartsAsync(combined, pending, false, profilesInvalid, snapshot =>
+                    RunCollector("--cards-update", accountCancellation.Token, CardInput.Create(snapshot)));
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException or ObjectDisposedException)
@@ -1612,6 +1523,7 @@ internal sealed partial class MeterWindow : Form
         }
         else if (codexDetails.HasContent) AddQuotaGroup("CODEX", [], GetValue(localHistories, "Codex"), codexDetails);
         else if (GetString(account, "status", "") == "disabled") AddCard("CODEX", "账户查询已关闭", "可在托盘菜单重新开启", null);
+        else if (GetString(account, "status", "") == "loading") AddCard("CODEX", "正在读取额度", "正在查询账户", null);
         else AddCard("CODEX", "暂时无法获取额度", Reason(account), null);
         var otherAccounts = GetValue(root, "other_accounts");
         var kimiAccount = GetValue(otherAccounts, "Kimi Code");
@@ -1637,6 +1549,7 @@ internal sealed partial class MeterWindow : Form
             }
             else if (AccountDetails.Read("Kimi Code", kimiAccount).HasContent) AddQuotaGroup("KIMI CODE", [], GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount));
             else if (kimiStatus == "disabled") AddCard("KIMI CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
+            else if (kimiStatus == "loading") AddCard("KIMI CODE", "正在读取额度", "正在查询账户", null);
             else if (kimiStatus is "unavailable" or "error") AddCard("KIMI CODE", "暂时无法获取额度", Reason(kimiAccount), null);
 
         }
@@ -1655,6 +1568,8 @@ internal sealed partial class MeterWindow : Form
             if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"), AccountDetails.Read("Claude Code", claudeAccount));
         }
         else if (GetString(claudeAccount, "status", "") == "disabled") AddCard("CLAUDE CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
+        else if (GetString(claudeAccount, "status", "") == "loading") AddCard("CLAUDE CODE", "正在读取额度", "正在查询账户", null);
+        else if (GetString(claudeAccount, "status", "") == "error") AddCard("CLAUDE CODE", "暂时无法获取额度", Reason(claudeAccount), null);
         else if (GetString(claudeAccount, "reason", "") is not ("" or "claude_subscription_login_missing"))
             AddCard("CLAUDE CODE", "暂时无法获取额度", Reason(claudeAccount), null);
         var minimaxAccount = GetValue(otherAccounts, "MiniMax Code");
@@ -1925,6 +1840,8 @@ internal sealed partial class MeterWindow : Form
             }
             AddQuotaGroup(prefix, rows);
         }
+        else if (GetString(account, "status", "") == "loading")
+            AddCard(prefix, "正在读取额度", "正在查询账户", null);
         else if (GetString(account, "status", "") is "unavailable" or "error")
             AddCard(prefix, "暂时无法获取额度", Reason(account), null);
         else if (GetString(account, "status", "") is "available" or "partial")
