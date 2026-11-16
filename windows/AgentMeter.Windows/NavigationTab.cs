@@ -2,18 +2,18 @@ using System.Drawing.Drawing2D;
 
 namespace AgentMeter.Windows;
 
-/// <summary>保留标准按钮的键盘与辅助功能行为，用圆角和悬停状态统一页面入口。</summary>
-internal sealed class NavigationTab : Button
+/// <summary>独立绘制页面入口，并提供键盘与辅助功能操作。</summary>
+internal sealed class NavigationTab : Control
 {
     VisualTheme theme = VisualThemes.Find("aurora");
     bool selected, hovering;
     internal bool IsSelected => selected;
     public NavigationTab()
     {
-        // 子按钮使用不透明底色，避免 Windows 实时重绘时把父容器和旧文字重复绘制到每个按钮上。
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        // 不依赖系统按钮的原生绘制，避免容器重绘时重复合成相邻选项。
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
         DoubleBuffered = true;
-        FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
+        TabStop = true; AccessibleRole = AccessibleRole.PageTab;
     }
     public void SetAppearance(VisualTheme value, bool isSelected)
     {
@@ -23,6 +23,28 @@ internal sealed class NavigationTab : Button
     }
     protected override void OnMouseEnter(EventArgs e) { hovering = true; base.OnMouseEnter(e); Invalidate(); }
     protected override void OnMouseLeave(EventArgs e) { hovering = false; base.OnMouseLeave(e); Invalidate(); }
+    protected override void OnMouseDown(MouseEventArgs e) { if (e.Button == MouseButtons.Left) Focus(); base.OnMouseDown(e); }
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
+    protected override bool IsInputKey(Keys keyData) => (keyData & Keys.KeyCode) is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Enter or Keys.Space) { e.Handled = true; e.SuppressKeyPress = true; }
+    }
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.KeyCode is Keys.Enter or Keys.Space) { e.Handled = true; PerformClick(); }
+    }
+    public void PerformClick() { if (Enabled && Visible) OnClick(EventArgs.Empty); }
+    protected override AccessibleObject CreateAccessibilityInstance() => new TabAccessibleObject(this);
+    sealed class TabAccessibleObject(NavigationTab owner) : ControlAccessibleObject(owner)
+    {
+        public override string? DefaultAction => "切换";
+        public override AccessibleStates State => base.State | (owner.selected ? AccessibleStates.Selected : AccessibleStates.None);
+        public override void DoDefaultAction() => owner.PerformClick();
+    }
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         using var background = new SolidBrush(theme.Card);

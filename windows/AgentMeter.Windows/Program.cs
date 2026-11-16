@@ -83,8 +83,9 @@ internal static class Program
         }
         bool demo = args.Contains("--demo");
         if (demo) { Application.Run(new MeterContext(true, args.Contains("--window"), args.Contains("--background"))); return; }
-        using var mutex = new Mutex(true, "Local\\AgentMeterWindows", out bool first);
         using var signal = new SingleInstanceSignal(SingleInstanceSignal.DefaultName);
+        // 先持有信号，再争抢单实例锁，避免后启动的进程在前者创建信号前通知并退出。
+        using var mutex = new Mutex(true, "Local\\AgentMeterWindows", out bool first);
         if (!first) { signal.Notify(); return; }
         using var appContext = new MeterContext(false, args.Contains("--window"), args.Contains("--background"));
         signal.Listen(appContext.ActivateFromOtherInstance);
@@ -495,7 +496,7 @@ internal sealed partial class MeterWindow : Form
         header.Resize += (_, _) => { gauges.Width = Math.Max(0, header.ClientSize.Width - 32); LayoutTabs(); };
         foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab })
         {
-            tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
+            tab.ForeColor = Primary;
             tab.Font = tabRegular; tab.Size = new Size(86, 36);
         }
         gauges.Location = new Point(16, 72); gauges.Size = new Size(406, 116);
@@ -815,7 +816,7 @@ internal sealed partial class MeterWindow : Form
             .Any(label => label.Name == "app-details-Codex" && label.Text.Contains("本机记录不按登录账户区分")))
             throw new InvalidOperationException("application_expand_failed");
         SavePreview("aurora-applications-expanded-narrow");
-        var recentFilter = content.Controls.OfType<Panel>().SelectMany(panel => panel.Controls.OfType<Button>())
+        var recentFilter = content.Controls.OfType<Panel>().SelectMany(panel => panel.Controls.OfType<NavigationTab>())
             .FirstOrDefault(button => button.Name == "app-filter-Recent") ?? throw new InvalidOperationException("application_filter_missing");
         recentFilter.PerformClick(); Application.DoEvents();
         if (applicationFilter != ApplicationFilter.Recent || content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
