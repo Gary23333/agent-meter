@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 38 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.38) 对应提交 `cb98224`；Windows 和跨平台检查通过。用量双卡片、周期切换、未知费用与窄屏标签在隔离环境检查，深浅截图已核对，便携包独立解压与模拟数据验证通过。真实账本与实体设备仍待验收。SHA-256：`996f4c9beb5b907483fbd378a84eaea3da11b528d9c4a449722725eb5487e03c`。
+
 - [Alpha 37 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.37) 对应提交 `82c7c36`；Windows 和跨平台检查通过。模拟账本的 Token 构成、缓存比例、异常值及缺失状态通过检查，深浅主题和窄弹层截图已核对，便携包独立解压验证通过。真实账本与实体设备仍待验收。SHA-256：`7af19f87106592b3881358319e70eaaa6b15469f33865ff3775bd8195f6d0575`。
 
 - [Alpha 36 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.36) 对应提交 `d461a07`；Windows 和跨平台检查通过。两类桌宠的画面通知、页面同步、隐藏回退及窄弹层截图在隔离环境检查，便携包独立解压与模拟数据验证通过。实体设备的动画性能、透明穿透、多屏与高 DPI 仍待验收。SHA-256：`164e4122bdf2c2d888d972d62ed5cb553e0c0fb2b6d7e88a90f8bb5c8b651aee`。
