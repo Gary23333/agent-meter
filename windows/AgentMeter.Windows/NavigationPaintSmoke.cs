@@ -38,6 +38,14 @@ internal sealed partial class MeterWindow
         // 构建进程本身以隐藏方式启动；测试窗口必须显式显示到隔离桌面。
         ShowWindow(Handle, 5); BringToFront(); Activate();
         await RefreshData();
+        content.AutoScrollPosition = new Point(0, 160);
+        await Task.Delay(100);
+        int scrollBefore = -content.AutoScrollPosition.Y;
+        using (var snapshot = System.Text.Json.JsonDocument.Parse(lastSnapshot!)) Render(snapshot.RootElement);
+        await Task.Delay(100);
+        int scrollAfter = -content.AutoScrollPosition.Y;
+        if (scrollBefore < 80 || Math.Abs(scrollAfter - scrollBefore) > 2)
+            throw new InvalidOperationException($"scroll_refresh before={scrollBefore} after={scrollAfter}");
         // 只在隔离构建机运行，移开鼠标以免悬停色干扰像素判断。
         Cursor.Position = new Point(1, 1);
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
