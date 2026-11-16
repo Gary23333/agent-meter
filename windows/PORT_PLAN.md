@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 31 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.31) 对应提交 `7b1184d`；Windows 和跨平台检查通过。模拟 PNG 文件的时间统计、重定向保护、图片徽章及隐私投影已检查，便携包隔离解压通过；真实图片目录与实体设备仍待验收。SHA-256：`f807f37c5872f2c027cf44f7a9883d2b1b7f6c59cea4bab2f9f072e9b152c5ef`。
+
 - [Alpha 30 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.30) 对应提交 `6142229`；Windows 和跨平台检查通过。完整与缺失价格的模拟账本、固定汇率、花费徽章界面和独立解压包已检查；真实账本与实体设备仍待验收。SHA-256：`f5fb94375b8e5c6a29f6ab8849feb0a7255957987e16f58101b8101670de7fb7`。
 
 - [Alpha 29 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.29) 对应提交 `dbf6297`；Windows 和跨平台检查通过。保留测试域名用于验证独立 WebView 的模拟请求头捕获、关闭来源和资料清除，模拟账户接口、缺失数据界面和便携包也已检查；真实 TRAE 登录及凭据续取尚待验收。SHA-256：`e2ec785827bf43fd7b92a4b6165cd44d31bf3c6afd144315a526a8aa975dde74`。
