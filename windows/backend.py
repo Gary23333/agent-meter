@@ -33,6 +33,7 @@ from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
 from windows.forecast import forecast_summary
 from windows.cost_medals import daily_cost_metric
+from windows.codex_image_files import image_files, medal_image_source
 from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, save_ledger, track_windows
 from agent_meter.deepseek import collect_deepseek
 from agent_meter.web_sources import collect_workbuddy, collect_qoder_web, collect_trae
@@ -365,13 +366,15 @@ def collect(local_only=False, home=None, account_only=False, disabled_accounts=f
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {name: executor.submit(guarded, fn) for name, fn in jobs.items()}
         qoder = executor.submit(guarded, lambda: metric(collect_qoder_credits(home / ".qoder-cn" / "projects", now)))
+        codex_root = Path(os.environ.get("CODEX_HOME") or home / ".codex")
+        images = executor.submit(guarded, lambda: image_files(codex_root / "generated_images", now))
         account = None if local_only else executor.submit(account_sources, home, now, disabled_accounts, enable_minimax, saved_accounts)
         account_values = None if account is None else account.result()
         return {"version": 1, "observed_at": int(now),
                 "account": {"status": "disabled", "reason": "local_only"} if account is None else account_values[0],
                 "other_accounts": {} if account_values is None else account_values[1],
                 "history": {name: future.result() for name, future in futures.items()},
-                "local_credits": {"Qoder CN": qoder.result()}}
+                "local_credits": {"Qoder CN": qoder.result()}, "image_files": images.result()}
 
 
 def recent_daily_trend(result):
@@ -553,16 +556,23 @@ def local_medals(result, price_table=None):
         if cost is None: cost_incomplete = True
         else: source["metrics"]["cost"] = cost
         sources.append(source)
+    token_sources = len(sources)
+    image = result.get("image_files")
+    image_source = medal_image_source(image, today)
+    image_status = "available" if image_source is not None else "incomplete" if isinstance(image, dict) and image.get("status") in {"available", "partial", "error"} else "not_available"
+    if image_source is not None: sources.append(image_source)
     if not sources:
-        return {"medals": [], "sources": 0, "incomplete": True} if incomplete else None
+        return {"medals": [], "sources": 0, "incomplete": True, "image_status": image_status} if incomplete or image_status == "incomplete" else None
     all_medals, stats = medals(sources, None, result["observed_at"])
-    available = {"day_peak", "lifetime", "streak", "apps", "record"}
-    if not incomplete and not cost_incomplete:
+    available = {"day_peak", "lifetime", "streak", "apps", "record"} if token_sources else set()
+    if token_sources and not incomplete and not cost_incomplete:
         available.update({"cost_day", "cost_month", "cost_life"})
+    if image_source is not None: available.update({"img_day", "img_life", "img_streak"})
     rows = [{key: medal[key] for key in ("id", "name", "category", "category_name", "target", "unit", "tier", "value", "progress", "earned", "earned_on")}
             for medal in all_medals if medal["category"] in available]
     return {"medals": rows, "sources": len(sources), "incomplete": incomplete,
-            "cost_status": "available" if not incomplete and not cost_incomplete else "incomplete",
+            "cost_status": "not_available" if not token_sources else "available" if not incomplete and not cost_incomplete else "incomplete",
+            "image_status": image_status,
             "earned": sum(item["earned"] for item in rows), "total": len(rows),
             "active_days": stats["active_days"], "timezone": "Asia/Shanghai"}
 
@@ -784,6 +794,20 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
         if estimates:
             compact["history"][name]["estimates"] = estimates
             if "today" in estimates: compact["history"][name]["estimate"] = estimates["today"]
+    image = result.get("image_files")
+    if isinstance(image, dict):
+        state, value = image.get("status"), image.get("value")
+        if state in {"available", "partial"} and isinstance(value, dict):
+            periods = value.get("periods")
+            if isinstance(periods, dict) and all(isinstance(periods.get(key), dict) and
+                isinstance(periods[key].get("files"), int) and not isinstance(periods[key]["files"], bool) and
+                0 <= periods[key]["files"] <= 50000 for key in ("today", "7d", "30d", "all")) and \
+                periods["today"]["files"] <= periods["7d"]["files"] <= periods["30d"]["files"] <= periods["all"]["files"]:
+                compact["image_files"] = {"status": state, "reason": image.get("reason"),
+                    "value": {"periods": {key: {"files": periods[key]["files"]} for key in ("today", "7d", "30d", "all")},
+                              "basis": "codex_generated_images_png_files", "time_basis": "file_modified_time"}}
+        elif state in {"unavailable", "error"}:
+            compact["image_files"] = {"status": state, "reason": image.get("reason"), "value": None}
     compact["daily_trend"] = recent_daily_trend(result)
     compact["calendar_report"] = calendar_report(result)
     try:

@@ -56,7 +56,7 @@ The table describes the current `main` branch. Check the release notes for the e
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
-| Codex | Quota and reset time; credits and reset cards when available | Codex sessions and archives |
+| Codex | Quota and reset time; credits and reset cards when available | Codex sessions, archives and local image-directory PNG counts |
 | Claude Code | Existing local subscription credential (synthetic validation) | Local project sessions |
 | Gemini CLI | Not yet | Local chat sessions |
 | WorkBuddy | Experimental opt-in web login and credit lookup (synthetic validation) | Local project sessions |

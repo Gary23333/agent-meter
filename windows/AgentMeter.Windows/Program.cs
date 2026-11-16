@@ -634,6 +634,8 @@ internal sealed partial class MeterWindow : Form
                 throw new InvalidOperationException("用量周期切换或汇总错误：" + period);
             if (period == "7d" && !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text.Contains("近 7 天 API 等价估算 $12.3")))
                 throw new InvalidOperationException("用量周期费用未切换");
+            if (period == "7d" && !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "8 个 · 近 7 天"))
+                throw new InvalidOperationException("图片文件统计未跟随用量周期");
             var totalCost = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Single(label => label.Name == "usage-cost-total");
             if (period == "7d" && totalCost.Text != "$12.3" || period == "today" && totalCost.Text != "$2.464")
                 throw new InvalidOperationException("用量页首屏费用未跟随周期");
@@ -693,11 +695,15 @@ internal sealed partial class MeterWindow : Form
         string medalSnapshot = lastSnapshot!;
         var noCost = JsonNode.Parse(medalSnapshot)!.AsObject();
         noCost["local_medals"]!["cost_status"] = "incomplete";
-        ((JsonArray)noCost["local_medals"]!["medals"]!).RemoveAt(3);
+        ((JsonArray)noCost["local_medals"]!["medals"]!).RemoveAt(4);
         using (var snapshot = JsonDocument.Parse(noCost.ToJsonString())) Render(snapshot.RootElement);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "来源、逐日模型拆分或价格不完整，暂不计算"))
             throw new InvalidOperationException("价格不完整时应隐藏花费徽章并提示原因");
         using (var snapshot = JsonDocument.Parse(medalSnapshot)) Render(snapshot.RootElement);
+        var imageMedal = content.Controls.OfType<RoundedCard>().Single(card => card.Controls.OfType<Label>().Any(label => label.Text == "灵感速写"));
+        if (!imageMedal.Controls.OfType<Label>().Any(label => label.Text == "当前 12 / 10 个 PNG 文件"))
+            throw new InvalidOperationException("图片徽章的文件数量显示错误");
+        content.ScrollControlIntoView(imageMedal); Application.DoEvents(); SavePreview("aurora-image-medal");
         bool HasCard(string name) => content.Controls.OfType<RoundedCard>()
             .SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == name);
         var toggle = content.Controls.OfType<Button>().FirstOrDefault(button => button.Text == "查看全部额度卡片")
@@ -1049,8 +1055,11 @@ internal sealed partial class MeterWindow : Form
                 sample["observed_at"] = ForecastDemoNow.ToUnixTimeSeconds();
                 AddDemoAccountDetails(sample);
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
+                sample["image_files"] = JsonNode.Parse("""{"status":"available","value":{"periods":{"today":{"files":4},"7d":{"files":8},"30d":{"files":12},"all":{"files":12}}}}""");
+                sample["local_medals"]!["image_status"] = "available";
                 sample["local_medals"]!["cost_status"] = "available";
-                sample["local_medals"]!["earned"] = 2; sample["local_medals"]!["total"] = 4;
+                sample["local_medals"]!["earned"] = 3; sample["local_medals"]!["total"] = 5;
+                ((JsonArray)sample["local_medals"]!["medals"]!).Add(JsonNode.Parse("""{"name":"灵感速写","category":"img_day","category_name":"单日出图","tier":"bronze","target":10,"unit":"images","value":12,"progress":1,"earned":true,"earned_on":"2026-11-12"}"""));
                 ((JsonArray)sample["local_medals"]!["medals"]!).Add(JsonNode.Parse("""{"name":"小试牛刀","category":"cost_day","category_name":"单日估算花费","tier":"bronze","target":100,"unit":"cny","value":145.5,"progress":1,"earned":true,"earned_on":"2026-11-12"}"""));
                 sample["quota_cards"] = JsonNode.Parse("""{"status":"available","distinct":1,"cards":[{"id":"q5_50","name":"热身完毕","series":"five_hour","rarity":"common","description":"5 小时窗口用量达到 50% 即掉落","count":2},{"id":"q5_80","name":"八分饱","series":"five_hour","rarity":"rare","description":"5 小时窗口用量达到 80% 即掉落","count":0}]}""");
                 using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
@@ -1191,6 +1200,7 @@ internal sealed partial class MeterWindow : Form
                     var local = JsonNode.Parse(await historyTask)!.AsObject();
                     combined["history"] = local["history"]?.DeepClone();
                     combined["local_credits"] = local["local_credits"]?.DeepClone();
+                    combined["image_files"] = local["image_files"]?.DeepClone();
                     combined["daily_trend"] = local["daily_trend"]?.DeepClone();
                     combined["calendar_report"] = local["calendar_report"]?.DeepClone();
                     combined["local_medals"] = local["local_medals"]?.DeepClone();
@@ -1560,6 +1570,7 @@ internal sealed partial class MeterWindow : Form
             if (visible == 0) AddCard("本机记录", "暂无数据", "未发现支持的会话记录", null);
             AddModelRanking(history);
         }
+        AddCodexImageFiles(GetValue(root, "image_files"));
         var creditsHistory = GetValue(root, "local_credits");
         if (creditsHistory.ValueKind == JsonValueKind.Object)
         {
@@ -1598,7 +1609,8 @@ internal sealed partial class MeterWindow : Form
         var medals = GetValue(collection, "medals");
         if (medals.ValueKind != JsonValueKind.Array || medals.GetArrayLength() == 0)
         {
-            string note = GetValue(collection, "incomplete").ValueKind == JsonValueKind.True
+            string note = GetString(collection, "image_status", "") == "incomplete" ? "部分图片文件未能统计，请稍后刷新" :
+                GetValue(collection, "incomplete").ValueKind == JsonValueKind.True
                 ? "部分账本未能读取，请稍后刷新" : "需要可读取的本机逐日用量账本";
             AddCard("本机徽章", "暂无可用记录", note, null);
             return;
@@ -1606,18 +1618,22 @@ internal sealed partial class MeterWindow : Form
         var earned = GetNumber(collection, "earned"); var total = GetNumber(collection, "total");
         var sources = GetNumber(collection, "sources");
         AddCard("本机徽章", earned.HasValue && total.HasValue ? $"{earned:0} / {total:0} 已获得" : "正在计算",
-                sources.HasValue ? $"基于 {sources:0} 个可读取账本" : "基于可读取账本", null);
+                sources.HasValue ? $"基于 {sources:0} 个可读取来源" : "基于可读取来源", null);
         if (GetValue(collection, "incomplete").ValueKind == JsonValueKind.True)
             AddCard("读取范围", "部分记录不完整", "徽章只反映已读取的数据", null);
         if (GetString(collection, "cost_status", "") == "incomplete")
             AddCard("估算花费徽章", "数据不完整", "来源、逐日模型拆分或价格不完整，暂不计算", null);
+        if (GetString(collection, "image_status", "") == "incomplete")
+            AddCard("图片文件徽章", "数据不完整", "部分文件无法统计，暂不计算", null);
         foreach (var (category, title) in new[] { ("day_peak", "单日巅峰"), ("lifetime", "累计里程"),
             ("streak", "连续出勤"), ("apps", "多端并用"), ("record", "个人纪录"),
-            ("cost_day", "单日估算花费"), ("cost_month", "月度估算花费"), ("cost_life", "累计估算价值") })
+            ("cost_day", "单日估算花费"), ("cost_month", "月度估算花费"), ("cost_life", "累计估算价值"),
+            ("img_day", "单日图片文件"), ("img_life", "累计图片文件"), ("img_streak", "连续图片文件") })
         {
             var rows = medals.EnumerateArray().Where(row => GetString(row, "category", "") == category).ToArray();
             if (rows.Length == 0) continue;
-            AddHeading(title, category.StartsWith("cost_", StringComparison.Ordinal) ? "按当前基础价格及固定汇率估算 · 非账单" :
+            AddHeading(title, category.StartsWith("img_", StringComparison.Ordinal) ? "按文件修改时间统计 · 不等于生成调用" :
+                category.StartsWith("cost_", StringComparison.Ordinal) ? "按当前基础价格及固定汇率估算 · 非账单" :
                 category == "streak" ? "当前连续天数与历史达成分别计算" : "按已读取的本机记录计算");
             foreach (var row in rows)
             {
@@ -1625,7 +1641,7 @@ internal sealed partial class MeterWindow : Form
                 double? value = GetNumber(row, "value"), target = GetNumber(row, "target"), progress = GetNumber(row, "progress");
                 if (!value.HasValue || !target.HasValue || !progress.HasValue || !double.IsFinite(value.Value) ||
                     !double.IsFinite(target.Value) || !double.IsFinite(progress.Value) || value < 0 || target <= 0) continue;
-                string unit = GetString(row, "unit", "") switch { "tokens" => "tokens", "days" => "天", "apps" => "个应用", "times" => "次", "cny" => "元", _ => "" };
+                string unit = GetString(row, "unit", "") switch { "tokens" => "tokens", "days" => "天", "apps" => "个应用", "times" => "次", "cny" => "元", "images" => "个 PNG 文件", _ => "" };
                 bool hasMedal = GetValue(row, "earned").ValueKind == JsonValueKind.True;
                 string date = GetString(row, "earned_on", "");
                 string detail = unit == "元" ? $"当前 {value.Value:0.##} / {target.Value:0.##} 元" : $"当前 {FormatNumber(value.Value)} / {FormatNumber(target.Value)} {unit}";
@@ -1633,7 +1649,7 @@ internal sealed partial class MeterWindow : Form
                 AddMedalCard(name, GetString(row, "tier", "bronze"), hasMedal, detail, dateNote, Math.Clamp(progress.Value * 100, 0, 100));
             }
         }
-        AddCard("尚在移植", "更多卡片与徽章", "签到、重置卡和图片等暂未计算", null);
+        AddCard("尚在移植", "更多卡片与徽章", "签到、重置卡和创作积分等暂未计算", null);
     }
 
     void AddQuotaCards(JsonElement collection)
