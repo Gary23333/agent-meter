@@ -33,6 +33,14 @@ try
         try { BudgetAlerts.TakePending(budget.RootElement, budgetDirectory, budgetNow); throw new InvalidOperationException("损坏的提醒记录不应覆盖"); }
         catch (InvalidDataException) { if (File.ReadAllText(alertPath) != "invalid") throw new InvalidOperationException("提醒记录已被意外覆盖"); }
     }
+    using (var budget = JsonDocument.Parse("""{"status":"ok","alerts_enabled":true,"generated_at":{"epoch_seconds":1794196800},"weekly":{"partial":false},"events":[{"id":"budget_weekly_exceeded:2026-11-09","kind":"weekly_exceeded","date":"2026-11-09","spent_cny":"125","budget_cny":"100"},{"id":"budget_anomaly:2026-11-09","kind":"anomaly","date":"2026-11-09","spent_cny":"25","rate_cny_per_hour":"2.5","multiplier":"2"},{"id":"budget_anomaly:2026-11-08","kind":"anomaly","date":"2026-11-08","spent_cny":"25","rate_cny_per_hour":"2.5","multiplier":"2"}]}"""))
+    {
+        var alertDirectory = Path.Combine(directory, "budget-other-alerts");
+        var messages = BudgetAlerts.TakePending(budget.RootElement, alertDirectory, budgetNow);
+        if (messages.Count != 2 || !messages.Any(text => text.Contains("本周")) || !messages.Any(text => text.Contains("小时")) ||
+            BudgetAlerts.TakePending(budget.RootElement, alertDirectory, budgetNow).Count != 0)
+            throw new InvalidOperationException("周预算与异常提醒应过滤过期事件并各自去重");
+    }
     var budgetSnapshot = JsonNode.Parse("""{"budget":{"status":"ok","alerts_enabled":true,"config":{"daily_cny":"20.5","weekly_cny":"100","anomaly_multiplier":"2.0"}}}""")!.AsObject();
     BudgetPreferences.Save(budgetDirectory, budgetSettings with { AlertsEnabled = false });
     BudgetState.Apply(budgetSnapshot, budgetDirectory);
