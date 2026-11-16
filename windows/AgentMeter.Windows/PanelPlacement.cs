@@ -23,16 +23,32 @@ internal static class TaskbarLocation
     [DllImport("shell32.dll")] static extern IntPtr SHAppBarMessage(uint message, ref AppBarData data);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
 
-    internal static TaskbarEdge? AutoHideEdge(Rectangle monitor) => ResolveAutoHide(monitor, (edge, bounds) =>
+    internal static TaskbarEdge? AutoHideEdge(Rectangle monitor)
     {
-        var data = new AppBarData { Size = (uint)Marshal.SizeOf<AppBarData>(), Edge = (uint)edge,
-            Bounds = new NativeRect { Left = bounds.Left, Top = bounds.Top, Right = bounds.Right, Bottom = bounds.Bottom } };
-        return SHAppBarMessage(0x0B, ref data); // ABM_GETAUTOHIDEBAREX
-    }, window =>
+        var edge = ResolveAutoHide(monitor, (candidate, bounds) =>
+        {
+            var data = new AppBarData { Size = (uint)Marshal.SizeOf<AppBarData>(), Edge = (uint)candidate,
+                Bounds = new NativeRect { Left = bounds.Left, Top = bounds.Top, Right = bounds.Right, Bottom = bounds.Bottom } };
+            return SHAppBarMessage(0x0B, ref data); // ABM_GETAUTOHIDEBAREX
+        }, window =>
+        {
+            var name = new StringBuilder(256);
+            return GetClassName(window, name, name.Capacity) > 0 ? name.ToString() : "";
+        });
+        if (edge.HasValue) return edge;
+        // 某些系统只通过主任务栏接口报告自动隐藏状态。仅当主任务栏属于目标屏幕才使用该结果。
+        var primary = new AppBarData { Size = (uint)Marshal.SizeOf<AppBarData>() };
+        if ((SHAppBarMessage(0x04, ref primary).ToInt64() & 1) == 0 || SHAppBarMessage(0x05, ref primary) == IntPtr.Zero || primary.Edge > 3)
+            return null;
+        var taskbar = Rectangle.FromLTRB(primary.Bounds.Left, primary.Bounds.Top, primary.Bounds.Right, primary.Bounds.Bottom);
+        return ResolvePrimary(monitor, taskbar, (TaskbarEdge)primary.Edge);
+    }
+
+    internal static TaskbarEdge? ResolvePrimary(Rectangle monitor, Rectangle taskbar, TaskbarEdge edge)
     {
-        var name = new StringBuilder(256);
-        return GetClassName(window, name, name.Capacity) > 0 ? name.ToString() : "";
-    });
+        if (taskbar.Width <= 0 || taskbar.Height <= 0) return null;
+        return monitor.IntersectsWith(taskbar) ? edge : null;
+    }
 
     internal static TaskbarEdge? ResolveAutoHide(Rectangle monitor, Func<TaskbarEdge, Rectangle, IntPtr> query, Func<IntPtr, string> className)
     {

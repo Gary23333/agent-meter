@@ -641,6 +641,10 @@ try
     if (detected != TaskbarEdge.Right || queried != 3) throw new InvalidOperationException("应忽略第三方自动隐藏工具栏并识别副屏任务栏");
     if (TaskbarLocation.ResolveAutoHide(screen, (_, _) => IntPtr.Zero, _ => "") is not null)
         throw new InvalidOperationException("无自动隐藏任务栏时应使用工作区定位");
+    if (TaskbarLocation.ResolvePrimary(screen, new Rectangle(0, -38, 1920, 40), TaskbarEdge.Top) != TaskbarEdge.Top ||
+        TaskbarLocation.ResolvePrimary(secondScreen, new Rectangle(0, 1040, 1920, 40), TaskbarEdge.Bottom) is not null ||
+        TaskbarLocation.ResolvePrimary(screen, Rectangle.Empty, TaskbarEdge.Bottom) is not null)
+        throw new InvalidOperationException("主屏任务栏回退定位的屏幕判断错误");
     Point oversized = PanelPlacement.Find(screen, new Rectangle(0, 0, 300, 200), new Size(500, 700), Point.Empty, true);
     if (oversized != Point.Empty) throw new InvalidOperationException("超大面板应从工作区左上角开始");
     if (PanelPlacement.Fit(new Size(500, 760), new Rectangle(0, 0, 300, 200)) != new Size(276, 176))
