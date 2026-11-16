@@ -131,6 +131,8 @@ internal sealed partial class MeterContext : ApplicationContext
         icon = new Icon(iconStream);
         window = new MeterWindow(demo, windowed) { Icon = icon };
         petPreferences = demo ? PetPreferences.Default : PetPreferences.Load(AccountPreferences.DefaultDirectory);
+        window.SetPetPreferences(petPreferences);
+        window.PetChangeRequested += ChangePet;
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开 Agent Meter", null, (_, _) => ShowPanel(true));
         menu.Items.Add("刷新数据", null, async (_, _) => await window.RefreshData());
@@ -313,6 +315,7 @@ internal sealed partial class MeterContext : ApplicationContext
         foreach (var (pack, item) in pet3dItems) item.Checked = next.Pack == pack;
         if (!next.Enabled) { pet?.Dispose(); pet = null; }
         else if (restart) StartPet();
+        window.SetPetPreferences(petPreferences);
     }
     void StartPet()
     {
@@ -350,6 +353,7 @@ internal sealed partial class MeterContext : ApplicationContext
             instance.RenderingFailed += () =>
             {
                 petPreferences = petPreferences with { Enabled = false }; petVisible.Checked = false;
+                window.SetPetPreferences(petPreferences);
                 try { petPreferences.Save(AccountPreferences.DefaultDirectory); }
                 catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
                 window.ShowNotice("桌宠暂时无法显示");
@@ -361,6 +365,7 @@ internal sealed partial class MeterContext : ApplicationContext
         catch (Exception ex) when (ex is InvalidDataException or IOException or ArgumentException or System.ComponentModel.Win32Exception or System.Runtime.InteropServices.ExternalException)
         {
             pet?.Dispose(); pet = null; petPreferences = petPreferences with { Enabled = false }; petVisible.Checked = false;
+            window.SetPetPreferences(petPreferences);
             try { petPreferences.Save(AccountPreferences.DefaultDirectory); }
             catch (Exception saveError) when (saveError is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
             window.ShowNotice("桌宠暂时无法显示");
@@ -378,7 +383,7 @@ internal sealed partial class MeterContext : ApplicationContext
 
 internal sealed partial class MeterWindow : Form
 {
-    enum View { Accounts, Applications, Usage, Report, Forecast, Collection }
+    enum View { Accounts, Applications, Usage, Report, Forecast, Pet, Collection }
     enum ApplicationFilter { All, Recent, Other }
     VisualTheme theme;
     Color Background => theme.Background;
@@ -395,7 +400,7 @@ internal sealed partial class MeterWindow : Form
     readonly Panel header = new();
     readonly NavigationStrip navigationStrip = new();
     readonly Label title = new(), subtitle = new();
-    readonly NavigationTab accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
+    readonly NavigationTab accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), petTab = new(), collectionTab = new();
     readonly Font tabRegular = new("Microsoft YaHei UI", 9F, FontStyle.Bold), tabCompact = new("Microsoft YaHei UI", 8F, FontStyle.Bold);
     readonly FlowLayoutPanel gauges = new();
     readonly GaugePageButton gaugePrevious = new(false), gaugeNext = new(true);
@@ -458,7 +463,7 @@ internal sealed partial class MeterWindow : Form
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = theme.Border; refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
         header.Resize += (_, _) => { gauges.Width = Math.Max(0, header.ClientSize.Width - 32); LayoutTabs(); };
-        foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab })
+        foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab })
         {
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
             tab.Font = tabRegular; tab.Size = new Size(86, 36);
@@ -480,13 +485,14 @@ internal sealed partial class MeterWindow : Form
         header.Controls.AddRange([gaugePrevious, gaugeNext]);
         gaugePrevious.BringToFront(); gaugeNext.BringToFront();
         accountTab.Text = "账户额度"; applicationsTab.Text = "应用";
-        usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测"; collectionTab.Text = "收集";
+        usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测"; petTab.Text = "桌宠"; collectionTab.Text = "收集";
         accountTab.Click += (_, _) => SetView(View.Accounts); applicationsTab.Click += (_, _) => SetView(View.Applications);
         usageTab.Click += (_, _) => SetView(View.Usage);
         reportTab.Click += (_, _) => SetView(View.Report);
         forecastTab.Click += (_, _) => SetView(View.Forecast);
+        petTab.Click += (_, _) => SetView(View.Pet);
         collectionTab.Click += (_, _) => SetView(View.Collection);
-        navigationStrip.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab]);
+        navigationStrip.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab]);
         header.Controls.Add(navigationStrip); LayoutTabs(); UpdateTabs();
         status.Dock = DockStyle.Bottom; status.Height = 31; status.Font = new Font(Font.FontFamily, 8.5F); status.AutoEllipsis = true;
         status.Padding = new Padding(17, 6, 8, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
@@ -573,12 +579,21 @@ internal sealed partial class MeterWindow : Form
             SetTheme(option);
             foreach (var (tab, name) in new[] { (View.Accounts, "accounts"), (View.Applications, "applications"),
                                                (View.Usage, "usage"), (View.Report, "report"), (View.Forecast, "forecast"),
-                                               (View.Collection, "collection") })
+                                               (View.Pet, "pet"), (View.Collection, "collection") })
             {
                 SetView(tab);
                 SavePreview(option.Id + "-" + name);
             }
         }
+        SetTheme(VisualThemes.Find("aurora")); SetView(View.Pet);
+        var petGrid = content.Controls.OfType<TableLayoutPanel>().Single(item => item.Name == "pet-choices");
+        if (petGrid.Controls.Count != 7) throw new InvalidOperationException("桌宠形象列表不完整");
+        petGrid.Controls.OfType<Button>().Single(button => button.Name == "pet-choice-cat").PerformClick();
+        if (pagePetPreferences.Pack != "cat") throw new InvalidOperationException("桌宠形象切换失败");
+        content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "pet-toggle").PerformClick();
+        if (!pagePetPreferences.Enabled) throw new InvalidOperationException("桌宠显示开关失败");
+        Size = new Size(380, 680); SavePreview("aurora-pet-narrow");
+        SetPetPreferences(PetPreferences.Default);
         Size = new Size(500, 1100);
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Accounts);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())
@@ -841,7 +856,7 @@ internal sealed partial class MeterWindow : Form
     }
     void UpdateTabs()
     {
-        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast), (collectionTab, View.Collection) })
+        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast), (petTab, View.Pet), (collectionTab, View.Collection) })
         {
             button.SetAppearance(theme, view == tab);
         }
@@ -850,14 +865,14 @@ internal sealed partial class MeterWindow : Form
         LayoutGauges();
         subtitle.Text = view switch { View.Accounts => "账户额度与本机消耗", View.Applications => "应用覆盖与近期活动",
             View.Usage => "本机账本 · Token 与模型", View.Report => "自然周与自然月 · 用量报告",
-            View.Forecast => "Codex 全局重置 · 第三方预测", _ => "额度卡片与本机成就" };
+            View.Forecast => "Codex 全局重置 · 第三方预测", View.Pet => "桌面伙伴 · 形象与状态", _ => "额度卡片与本机成就" };
         LayoutTabs();
     }
     void LayoutTabs()
     {
-        var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab };
-        string[] full = ["账户额度", "应用", "本机消耗", "用量报告", "重置预测", "收集"];
-        string[] compact = ["账户", "应用", "用量", "报告", "预测", "收集"];
+        var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
+        string[] full = ["账户额度", "应用", "本机消耗", "用量报告", "重置预测", "桌宠", "收集"];
+        string[] compact = ["账户", "应用", "用量", "报告", "预测", "桌宠", "收集"];
         navigationStrip.Bounds = new Rectangle(16, view == View.Accounts ? 192 : 76, Math.Max(1, header.ClientSize.Width - 32), 35);
         int width = Math.Max(1, (navigationStrip.ClientSize.Width - 6) / tabs.Length);
         for (int index = 0; index < tabs.Length; index++)
@@ -1616,6 +1631,7 @@ internal sealed partial class MeterWindow : Form
         }
         else if (view == View.Report) AddCalendarReport(GetValue(root, "calendar_report"));
         else if (view == View.Forecast) AddForecast(GetValue(root, "forecast"));
+        else if (view == View.Pet) AddPetPage(root);
         else AddCollection(GetValue(root, "local_medals"), GetValue(root, "quota_cards"));
         content.ResumeLayout(); ResizeCards();
     }
