@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 40 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.40) 对应提交 `c801765`；Windows 构建通过，模拟快慢来源、错误状态、关闭账户后的迟到结果及托盘画面已检查，打包程序在隔离空目录完成完整刷新，发布包独立解压与模拟数据验证通过。真实账户、实体设备及高 DPI 仍待验收。SHA-256：`9347ef6f4d681053624fac371d14704deff667aad38ef9dd5a4940ea157f5a6c`。
+
 - [Alpha 39 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.39) 对应提交 `8d303c4`；Windows 构建、后台唤起、托盘弹层生命周期和真实屏幕绘制检查通过。页面导航、应用筛选及用量周期切换后的画面已用虚构数据核对，发布包独立解压与模拟数据验证通过。真实设备上的新版、高 DPI、多屏及真实新增账户仍待验收。SHA-256：`4af5adc2b0051c18c9080132af54e684d9d6c2a000272d7bd64371c76b923e55`。
 
 - [Alpha 38 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.38) 对应提交 `cb98224`；Windows 和跨平台检查通过。用量双卡片、周期切换、未知费用与窄屏标签在隔离环境检查，深浅截图已核对，便携包独立解压与模拟数据验证通过。真实账本与实体设备仍待验收。SHA-256：`996f4c9beb5b907483fbd378a84eaea3da11b528d9c4a449722725eb5487e03c`。
