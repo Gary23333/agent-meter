@@ -713,6 +713,10 @@ internal sealed partial class MeterWindow : Form
         if (summaryRow.Controls.OfType<RoundedCard>().Count() != 2) throw new InvalidOperationException("用量总量与估算应分别显示");
         Size = new Size(380, 680); Application.DoEvents();
         if (content.HorizontalScroll.Visible) throw new InvalidOperationException("窄用量页出现横向滚动条");
+        var narrowBreakdown = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-breakdown");
+        var outputLabel = narrowBreakdown.Controls.OfType<Label>().Single(label => label.Name == "usage-part-name-1");
+        if (TextRenderer.MeasureText(outputLabel.Text, outputLabel.Font, Size.Empty, TextFormatFlags.NoPadding).Width > outputLabel.Width)
+            throw new InvalidOperationException("窄用量页的输出含推理标签被截断");
         content.AutoScrollPosition = Point.Empty; SavePreview("aurora-usage-compact");
         Size = new Size(420, 760); Application.DoEvents();
         var usageComposition = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-breakdown");
@@ -2203,12 +2207,13 @@ internal sealed partial class MeterWindow : Form
         for (int i = 0; i < labels.Length; i++)
         {
             var dot = new Label { Text = "●", AutoSize = false, Size = new Size(16, 20), Location = new Point(157, 48 + i * 27), ForeColor = colors[i] };
-            var name = new Label { Text = labels[i], AutoSize = false, AutoEllipsis = true, Height = 20, Location = new Point(173, 48 + i * 27), ForeColor = Muted };
+            var name = new Label { Name = "usage-part-name-" + i, Text = labels[i], AutoSize = false, AutoEllipsis = true, Height = 20,
+                Font = new Font(Font.FontFamily, 9F), Location = new Point(173, 48 + i * 27), ForeColor = Muted };
             var value = new Label { Name = "usage-part-" + i, Text = FormatNumber(parts[i]), AutoSize = false, AutoEllipsis = true,
                 Height = 20, TextAlign = ContentAlignment.MiddleRight, Top = 48 + i * 27, ForeColor = Primary };
             popupTips.SetToolTip(value, labels[i] + " · " + parts[i].ToString("N0") + " Token");
             box.Resize += (_, _) => {
-                value.Left = Math.Max(230, box.ClientSize.Width - 102); value.Width = Math.Max(0, box.ClientSize.Width - value.Left - 16);
+                value.Left = Math.Max(230, box.ClientSize.Width - 82); value.Width = Math.Max(0, box.ClientSize.Width - value.Left - 16);
                 name.Width = Math.Max(0, value.Left - name.Left - 4);
             };
             box.Controls.AddRange([dot, name, value]);
