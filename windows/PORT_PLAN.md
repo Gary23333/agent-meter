@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 30 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.30) 对应提交 `6142229`；Windows 和跨平台检查通过。完整与缺失价格的模拟账本、固定汇率、花费徽章界面和独立解压包已检查；真实账本与实体设备仍待验收。SHA-256：`f5fb94375b8e5c6a29f6ab8849feb0a7255957987e16f58101b8101670de7fb7`。
+
 - [Alpha 29 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.29) 对应提交 `dbf6297`；Windows 和跨平台检查通过。保留测试域名用于验证独立 WebView 的模拟请求头捕获、关闭来源和资料清除，模拟账户接口、缺失数据界面和便携包也已检查；真实 TRAE 登录及凭据续取尚待验收。SHA-256：`e2ec785827bf43fd7b92a4b6165cd44d31bf3c6afd144315a526a8aa975dde74`。
 
 - [Alpha 28 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.28) 对应提交 `a5b1af3`；Windows 和跨平台检查通过。Qoder 独立登录资料、Cookie 过滤和模拟账户接口通过隔离测试，账户卡片、多账户分页和刷新菜单演示已检查；真实 Qoder 登录、系统通知、多屏及高 DPI 尚待验收。SHA-256：`4002341fbec7135c18383a862e0906e10b988b2cf5d15c2c456f70ab0df6b15c`。
