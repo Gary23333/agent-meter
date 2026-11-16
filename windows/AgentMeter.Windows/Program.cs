@@ -610,9 +610,11 @@ internal sealed partial class MeterWindow : Form
         if (!followButton.Enabled) throw new InvalidOperationException("3D 桌宠的视线跟随不可用");
         followButton.PerformClick();
         if (!pagePetPreferences.FollowCursor) throw new InvalidOperationException("桌宠视线跟随开关失败");
+        var followCard = content.Controls.OfType<RoundedCard>().Single(card => card.Controls.OfType<Button>().Any(button => button.Name == "pet-follow-toggle"));
+        content.ScrollControlIntoView(followCard); Application.DoEvents(); SavePreview("aurora-pet-follow");
         content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "pet-toggle").PerformClick();
         if (!pagePetPreferences.Enabled) throw new InvalidOperationException("桌宠显示开关失败");
-        Size = new Size(380, 680); Application.DoEvents();
+        Size = new Size(380, 680); content.AutoScrollPosition = Point.Empty; Application.DoEvents();
         if (content.HorizontalScroll.Visible)
         {
             string children = string.Join(",", content.Controls.Cast<Control>().Select(item => $"{item.GetType().Name}:{item.Width}+{item.Margin.Horizontal}"));

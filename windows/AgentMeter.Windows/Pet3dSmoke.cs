@@ -60,6 +60,10 @@ internal static class Pet3dSmoke
                 if (!(await renderer.SyntheticLayerAsync()).StartsWith("interaction:refresh:", StringComparison.Ordinal))
                     throw new InvalidOperationException("桌宠刷新动作未生效");
                 if (DifferentPixels(poked, refreshed) < 10) throw new InvalidOperationException("桌宠刷新动作没有可见变化");
+                // 先等刷新动作结束并完成过渡，避免用转身画面误判视线跟随。
+                await Task.Delay(1600);
+                using var settling = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.25);
+                using var settled = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.25);
                 using var left = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.25, cursor: new PointF(-1000, 130));
                 if (await renderer.SyntheticLookXAsync() is not < 0) throw new InvalidOperationException("桌宠未朝左侧光标注视");
                 using var right = await renderer.FrameAsync(new PetMood("idle", "待机"), 0.25, cursor: new PointF(1000, 130));
