@@ -160,7 +160,7 @@ internal sealed partial class MeterWindow
         string testDirectory = Path.Combine(Path.GetTempPath(), "AgentMeterBudgetSmoke-" + Guid.NewGuid().ToString("N"));
         using (var dialog = new BudgetDialog(testDirectory) { StartPosition = FormStartPosition.Manual, Location = new Point(40, 40), TopMost = true })
         {
-            dialog.Show(); await Task.Delay(200);
+            dialog.Show(); ShowWindow(dialog.Handle, 5); dialog.BringToFront(); dialog.Activate(); await Task.Delay(300);
             using var dialogPicture = new Bitmap(dialog.Width, dialog.Height, PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(dialogPicture)) graphics.CopyFromScreen(dialog.Location, Point.Empty, dialog.Size);
             dialogPicture.Save(Path.Combine(output, "budget-settings.png"), ImageFormat.Png);
