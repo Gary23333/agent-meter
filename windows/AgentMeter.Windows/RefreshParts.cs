@@ -59,6 +59,14 @@ internal sealed partial class MeterWindow
                 else snapshot["other_accounts"]![name] = new JsonObject { ["status"] = "error" };
             }
             ApplyAccountPreferences(snapshot);
+            static bool HasError(JsonNode? node) => node is JsonArray items ? items.Any(HasError) :
+                node is JsonObject item && item["status"] is JsonValue value && value.TryGetValue<string>(out var state) && state == "error";
+            if (name == "accounts")
+                partialFailure |= HasError(snapshot["account"]) || new[] { "Kimi Code", "Claude Code", "MiniMax Code" }.Any(key => HasError(snapshot["other_accounts"]![key]));
+            else if (name == "history" && snapshot["history"] is JsonObject histories)
+                partialFailure |= histories.Any(item => HasError(item.Value));
+            else if (name is "quota_cards" or "forecast") partialFailure |= HasError(snapshot[name]);
+            else partialFailure |= HasError(snapshot["other_accounts"]![name]);
             if (name == "accounts" && startCards is not null) pending.Add(("quota_cards", startCards(snapshot)));
             using (var document = JsonDocument.Parse(snapshot.ToJsonString()))
             {
@@ -128,6 +136,9 @@ internal sealed partial class MeterWindow
                 malformed["history"]!["Codex"]!["status"]!.GetValue<string>() != "available" ||
                 malformed["quota_cards"]!["status"]!.GetValue<string>() != "available" || !status.Text.Contains("部分数据读取失败"))
                 throw new InvalidOperationException("损坏的账户结果不应覆盖可用本机记录");
+            var reportedFailure = JsonNode.Parse(DemoData)!.AsObject();
+            await ApplyRefreshPartsAsync(reportedFailure, [("quota_cards", Task.FromResult("""{"status":"error"}"""))], false);
+            if (!status.Text.Contains("部分数据读取失败")) throw new InvalidOperationException("来源返回错误状态时应提示部分失败");
         }
         finally { preferences = original; }
     }
