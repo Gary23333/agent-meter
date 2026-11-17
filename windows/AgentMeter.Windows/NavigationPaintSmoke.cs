@@ -188,6 +188,24 @@ internal sealed partial class MeterWindow
         using var lightBudgetPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(lightBudgetPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
         lightBudgetPicture.Save(Path.Combine(output, "budget-progress-porcelain-narrow.png"), ImageFormat.Png);
+        // 本周期没有消耗时显示零；价格文件损坏时不能继续显示金额或预算。
+        var zeroUsage = System.Text.Json.Nodes.JsonNode.Parse(DemoData)!.AsObject();
+        zeroUsage["history"] = System.Text.Json.Nodes.JsonNode.Parse("""{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":0,"fresh_input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0,"unclassified":0}}}},"estimates":{"today":{"amount_usd":"0","partial":false}}}}""");
+        usagePeriod = "today";
+        using (var document = System.Text.Json.JsonDocument.Parse(zeroUsage.ToJsonString())) Render(document.RootElement);
+        content.AutoScrollPosition = Point.Empty; await Task.Delay(150);
+        if (((Label)content.Controls.Find("usage-cost-total", true).Single()).Text != "$0")
+            throw new InvalidOperationException("已读取的零用量没有显示零费用");
+        using var zeroPicture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(zeroPicture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+        zeroPicture.Save(Path.Combine(output, "usage-zero-porcelain-narrow.png"), ImageFormat.Png);
+        zeroUsage["history"]!["Codex"]!.AsObject().Remove("estimates");
+        zeroUsage["price_status"] = "invalid";
+        zeroUsage["budget"] = System.Text.Json.Nodes.JsonNode.Parse("""{"status":"error","reason":"budget_price_invalid"}""");
+        using (var document = System.Text.Json.JsonDocument.Parse(zeroUsage.ToJsonString())) Render(document.RootElement);
+        if (((Label)content.Controls.Find("usage-cost-total", true).Single()).Text != "—" ||
+            !content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text.Contains("价格文件无法读取")))
+            throw new InvalidOperationException("价格文件损坏时费用或预算提示错误");
         string testDirectory = Path.Combine(Path.GetTempPath(), "AgentMeterBudgetSmoke-" + Guid.NewGuid().ToString("N"));
         using (var dialog = new BudgetDialog(testDirectory) { StartPosition = FormStartPosition.Manual, Location = new Point(40, 40), TopMost = true })
         {

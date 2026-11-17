@@ -86,6 +86,29 @@ class WindowsBudgetTests(unittest.TestCase):
             self.assertEqual(budget_from_compact(sample(), directory)["reason"], "budget_history_invalid")
             self.assertEqual(history.read_text(encoding="utf-8"), "invalid")
 
+    def test_invalid_price_file_blocks_budget_without_saving_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings(directory, alerts_enabled=True)
+            data = sample()
+            data['price_status'] = 'invalid'
+            data['history']['Codex']['value']['periods']['today']['totals']['total_tokens'] = 0
+            data['history']['Codex']['estimates'] = {}
+            out = budget_from_compact(data, directory)
+            self.assertEqual(out, {'status': 'error', 'reason': 'budget_price_invalid'})
+            self.assertFalse((Path(directory) / HISTORY_NAME).exists())
+
+    def test_missing_or_unconfirmed_zero_usage_is_not_saved_as_zero(self):
+        for total in (None, 0):
+            with self.subTest(total=total), tempfile.TemporaryDirectory() as directory:
+                settings(directory)
+                data = sample()
+                data['history']['Codex']['value']['periods']['today']['totals']['total_tokens'] = total
+                data['history']['Codex']['estimates'].pop('today')
+                out = budget_from_compact(data, directory)
+                self.assertIsNone(out['daily']['spent_cny'])
+                self.assertTrue(out['daily']['partial'])
+                self.assertFalse((Path(directory) / HISTORY_NAME).exists())
+
     def test_money_and_multiplier_precision_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             settings(directory, daily_cny="0.001")

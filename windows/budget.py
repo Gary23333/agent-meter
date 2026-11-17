@@ -97,9 +97,22 @@ def _snapshot(compact):
             except (InvalidOperation, ValueError, TypeError):
                 continue
             costs[period] = {"amount": str(amount), "unmatched_models": ["partial"] if estimate.get("partial") is True else []}
+        # 不让上游预算计算把缺少有效总量或未确认的零用量误推断成零费用。
+        safe_periods = dict(periods)
+        for period in ("today", "30d"):
+            bucket = periods.get(period) if isinstance(periods.get(period), dict) else {}
+            totals = bucket.get("totals") if isinstance(bucket.get("totals"), dict) else {}
+            tokens = totals.get("total_tokens")
+            if tokens == 0 and period in costs and Decimal(costs[period]["amount"]) != 0:
+                costs.pop(period)
+            if (type(tokens) not in (int, float) or not math.isfinite(tokens) or tokens < 0 or
+                    tokens == 0 and period not in costs):
+                safe_periods.pop(period, None)
+                if period == "today":
+                    incomplete = True
         cost = {"status": "partial" if state == "partial" else "available", "value": {
             "unit": "USD", "basis": "local_price_table", "periods": costs}}
-        sources.append({"id": name, "metrics": {"tokens": {"status": state, "value": {"periods": periods}}, "cost": cost}})
+        sources.append({"id": name, "metrics": {"tokens": {"status": state, "value": {"periods": safe_periods}}, "cost": cost}})
     return {"sources": sources}, incomplete
 
 
@@ -108,6 +121,8 @@ def budget_from_compact(compact, directory):
     settings = load_settings(directory)
     if settings["status"] != "enabled":
         return {"status": settings["status"]}
+    if compact.get("price_status") == "invalid":
+        return {"status": "error", "reason": "budget_price_invalid"}
     path = Path(directory) / HISTORY_NAME
     if not _valid_history(path):
         return {"status": "error", "reason": "budget_history_invalid"}

@@ -90,6 +90,8 @@ try
     }
     using (var costs = JsonDocument.Parse("""{"A":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1}}}},"estimate":{"amount_usd":"0","partial":false}}}"""))
         if (UsageCostSummary.Read(costs.RootElement, "today") is not { Amount: 0, Partial: false }) throw new InvalidOperationException("免费价格估算不能误当未知");
+    using (var costs = JsonDocument.Parse("""{"A":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":0}}}},"estimates":{"today":{"amount_usd":"0","partial":false}}},"B":{"status":"partial","value":{"periods":{"today":{"totals":{"total_tokens":0}}}},"estimates":{"today":{"amount_usd":"0","partial":true}}}}"""))
+        if (UsageCostSummary.Read(costs.RootElement, "today") is not { Amount: 0, Partial: true, Display: "$0" }) throw new InvalidOperationException("零用量费用及不完整状态显示错误");
     using (var sources = JsonDocument.Parse("""{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":10}},"7d":{"totals":{"total_tokens":90}}}},"estimates":{"today":{"amount_usd":"0.125","partial":false}}},"Claude Code":{"status":"partial","value":{"periods":{"today":{"totals":{"total_tokens":30}}}}},"Empty":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":0}}}}},"Bad":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":-10}}}}},"Unavailable":{"status":"error"}}"""))
     {
         var todayRows = UsageSource.Read(sources.RootElement, "today");

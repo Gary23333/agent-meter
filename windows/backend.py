@@ -789,6 +789,18 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
         estimates = {}
         for period in ("today", "7d", "30d", "all"):
             try:
+                bucket = periods.get(period, {})
+                totals = bucket.get("totals") if isinstance(bucket, dict) else None
+                total = totals.get("total_tokens") if isinstance(totals, dict) else None
+                groups = bucket.get("groups") if isinstance(bucket, dict) else None
+                # 已读取的零用量可以确认该周期费用为零；来源不完整时仍须标记。
+                # 价格文件损坏或分组与总量矛盾时不能给出确定金额。
+                if (table is not None and item.get("status") in ("available", "partial") and
+                        type(total) is int and total == 0 and (groups is None or groups == []) and
+                        all(type(totals[key]) is int and totals[key] == 0 for key in
+                            ("fresh_input", "output", "reasoning", "cache_read", "cache_write", "unclassified") if key in totals)):
+                    estimates[period] = {"amount_usd": "0", "partial": item.get("status") == "partial"}
+                    continue
                 cost = (estimated or {}).get("value", {}).get("periods", {}).get(period, {})
                 model_costs = cost.get("models") if isinstance(cost, dict) else None
                 if period in selected and isinstance(model_costs, dict):
@@ -816,9 +828,6 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
                             amounts[model] = {"amount_usd": format(total_amount, "f"), "partial": bool(incomplete)}
                     if amounts:
                         selected[period]["model_costs"] = amounts
-                bucket = periods.get(period, {})
-                total = bucket.get("totals", {}).get("total_tokens") if isinstance(bucket, dict) else None
-                groups = bucket.get("groups") if isinstance(bucket, dict) else None
                 amount = Decimal(str(cost.get("amount")))
                 if not (isinstance(total, int) and not isinstance(total, bool) and total > 0 and
                         isinstance(groups, list) and groups and amount.is_finite() and amount >= 0):

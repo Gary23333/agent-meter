@@ -10,7 +10,12 @@ internal sealed partial class MeterWindow
     {
         string state = GetString(budget, "status", "disabled");
         if (state == "loading") { AddCard("预算", "正在计算", "等待最新本机估算", null); return; }
-        if (state is "invalid" or "error") { AddCard("预算", "暂时无法计算", "请备份并检查本地预算设置与历史文件", null); return; }
+        if (state is "invalid" or "error")
+        {
+            string errorHint = GetString(budget, "reason", "") == "budget_price_invalid"
+                ? "价格文件无法读取，请检查自定义模型价格" : "请备份并检查本地预算设置与历史文件";
+            AddCard("预算", "暂时无法计算", errorHint, null); return;
+        }
         if (state != "ok") return;
         var rows = new List<(string Label, decimal? Spent, decimal Limit, bool Partial)>();
         foreach (var (key, label) in new[] { ("daily", "今日"), ("weekly", "本周") })

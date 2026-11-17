@@ -789,6 +789,30 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(item['estimate'], item['estimates']['today'])
         self.assertNotIn('private-unknown-model', json.dumps(item))
 
+    def test_zero_usage_cost_is_known_only_for_readable_consistent_periods(self):
+        group = {'model': 'gpt-5.3-codex', 'fresh_input': 100, 'cache_read': 0,
+                 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 100}
+        periods = {'today': {'totals': {'total_tokens': 0}, 'groups': []},
+                   '7d': {'totals': {'total_tokens': 0}},
+                   '30d': {'totals': {'total_tokens': 0}, 'groups': [group]},
+                   'all': {'totals': {'total_tokens': 100}, 'groups': [group]}}
+        source = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'Codex': {
+            'status': 'available', 'value': {'periods': periods}}}}
+        item = backend.compact_history(source)['history']['Codex']
+        self.assertEqual(item['estimates']['today'], {'amount_usd': '0', 'partial': False})
+        self.assertEqual(item['estimates']['7d'], {'amount_usd': '0', 'partial': False})
+        self.assertNotIn('30d', item['estimates'])
+        self.assertEqual(item['estimate'], item['estimates']['today'])
+        periods['today']['totals']['fresh_input'] = 1
+        self.assertNotIn('today', backend.compact_history(source)['history']['Codex']['estimates'])
+        periods['today']['totals']['fresh_input'] = 0
+        source['history']['Codex']['status'] = 'partial'
+        self.assertTrue(backend.compact_history(source)['history']['Codex']['estimates']['today']['partial'])
+        source['history']['Codex']['status'] = 'unavailable'
+        self.assertNotIn('today', backend.compact_history(source)['history']['Codex'].get('estimates', {}))
+        source['history']['Codex']['status'] = 'available'
+        self.assertNotIn('estimates', backend.compact_history(source, None)['history']['Codex'])
+
     def test_custom_price_overrides_and_corrupt_file_suppresses_estimates(self):
         group = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
                  'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}
