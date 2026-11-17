@@ -21,6 +21,8 @@
 
 ## 当前证据和限制
 
+- [Alpha 45 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.45) 对应提交 `66618c6`；Windows 构建和跨平台检查通过，托盘弹层、导航重绘、零用量及价格损坏提示在隔离窗口验证。发布包独立解压，用虚构账本核对零用量、无效价格和预算历史保护；真实账本、系统通知、实体设备及高 DPI 仍待验收。SHA-256：`40c05da358aa71e82b009682add8e595980aa0152f8856a149c470e9551cd4eb`。
+
 - [Alpha 44 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.44) 对应提交 `27fdaea`；Windows 构建、导航重绘、托盘弹层与深浅主题窄面板检查通过。四周期排行、费用和匿名名称过滤以虚构账本验证，最终发布包独立解压并核对哈希；真实账本、实体设备及高 DPI 仍待验收。跨平台 Python 与桌宠检查通过，macOS Swift 检查在发布时仍排队。SHA-256：`330cdd9054b9ea473106d8942f246a54f5784defe946b367abfc055cba5c949c`。
 
 - [Alpha 43 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.43) 对应提交 `2af931a`；Windows 构建通过，预算的日／周计算、缺失数据、通知去重、损坏文件保护及深浅窗口使用隔离数据验证。发布包已用独立虚构账本重算并核对哈希；真实账本、系统通知、实体设备及高 DPI 仍待验收。SHA-256：`bef7946bae6444a5c80189902ac59bb7e947de80d46a60ca838e6b984b01a16d`。
