@@ -1,5 +1,5 @@
-param([switch]$FrameworkDependent)
-$ErrorActionPreference = 'Stop'
+﻿param([switch]$FrameworkDependent)
+$ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $python = Join-Path $root '.venv-win\Scripts\python.exe'
