@@ -32,6 +32,10 @@ struct Source: Identifiable {
     let lastImport: Date?
     /// Label of an extra web-login account ("qoder#2" → "小号").
     let accountLabel: String?
+    /// Stable, truncated hash of the provider account. Two Macs reading the
+    /// same account produce the same key, which lets synced quota rows merge
+    /// by account instead of by device.
+    let accountKey: String?
     /// Provider part of the id ("qoder#2" → "qoder").
     var baseID: String { ConnectionManager.provider(ofSlot: id) }
     /// Brand name plus account label, for cards, ticker and alerts.
@@ -49,6 +53,7 @@ struct Source: Identifiable {
         lastError = json["diagnostics"]["last_error"].string
         lastImport = json["diagnostics"]["last_import_at"].date
         accountLabel = json["account_label"].string
+        accountKey = json["account_key"].string
         subscription = json["subscription"]
         metrics = json["metrics"].object.mapValues(Metric.init)
     }

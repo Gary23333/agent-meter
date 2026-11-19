@@ -51,14 +51,13 @@ struct SyncPairingView: View {
     @State private var pollTask: Task<Void, Never>?
     @State private var busy = false
     @State private var message: String?
-    @State private var syncMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("多机同步")
                     .font(.system(size: 19, weight: .semibold, design: .rounded))
-                Text("两台 Mac 用同一个同步空间合并用量。服务器只存密文，主密钥不出本机；配对码 5 分钟有效。")
+                Text("多台 Mac 用同一个同步空间合并用量与额度。服务器只存密文，主密钥不出本机；配对码 5 分钟有效。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -114,25 +113,47 @@ struct SyncPairingView: View {
             .font(.system(size: 11.5))
 
             HStack(spacing: 8) {
-                Button(busy ? "同步中…" : "立即同步") { syncNow() }
-                    .disabled(busy)
+                Text("自动同步")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                Picker("", selection: Binding(get: { store.syncInterval },
+                                              set: { store.syncInterval = $0 })) {
+                    ForEach(SyncInterval.allCases) { Text($0.label).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 150, alignment: .leading)
+                Spacer(minLength: 8)
+                if let last = store.lastSyncAt {
+                    Text("上次 \(Fmt.moment(last))")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button(store.syncRunning ? "同步中…" : "立即同步") { syncNow() }
+                    .disabled(busy || store.syncRunning)
                 Button("添加另一台设备") {
                     resetPairingState()
                     mode = .host
                     showingPairing = true
                     beginHosting()
                 }
-                .disabled(busy)
+                .disabled(busy || store.syncRunning)
                 Spacer()
                 Button("解除配对", role: .destructive) { clearPairing() }
-                    .disabled(busy)
+                    .disabled(busy || store.syncRunning)
             }
 
-            if let syncMessage {
+            if let syncMessage = store.syncMessage {
                 Text(syncMessage)
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Text("额度会随用量一起同步；同一账号按最新观测合并，不重复累加。")
+                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
 
             if let code {
                 hostCodeView(code)
@@ -151,7 +172,7 @@ struct SyncPairingView: View {
                 TextField("https://sync.example.com", text: $baseURL)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12, design: .monospaced))
-                Text("两台 Mac 必须填同一个地址。本机调试可用 http://127.0.0.1:8899")
+                Text("所有 Mac 必须填同一个地址。本机调试可用 http://127.0.0.1:8899")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
 
@@ -442,50 +463,17 @@ struct SyncPairingView: View {
         codeInput = ""
         showingPairing = false
         mode = .host
-        syncMessage = nil
         message = nil
+        store.syncHistory = nil
+        store.syncMessage = nil
+        store.lastSyncAt = nil
     }
 
     private func syncNow() {
-        guard let config, !busy else { return }
-        guard let backend = store.backendClient else {
-            message = "本机后端尚未就绪，请稍后再试"
-            return
-        }
-        guard let url = URL(string: config.baseURL) else {
-            message = "同步服务地址无效"
-            return
-        }
-        busy = true
+        guard !busy, !store.syncRunning else { return }
         message = nil
-        syncMessage = nil
-
         Task { @MainActor in
-            do {
-                let transport = try SyncService(baseURL: url)
-                let keys = try SyncKeys(masterKey: config.masterKey, spaceID: config.spaceID)
-                let runner = SyncRunner(transport: transport, keys: keys,
-                                        deviceID: config.deviceID)
-                var settings = SyncSettings()
-                settings.theme = store.theme.rawValue
-                settings.lowQuotaThreshold = store.lowQuotaThreshold
-                settings.alertsEnabled = store.notificationsEnabled
-                let coordinator = SyncCoordinator(backend: backend, runner: runner,
-                                                  settings: settings)
-                let report = try await coordinator.run()
-                var summary = "已上传本机用量，空间内共 \(report.devices) 台设备"
-                if !report.importedDevices.isEmpty {
-                    summary += "，合并了 \(report.importedDevices.count) 台其他设备"
-                }
-                if !report.failedDevices.isEmpty {
-                    summary += "；\(report.failedDevices.count) 台设备的密文无法读取"
-                }
-                syncMessage = summary + "。"
-                store.refresh()
-            } catch {
-                message = describe(error)
-            }
-            busy = false
+            await store.syncNow()
         }
     }
 

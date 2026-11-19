@@ -241,7 +241,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let error = store.errorMessage { ErrorBanner(message: error) }
             switch selectedTab {
-            case .accounts: AccountsView(snapshot: snapshot, now: store.now)
+            case .accounts: AccountsView(snapshot: snapshot, now: store.now, syncHistory: store.syncHistory)
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now, budget: store.budget)
             case .apps: ActivityView(snapshot: snapshot)

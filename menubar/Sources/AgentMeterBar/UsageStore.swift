@@ -136,12 +136,30 @@ final class UsageStore {
     /// Medal or card the user opened from the binder.
     var detailTrophy: Unlock?
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    /// Cadence for the background cloud-sync loop. Device-local: one Mac can
+    /// sync every five minutes while another syncs once a day.
+    var syncInterval: SyncInterval {
+        didSet {
+            syncInterval.store()
+            startSyncLoop()
+        }
+    }
+    /// True while a manual or automatic sync round is in flight.
+    var syncRunning = false
+    /// Last sync result or error, shown in the multi-device window.
+    var syncMessage: String?
+    /// Last successful sync, if any.
+    var lastSyncAt: Date?
+    /// Local + remote projection from GET /v1/sync/history. The account view
+    /// uses its quota rows to show observations that came from another Mac.
+    var syncHistory: JSON?
 
     @ObservationIgnored private let backend = BackendProcess()
     /// Read-only accessor for windows that talk to the backend directly.
     var backendClient: BackendClient? { client }
     @ObservationIgnored private var client: BackendClient?
     @ObservationIgnored private var loops: [Task<Void, Never>] = []
+    @ObservationIgnored private var syncTask: Task<Void, Never>?
     @ObservationIgnored private var fetchTask: Task<Void, Never>?
     /// Ticker change arrows: last distinct value and its change, per item.
     @ObservationIgnored private var tickerBaseline: [String: Double] = [:]
@@ -165,6 +183,7 @@ final class UsageStore {
         lowQuotaThreshold = d.object(forKey: "lowQuotaThreshold") as? Double ?? 20
         lowResourceMode = d.object(forKey: "lowResourceMode") as? Bool ?? false
         skipLedgersLowResource = d.stringArray(forKey: "skipLedgersLowResource") ?? []
+        syncInterval = SyncInterval.stored(in: d)
     }
 
     var projectDirectory: URL? { client?.project }
@@ -191,6 +210,7 @@ final class UsageStore {
         phase = .idle
         await pushPreferences()
         await fetch(force: false)
+        await loadSyncHistory()
         startLoops()
         // 会话活动 uses its own lightweight endpoint and cadence.
         ActivityTracker.shared.start()
@@ -283,6 +303,7 @@ final class UsageStore {
 
     private func startLoops() {
         scheduleClaim()
+        startSyncLoop()
         loops.append(Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(20))
@@ -295,6 +316,111 @@ final class UsageStore {
                 await self?.fetch(force: false)
             }
         })
+    }
+
+    // MARK: - Cloud sync
+
+    /// One manual or automatic sync round. Manual and timer callers share the
+    /// same guard, so an auto round never overlaps a button press.
+    @discardableResult
+    func syncNow(automatic: Bool = false) async -> SyncReport? {
+        guard !syncRunning else { return nil }
+        guard let config = SyncConfigurationStore.load() else {
+            if !automatic { syncMessage = "尚未加入同步空间，请先完成配对。" }
+            return nil
+        }
+        guard let client else {
+            if !automatic { syncMessage = "本机后端尚未就绪，请稍后再试。" }
+            return nil
+        }
+        guard let url = URL(string: config.baseURL) else {
+            syncMessage = "同步服务地址无效。"
+            return nil
+        }
+
+        syncRunning = true
+        if !automatic { syncMessage = "正在同步…" }
+        defer { syncRunning = false }
+
+        do {
+            let transport = try SyncService(baseURL: url)
+            let keys = try SyncKeys(masterKey: config.masterKey, spaceID: config.spaceID)
+            let runner = SyncRunner(transport: transport, keys: keys, deviceID: config.deviceID)
+            var settings = SyncSettings()
+            settings.theme = theme.rawValue
+            settings.lowQuotaThreshold = lowQuotaThreshold
+            settings.alertsEnabled = notificationsEnabled
+            let coordinator = SyncCoordinator(backend: client, runner: runner, settings: settings)
+            let report = try await coordinator.run()
+            lastSyncAt = Date()
+            syncMessage = Self.summary(for: report)
+            await loadSyncHistory()
+            return report
+        } catch {
+            syncMessage = (automatic ? "自动同步失败：" : "") + Self.message(for: error)
+            NSLog("AgentMeterBar sync: %@", String(describing: error))
+            return nil
+        }
+    }
+
+    /// Restarts the sleep loop whenever the interval changes. Only one timer
+    /// task exists; turning automatic sync off simply leaves it nil.
+    private func startSyncLoop() {
+        syncTask?.cancel()
+        syncTask = nil
+        guard !isPreview, let seconds = syncInterval.seconds else { return }
+        let nanos = UInt64(seconds * 1_000_000_000)
+        syncTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: nanos) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                await self?.syncNow(automatic: true)
+            }
+        }
+    }
+
+    /// Read the local + remote projection. The account view uses this to
+    /// display quota observations that came from another device.
+    func loadSyncHistory() async {
+        guard let client, SyncConfigurationStore.load() != nil else {
+            syncHistory = nil
+            return
+        }
+        do { syncHistory = try await client.syncHistory() }
+        catch { NSLog("AgentMeterBar sync history: %@", String(describing: error)) }
+    }
+
+    private static func summary(for report: SyncReport) -> String {
+        var text = "已上传本机用量"
+        if report.localQuotaRows > 0 { text += "与 \(report.localQuotaRows) 条额度" }
+        text += "，空间内共 \(report.devices) 台设备"
+        if !report.importedDevices.isEmpty {
+            text += "，合并了 \(report.importedDevices.count) 台其他设备"
+            if report.remoteQuotaRows > 0 { text += "（\(report.remoteQuotaRows) 条额度）" }
+        }
+        if !report.failedDevices.isEmpty {
+            text += "；\(report.failedDevices.count) 台设备的密文无法读取"
+        }
+        return text + "。"
+    }
+
+    private static func message(for error: Error) -> String {
+        if let error = error as? SyncError {
+            switch error {
+            case .notConfigured: return "同步配置不完整"
+            case .unauthorized: return "空间凭证无效，请重新配对"
+            case .notFound: return "空间或设备不存在"
+            case .invalidResponse: return "同步服务返回了无法识别的数据"
+            case .transport: return "无法连接同步服务，请检查地址和网络"
+            case .cryptoFailed: return "同步数据无法解密，请检查两台设备是否在同一空间"
+            case .rejected(let code): return "同步服务返回：\(code)"
+            }
+        }
+        if let error = error as? BackendError {
+            return error.localizedDescription
+        }
+        return "操作失败，请稍后重试"
     }
 
     /// Called when the panel opens; only fetches when the data is getting old.
@@ -566,6 +692,7 @@ final class UsageStore {
 
     func shutdown() {
         loops.forEach { $0.cancel() }
+        syncTask?.cancel()
         backend.stop()
     }
 
