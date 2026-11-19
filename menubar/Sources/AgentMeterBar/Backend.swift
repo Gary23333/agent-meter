@@ -271,6 +271,42 @@ struct BackendClient {
         return ActivityFeed(json)
     }
 
+    /// The redacted payload this device may upload (POST /v1/sync/payload).
+    /// Raw JSON bytes: the sync client seals them exactly as they are.
+    func syncPayload(localDevice: String, settings: SyncSettings) async throws -> Data {
+        var r = try request("v1/sync/payload", method: "POST", timeout: 30)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["device": localDevice]
+        let carried = settings.payload
+        if !carried.isEmpty { body["settings"] = carried }
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+        return data
+    }
+
+    /// Hands a payload decrypted from the sync service to the backend
+    /// (PUT /v1/sync/import). The backend keeps it as another device's rows.
+    func importSync(localDevice: String, payload: Data) async throws {
+        var r = try request("v1/sync/import", method: "PUT", timeout: 60)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let object = try JSONSerialization.jsonObject(with: payload)
+        r.httpBody = try JSONSerialization.data(withJSONObject: ["local_device": localDevice,
+                                                                 "payload": object])
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+    }
+
     /// The desktop pet's current frame (raw JSON, forwarded to the web view). Cheap: it only interprets
     /// cached data and never triggers a collection.
     func petFrame() async throws -> Data {
@@ -314,6 +350,10 @@ struct BackendClient {
         return Snapshot(json)
     }
 }
+
+/// The loopback backend is where a sync payload comes from and where a
+/// decrypted payload goes back to.
+extension BackendClient: SyncBackend {}
 
 /// Owns a backend child process when none is already running.
 final class BackendProcess {

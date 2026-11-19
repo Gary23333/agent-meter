@@ -6,12 +6,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from .model import SCHEMA_VERSION
+from .model import SCHEMA_VERSION, SourceError
 from .web_sources import validate_sessions
 from .dreamina_web import validate_observations
 
 MAX_SESSION_BODY = 64 * 1024
 MAX_PET_BODY = 4 * 1024
+# A decrypted sync payload from another device travels over loopback only.
+MAX_SYNC_BODY = 8 * 1024 * 1024
 # Sources the app may switch off at runtime.
 # Providers whose daily rewards the app may claim (agent_meter/rewards.py).
 CLAIMABLE = {"trae_cn", "workbuddy", "qoder", "minimax_code"}
@@ -145,6 +147,26 @@ def make_server(service,token,port=8769):
                     self.end_headers()
                     self.wfile.write(body)
                 return
+            if route.path=="/v1/sync/history":
+                # Local rows plus whatever other devices pushed. Synced rows
+                # never enter the snapshot, so this is its own projection.
+                try:
+                    import time as _time
+                    from .sync_store import card_history, device_summaries, history, load_store, quota_history
+                    from .sync_payload import card_tally, quota_rows, usage_rows
+                    data=service.get()
+                    store=load_store(service.config["runtime_dir"])
+                    local=store.get("local_device") or ""
+                    now=_time.time()
+                    self.send_json(200,{"schema":1,
+                                        "rows":history(store,usage_rows(data,local)),
+                                        "quota":quota_history(store,quota_rows(data,now)),
+                                        "cards":card_history(store,card_tally(data)),
+                                        "devices":device_summaries(store),
+                                        "local_device":local})
+                except Exception:
+                    self.send_json(500,{"error":"sync_history_failed"})
+                return
             if route.path not in {"/v1/snapshot","/v1/coverage","/v1/sources"}:
                 self.send_json(404,{"error":"not_found"});return
             try:
@@ -173,7 +195,6 @@ def make_server(service,token,port=8769):
                 # Manual announcement time: a fact only, never a probability or a clock.
                 body=self.read_json(MAX_SESSION_BODY)
                 if body is None:return
-                from .model import SourceError
                 from .reset_landings import add_manual_announcement
                 try:
                     event=add_manual_announcement(str(Path(service.config["runtime_dir"])/"reset-forecast-manual.json"),
@@ -190,6 +211,35 @@ def make_server(service,token,port=8769):
                 except ValueError:
                     self.send_json(400,{"error":"invalid_event"});return
                 self.send_json(200,{"id":event["id"],"kind":event["kind"]});return
+            if self.path=="/v1/sync/payload":
+                # The redacted projection this device is willing to upload.
+                body=self.read_json(MAX_SESSION_BODY)
+                if body is None:return
+                if not isinstance(body,dict):
+                    self.send_json(400,{"error":"invalid_sync_payload"});return
+                try:
+                    from .sync_payload import build_payload
+                    from .sync_store import set_local_device
+                    device=body.get("device")
+                    set_local_device(service.config["runtime_dir"],device)
+                    self.send_json(200,build_payload(service.get(),device,body.get("settings")))
+                except SourceError:
+                    self.send_json(400,{"error":"invalid_sync_payload"});return
+                except Exception:
+                    self.send_json(500,{"error":"sync_payload_failed"});return
+                return
+            if self.path=="/v1/sync/reset":
+                # The user turned sync off: forget every remote device.
+                body=self.read_json(MAX_SESSION_BODY)
+                if body is None:return
+                if not isinstance(body,dict):
+                    self.send_json(400,{"error":"invalid_sync_payload"});return
+                try:
+                    from .sync_store import reset
+                    reset(service.config["runtime_dir"])
+                except OSError:
+                    self.send_json(500,{"error":"sync_reset_failed"});return
+                self.send_json(200,{"reset":True});return
             claim_slot=None
             claim_all=False
             if self.path=="/v1/rewards/claim":
@@ -220,16 +270,40 @@ def make_server(service,token,port=8769):
         def do_PUT(self):
             # Website logins from the menu bar app: kept in memory, never echoed.
             if not self.authorized():return
-            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences","/v1/prices","/v1/budget","/v1/pet/preferences"}:self.send_json(404,{"error":"not_found"});return
+            if self.path not in {"/v1/web-sessions","/v1/observations","/v1/preferences","/v1/prices","/v1/budget","/v1/pet/preferences","/v1/sync/import"}:self.send_json(404,{"error":"not_found"});return
             if self.headers.get("Transfer-Encoding") or not (self.headers.get("Content-Type","").split(";")[0].strip()=="application/json"):
                 self.send_json(400,{"error":"json_body_required"});self.close_connection=True;return
             try:length=int(self.headers.get("Content-Length",""))
             except ValueError:length=-1
-            if not 0<length<=MAX_SESSION_BODY:
+            limit=MAX_SYNC_BODY if self.path=="/v1/sync/import" else MAX_SESSION_BODY
+            if not 0<length<=limit:
                 self.send_json(400,{"error":"invalid_body_length"});self.close_connection=True;return
             try:body=json.loads(self.rfile.read(length))
             except (ValueError,UnicodeDecodeError):
                 self.send_json(400,{"error":"invalid_json"});return
+            if self.path=="/v1/sync/import":
+                # A payload this device decrypted from the service.
+                try:
+                    import time as _time
+                    from .sync_payload import parse_payload
+                    from .sync_store import replace_device, set_local_device
+                    if not isinstance(body,dict):raise SourceError("invalid_sync_payload")
+                    local_device=body.get("local_device")
+                    if not isinstance(local_device,str) or not local_device:
+                        raise SourceError("invalid_device")
+                    # Validate before anything is written: a rejected payload
+                    # must not repoint the local device or touch the store.
+                    record=parse_payload(body.get("payload"))
+                    record["updated_at"]=_time.time()
+                    set_local_device(service.config["runtime_dir"],local_device)
+                    replace_device(service.config["runtime_dir"],record,local_device)
+                except (SourceError,ValueError):
+                    self.send_json(400,{"error":"invalid_sync_payload"});return
+                except OSError:
+                    self.send_json(500,{"error":"sync_import_failed"});return
+                self.send_json(200,{"device":record["device"],"rows":len(record["rows"]),
+                                    "stored":record["device"]!=local_device})
+                return
             if self.path=="/v1/budget":
                 from .budget import save_budget
                 try:saved=save_budget(service.config["runtime_dir"],body)
@@ -263,7 +337,6 @@ def make_server(service,token,port=8769):
             if self.path=="/v1/prices":
                 try:
                     from .prices import PRICE_KEYS
-                    from .model import SourceError
                     if not isinstance(body,dict) or set(body)-{"currency","models","aliases","peak_multipliers"} \
                             or body.get("currency") not in {"USD","CNY"} or not isinstance(body.get("models"),dict) \
                             or not isinstance(body.get("aliases",{}),dict) \

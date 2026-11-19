@@ -17,6 +17,7 @@ README → AGENTS（存在时）→ 对应模块说明 → 构建与测试脚本
 | [docs/](docs/) | 说明、方案与验收资料。 |
 | [release/](release/) | 最新发布产物与发布入口。 |
 | [pets/](pets/README.md) | 桌宠：网页运行时、内置形象包、形象制作与校验工具（开发中）。面板里的「桌宠」标签页在 `menubar/Sources/AgentMeterBar/Pet*.swift`（`PetTabView` 界面、`PetStage` 舞台、`PetFeed` 共享轮询、`PetThumbnails` 缩略图、`PetStatus` / `PetCatalog` 文案）。 |
+| [sync_server/](sync_server/README.md) | 云端同步服务（开发中）：只存密文的 blob 存储。客户端在 `menubar/Sources/AgentMeterBar/SyncClient.swift` 用 CryptoKit 加密；规划与契约见 [云端同步规划](docs/cloud-sync-plan-2026-11-10.md)。 |
 
 ## 文件分工
 
@@ -28,4 +29,4 @@ README → AGENTS（存在时）→ 对应模块说明 → 构建与测试脚本
 
 ## 当前一级目录
 
-`agent_meter/`, `docs/`, `examples/`, `menubar/`, `pets/`, `release/`, `scripts/`, `tests/`
+`agent_meter/`, `docs/`, `examples/`, `menubar/`, `pets/`, `release/`, `scripts/`, `sync_server/`, `tests/`
