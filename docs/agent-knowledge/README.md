@@ -114,3 +114,5 @@
 - **Codex 直读压缩 rollout**：支持 `*.jsonl.zst`（stdlib 3.14 `compression.zstd` 或 `zstd` CLI），`sessions` 与 `archived_sessions` 都读取；同一 base 名同时存在时优先未压缩文件。
 - **MiniMax 配额凭据**：应用内 API Key → 环境变量 → `<runtime>/secrets/minimax_code.json`（迁移脚本一次性写入，0600）；不再读取 CC Switch providers。
 - **覆盖与 verify**：覆盖矩阵只按已发现应用 + 实际 source 署名；`imported_history` 把历史里出现但本机未安装的 provider 补成 `installed=false`、`discovery_kind="imported_history"`。verify 删除全部 CC Switch SQL 对照/交叉核对，改为各本机来源独立重算 + `imported_history` 独立重算；`schema_version=5`。前端不再显示 CC Switch 品牌/费用项/提示，「历史导入」品牌用于 `imported_history`。
+
+2026-11-19 云端同步账号与托管调研（用户要求：账号体系依托一家，评估家里服务器 + Cloudflare + 域名）：结论见[调研](../research/account-and-hosting-recon-2026-11-19.md)。微信/支付宝/抖音均要求企业或个体工商户（微信另需 300 元/年认证与备案域名，个人主体无法开通微信登录）；原生 Sign in with Apple 不被 Developer ID 分发支持。建议身份层与同步密钥解耦：P0 沿用 M0 空间密钥（分支 `claude/cloud-sync-m0`），P1 用邮箱/GitHub 轻账号 + 兑换码会员，P2 有主体后再上微信。家里服务器 + Cloudflare Tunnel 可承载自用/内测，公开收费前需补限速、配额、备份与备案。
