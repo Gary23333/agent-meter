@@ -73,6 +73,10 @@ secrets*.json
 :memory:*
 
 build/
+bin/
+obj/
+*.csproj.user
+windows/release/
 
 coverage/
 

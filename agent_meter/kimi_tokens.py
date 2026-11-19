@@ -119,8 +119,8 @@ def summarize(records, start, end, app="kimi"):
                        for m, v in sorted(models.items(), key=lambda x: -x[1]["fresh_input"])]}
 
 
-def collect_kimi_tokens(home, now, zone=ZoneInfo("Asia/Shanghai")):
-    records, excluded = load_records(Path(home) / ".kimi-code/sessions")
+def collect_kimi_tokens(home, now, zone=ZoneInfo("Asia/Shanghai"), sessions_root=None):
+    records, excluded = load_records(Path(sessions_root) if sessions_root else Path(home) / ".kimi-code/sessions")
     periods = {p: summarize(records, *period_bounds(now, p, zone)) for p in ("today", "7d", "30d", "all")}
     for p in periods.values():
         p["timezone"] = str(zone)

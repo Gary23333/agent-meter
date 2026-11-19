@@ -1,0 +1,302 @@
+name: Windows port
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv-win
+          .\.venv-win\Scripts\python.exe -m pip install -r windows\requirements.txt
+      - name: Test Windows collectors
+        shell: pwsh
+        run: ./windows/test.ps1
+      - name: Smoke test desktop pet on the isolated runner
+        shell: pwsh
+        run: |
+          $env:AGENT_METER_TEST_PET_WINDOW = '1'
+          dotnet run --project windows/AccountPreferences.Tests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop pet smoke test failed' }
+      - name: Test startup preference in isolated registry key
+        shell: pwsh
+        run: |
+          $env:AGENT_METER_TEST_STARTUP_REGISTRY = '1'
+          dotnet run --project windows/AccountPreferences.Tests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated startup registry test failed' }
+      - name: Build self-contained application
+        shell: pwsh
+        run: ./windows/build.ps1
+      - name: Smoke test packaged backend with an isolated home
+        shell: pwsh
+        run: |
+          $env:CODEX_HOME = ''
+          $env:CLAUDE_CONFIG_DIR = ''
+          $env:DSH_HOME = ''
+          $env:KIMI_CODE_HOME = ''
+          $env:XDG_DATA_HOME = ''
+          $env:OPENCODE_DB = ''
+          $result = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$env:RUNNER_TEMP/agentmeter-empty"
+          if ($LASTEXITCODE -ne 0) { throw 'Backend failed' }
+          $data = $result | ConvertFrom-Json
+          if ($data.account.status -ne 'disabled' -or $data.history.Codex.reason -ne 'codex_sessions_not_found') { throw 'Unexpected isolated result' }
+          $disabled = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $disabled.account.status -ne 'disabled' -or $disabled.other_accounts.'Kimi Code'.status -ne 'disabled' -or $disabled.other_accounts.'Claude Code'.status -ne 'disabled') { throw 'Account switches failed' }
+          $env:MINIMAX_TOKEN_PLAN_KEY = ''
+          $env:MINIMAX_REGION = 'cn'
+          $enabled = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account --enable-minimax-account | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $enabled.other_accounts.'MiniMax Code'.reason -ne 'minimax_credential_not_connected') { throw 'MiniMax opt-in check failed' }
+          $inputJson = '{"minimax_accounts":[{"label":"synthetic","region":"cn","key":null}]}'
+          $multiple = $inputJson | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account --enable-minimax-account --account-input | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $multiple.other_accounts.'MiniMax Code'[0].reason -ne 'minimax_vault_credential_missing') { throw 'Saved account input check failed' }
+          $env:DEEPSEEK_API_KEY = 'synthetic-ambient-key-not-used'
+          $deepseek = '{"key":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --deepseek-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $deepseek.reason -ne 'deepseek_credential_not_connected') { throw 'DeepSeek opt-in check failed' }
+          $env:DEEPSEEK_API_KEY = ''
+          $env:ZCODE_API_KEY = 'synthetic-ambient-key-not-used'
+          $zcode = '{"key":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --zcode-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $zcode.reason -ne 'zcode_credential_not_connected') { throw 'ZCode opt-in check failed' }
+          $env:ZCODE_API_KEY = ''
+          $env:VOLC_ACCESSKEY = 'synthetic-ambient-key-not-used'
+          $volcengine = '{"credentials":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --volcengine-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $volcengine.reason -ne 'volcengine_credential_not_connected') { throw 'Volcengine opt-in check failed' }
+          $env:VOLC_ACCESSKEY = ''
+          $env:MIMO_COOKIE = 'synthetic-ambient-cookie-not-used'
+          $mimo = '{"session":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --mimo-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $mimo.reason -ne 'mimo_session_missing') { throw 'MiMo opt-in check failed' }
+          $env:MIMO_COOKIE = ''
+          $workbuddy = '{"session":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --workbuddy-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $workbuddy.reason -ne 'workbuddy_session_missing') { throw 'WorkBuddy opt-in check failed' }
+          $fixture = @'
+          import json, sqlite3, sys, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root = Path(sys.argv[1]) / 'agentmeter-activity' / '.codex'
+          root.mkdir(parents=True, exist_ok=True)
+          connection = sqlite3.connect(root / 'state_5.sqlite')
+          connection.execute('CREATE TABLE threads(id TEXT, cwd TEXT, created_at INTEGER, updated_at INTEGER, model TEXT)')
+          connection.execute('INSERT INTO threads VALUES(?,?,?,?,?)', ('synthetic-id', 'C:/synthetic-path', int(time.time())-60, int(time.time())-30, 'synthetic-model'))
+          connection.commit()
+          connection.close()
+          sessions = root / 'sessions'
+          sessions.mkdir()
+          events = [ {'type':'turn_context','payload':{'model':'synthetic-model'}},
+                     {'timestamp':datetime.now(timezone.utc).isoformat(),'type':'event_msg','payload':{'type':'token_count','info':{'total_token_usage':{'input_tokens':100000000,'cached_input_tokens':0,'output_tokens':0,'reasoning_output_tokens':0}}}} ]
+          (sessions / 'synthetic.jsonl').write_text('\n'.join(json.dumps(event) for event in events) + '\n', encoding='utf-8')
+          '@
+          $fixture | ./.venv-win/Scripts/python.exe - $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'Activity fixture failed' }
+          $activity = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$env:RUNNER_TEMP/agentmeter-activity" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or @($activity.activity.apps | Where-Object { $_.name -eq 'Codex' -and $_.sessions -eq 1 }).Count -ne 1) { throw 'Activity aggregation failed' }
+          $onlyActivity = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --activity-only --home "$env:RUNNER_TEMP/agentmeter-activity" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $onlyActivity.sources.Codex -ne 'available' -or @($onlyActivity.apps | Where-Object { $_.name -eq 'Codex' -and $_.sessions -eq 1 }).Count -ne 1) { throw 'Activity-only refresh failed' }
+          if (($onlyActivity | ConvertTo-Json -Depth 10 -Compress) -match 'synthetic-path|synthetic-id|synthetic-model') { throw 'Activity-only privacy projection failed' }
+          if (@($activity.local_medals.medals | Where-Object { $_.id -eq 'day_1' -and $_.earned }).Count -ne 1) { throw 'Medal projection failed' }
+          $forecastFixture = @'
+          import json, sys, time
+          from pathlib import Path
+          from tests.test_reset_forecast import NORMALIZE
+          root = Path(sys.argv[1]) / 'agentmeter-forecast' / 'AgentMeter'
+          root.mkdir(parents=True, exist_ok=True)
+          row = NORMALIZE['willreset']()
+          row.update(status='available', reason=None, provenance='https://willreset.com/api/forecast', updated_at={'epoch_seconds':time.time()})
+          row['typical_window'] = {'start_hour':4, 'end_hour':7, 'timezone':'UTC'}  # 明确时间仅用于隔离夹具
+          history = [{'post_id':'synthetic', 'kind':'reset', 'announced_at':{'epoch_seconds':time.time()-86400}, 'sources':['willreset']}]
+          (root / 'reset-forecast.json').write_text(json.dumps({'saved_at':time.time(), 'rows':[row], 'history':{'willreset':history}}), encoding='utf-8')
+          '@
+          $forecastFixture | ./.venv-win/Scripts/python.exe - $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'Forecast fixture failed' }
+          $savedLocalAppData = $env:LOCALAPPDATA
+          try {
+            $env:LOCALAPPDATA = "$env:RUNNER_TEMP/agentmeter-forecast"
+            $forecast = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --forecast-only | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $forecast.cache_state -ne 'served_from_cache' -or $forecast.sources[0].name -ne 'WillReset' -or $forecast.sources[0].'24h' -ne 83) { throw 'Forecast cache projection failed' }
+            if ($forecast.ensemble.'24h'.weighted_median -ne 83 -or @($forecast.targets).Count -lt 1 -or @($forecast.history).Count -ne 1) { throw 'Forecast ensemble, clocks or history missing' }
+          } finally { $env:LOCALAPPDATA = $savedLocalAppData }
+          try {
+            $env:LOCALAPPDATA = "$env:RUNNER_TEMP/agentmeter-cards"
+            $reset = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 3600
+            $account = @{ account = @{ status = 'available'; quota = @{ status = 'available'; value = @(@{ bucket = 'codex'; window_minutes = 300; remaining_percent = 15; resets_at = @{ epoch_seconds = $reset } }) } }; other_accounts = @{} } | ConvertTo-Json -Depth 10 -Compress
+            $firstCards = $account | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --cards-update | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or @($firstCards.cards | Where-Object { $_.id -eq 'q5_80' -and $_.count -eq 1 }).Count -ne 1) { throw 'Quota card drop failed' }
+            $secondCards = $account | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --cards-update | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or @($secondCards.cards | Where-Object { $_.id -eq 'q5_80' -and $_.count -eq 1 }).Count -ne 1) { throw 'Quota card deduplication failed' }
+          } finally { $env:LOCALAPPDATA = $savedLocalAppData }
+      - name: Smoke test packaged budget with an isolated profile
+        shell: pwsh
+        run: |
+          $budgetTestDir = "$env:RUNNER_TEMP/agentmeter-budget-profile"
+          New-Item -ItemType Directory -Path $budgetTestDir -Force | Out-Null
+          '{"schema":1,"enabled":true,"alerts_enabled":false,"daily_cny":"10","weekly_cny":"50","anomaly_multiplier":"2"}' | Set-Content -LiteralPath "$budgetTestDir/budget-windows.json" -Encoding utf8
+          $env:CODEX_HOME = "$budgetTestDir/codex"
+          $env:CLAUDE_CONFIG_DIR = "$budgetTestDir/claude"
+          $env:DSH_HOME = "$budgetTestDir/dsh"
+          $env:KIMI_CODE_HOME = "$budgetTestDir/kimi"
+          $env:XDG_DATA_HOME = "$budgetTestDir/xdg"
+          $env:OPENCODE_DB = "$budgetTestDir/opencode.sqlite"
+          $result = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$budgetTestDir/home" --prices-dir $budgetTestDir | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $result.budget.status -ne 'ok' -or $result.budget.daily.budget_cny -ne '10.000000' -or $null -ne $result.budget.daily.spent_cny) { throw 'Packaged budget smoke test failed' }
+          if (Test-Path -LiteralPath "$budgetTestDir/budget-history.json") { throw 'Unknown budget amount should not create history' }
+          $budgetFixture = @'
+          import json, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          sessions = root / 'codex' / 'sessions'
+          sessions.mkdir(parents=True)
+          events = [{'type':'turn_context','payload':{'model':'gpt-5.3-codex'}}, {'timestamp':datetime.now(timezone.utc).isoformat(), 'type':'event_msg', 'payload':{'type':'token_count','info':{'total_token_usage':{'input_tokens':1000000,'cached_input_tokens':0,'output_tokens':0,'reasoning_output_tokens':0}}}}]
+          (sessions / 'synthetic.jsonl').write_text('\n'.join(json.dumps(item) for item in events)+'\n', encoding='utf-8')
+          prices = {'currency':'USD','models':{'gpt-5.3-codex':{'input':3,'cache_read':0.1,'cache_write':0,'output':9}}}
+          (root / 'prices.json').write_text(json.dumps(prices), encoding='utf-8')
+          '@
+          $budgetFixture | ./.venv-win/Scripts/python.exe - $budgetTestDir
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic budget fixture failed' }
+          $measured = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$budgetTestDir/home" --prices-dir $budgetTestDir | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $measured.budget.daily.spent_cny -ne '21.750000' -or -not $measured.budget.daily.exceeded) { throw 'Packaged budget calculation failed' }
+          if (-not (Test-Path -LiteralPath "$budgetTestDir/budget-history.json")) { throw 'Known budget estimate should record daily history' }
+      - name: Smoke test complete refresh with an isolated profile
+        shell: pwsh
+        run: |
+          $isolatedProfilePath = "$env:RUNNER_TEMP/agentmeter-refresh-profile"
+          New-Item -ItemType Directory -Path $isolatedProfilePath -Force | Out-Null
+          $env:USERPROFILE = $isolatedProfilePath
+          $env:LOCALAPPDATA = "$isolatedProfilePath/local"
+          $env:CODEX_HOME = "$isolatedProfilePath/codex"
+          $env:CLAUDE_CONFIG_DIR = "$isolatedProfilePath/claude"
+          $env:DSH_HOME = "$isolatedProfilePath/deepseek"
+          $env:KIMI_CODE_HOME = "$isolatedProfilePath/kimi"
+          $env:XDG_DATA_HOME = "$isolatedProfilePath/xdg"
+          $env:OPENCODE_DB = "$isolatedProfilePath/opencode.sqlite"
+          $env:AGENT_METER_ISOLATED_SMOKE = '1'
+          $errors = "$env:RUNNER_TEMP/refresh-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--isolated-refresh-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(90000)) { throw 'Complete refresh smoke test timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw "Complete refresh smoke test failed ($($app.ExitCode))" }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - name: Smoke test application startup
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--demo' -WindowStyle Hidden -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            $app.Refresh()
+            if ($app.HasExited) { throw "Application exited during startup with code $($app.ExitCode)" }
+          } finally {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id }
+          }
+      - name: Smoke test background tray startup
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/background-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--background-ui-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Background startup smoke timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Background startup failed' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - name: Smoke test isolated WebView profile
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath './windows/dist/AgentMeter/licenses/WebView2-SDK-LICENSE.txt')) { throw 'WebView2 SDK license missing' }
+          $webviewErrors = "$env:RUNNER_TEMP/webview-smoke-errors.txt"
+          $webview = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--webview-smoke' -WindowStyle Hidden -RedirectStandardError $webviewErrors -PassThru
+          try {
+            if (-not $webview.WaitForExit(90000)) { throw 'WebView2 profile smoke test timed out' }
+            if ($webview.ExitCode -eq 10) { Write-Warning 'WebView2 Runtime is unavailable; isolated profile smoke test skipped.' }
+            elseif ($webview.ExitCode -ne 0) { Get-Content -LiteralPath $webviewErrors; throw "WebView2 profile smoke test failed ($($webview.ExitCode))" }
+          } finally { if (-not $webview.HasExited) { Stop-Process -Id $webview.Id } }
+      - name: Smoke test activity refresh lifecycle with synthetic data
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/activity-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--activity-ui-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Activity refresh smoke test timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw "Activity refresh smoke test failed ($($app.ExitCode))" }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
+      - name: Smoke test tray popup lifecycle with synthetic data
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/popup-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--popup-ui-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Popup smoke timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Popup lifecycle failed' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - name: Smoke test tray indicator switching with synthetic data
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/tray-smoke-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--tray-indicator-smoke' -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Tray indicator smoke timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Tray indicator switching failed' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - name: Check 3D pet rendering in an isolated profile
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/pet3d-smoke-errors.txt"
+          $output = "$env:RUNNER_TEMP/agentmeter-pet3d"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--pet3d-smoke', $output -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(90000)) { throw '3D pet smoke timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw "3D pet smoke failed ($($app.ExitCode))" }
+            if (@(Get-ChildItem "$output/*.png").Count -ne 11) { throw '3D pet previews missing' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMeter-3D-pet-previews
+          path: ${{ runner.temp }}/agentmeter-pet3d/*.png
+          if-no-files-found: error
+      - name: Check real navigation repaint
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/navigation-paint-errors.txt"
+          $output = "$env:RUNNER_TEMP/agentmeter-navigation-paint"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--navigation-paint-smoke', $output -WindowStyle Hidden -RedirectStandardError $errors -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Navigation repaint check timed out' }
+            if ($app.ExitCode -ne 0) { Get-Content -LiteralPath $errors; throw 'Navigation repaint check failed' }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AgentMeter-navigation-paint
+          path: ${{ runner.temp }}/agentmeter-navigation-paint/*.png
+          if-no-files-found: warn
+      - name: Render isolated demo previews
+        shell: pwsh
+        run: |
+          $errors = "$env:RUNNER_TEMP/render-demo-errors.txt"
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -RedirectStandardError $errors -PassThru -Wait
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 94) { Get-Content -LiteralPath $errors; throw 'Demo preview generation failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMeter-demo-previews
+          path: ${{ runner.temp }}/agentmeter-previews/*.png
+          if-no-files-found: error
+      - name: Package portable build
+        shell: pwsh
+        run: ./windows/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMeter-Windows-x64
+          path: |
+            windows/release/AgentMeter-Windows-x64.zip
+            windows/release/SHA256SUMS.txt
+          if-no-files-found: error

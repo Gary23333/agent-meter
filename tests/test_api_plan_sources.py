@@ -251,3 +251,57 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class QoderWindowsTests(unittest.TestCase):
+    def test_explicit_session_and_fixed_endpoint(self):
+        from windows import backend
+        from agent_meter import web_sources
+        payload = {"totalQuota": {"quotaSummary": {"usedValue": 20, "limitValue": 100, "remainingValue": 80}}}
+        with mock.patch.object(web_sources, "get_json", return_value=payload) as request:
+            result = backend.qoder_account({"cookie": "synthetic=1", "user_agent": "synthetic-ua"}, NOW)
+        self.assertEqual(result["quota"]["value"][0]["remaining_percent"], 80)
+        self.assertEqual(request.call_args.args[0], "https://qoder.com.cn/api/v2/me/usages/big_model_credits")
+        self.assertEqual(request.call_args.kwargs["headers"]["Cookie"], "synthetic=1")
+        self.assertNotIn("synthetic=1", str(result))
+
+    def test_missing_or_invalid_sessions_do_not_query(self):
+        from windows import backend
+        with mock.patch.object(backend, "collect_qoder_web") as request:
+            for value in (None, {}, {"cookie": "a=1\r\nInjected: x", "user_agent": "ua"},
+                          {"cookie": "a=1", "user_agent": "ua", "extra": 1}):
+                with self.assertRaises(SourceError):
+                    backend.qoder_account(value, NOW)
+            request.assert_not_called()
+
+class TraeWindowsTests(unittest.TestCase):
+    def test_explicit_session_uses_fixed_quota_endpoint(self):
+        from windows import backend
+        from agent_meter import web_sources
+        payload = {"user_entitlement_pack_list": [{"entitlement_base_info": {"quota": {"credits_limit": 100}},
+                                                    "usage": {"credits_amount": 25}}]}
+        token = "synthetic.jwt." + "a" * 24
+        with mock.patch.object(web_sources, "post_json", return_value=payload) as request:
+            result = backend.trae_account({"token": token, "user_agent": "synthetic-ua", "device_id": "device"}, NOW)
+        self.assertEqual(result["quota"]["value"][0]["remaining_percent"], 75)
+        self.assertEqual(request.call_args.args[0], "https://api.trae.cn/trae/api/v2/pay/ide_user_ent_usage")
+        self.assertEqual(request.call_args.kwargs["headers"]["Authorization"], "Cloud-IDE-JWT " + token)
+        self.assertNotIn(token, str(result))
+
+    def test_missing_usage_does_not_become_full_balance(self):
+        from windows import backend
+        from agent_meter import web_sources
+        payload = {"user_entitlement_pack_list": [{"entitlement_base_info": {"quota": {"credits_limit": 100}}, "usage": {}}]}
+        with mock.patch.object(web_sources, "post_json", return_value=payload):
+            result = backend.trae_account({"token": "x" * 24, "user_agent": "ua", "device_id": None}, NOW)
+        self.assertEqual((result["status"], result["reason"]), ("partial", "trae_usage_incomplete"))
+        self.assertIsNone(result["quota"]["value"])
+        self.assertIsNone(result["credits"]["value"])
+
+    def test_invalid_session_never_queries(self):
+        from windows import backend
+        with mock.patch.object(backend, "collect_trae") as request:
+            for value in (None, {}, {"token": "x" * 20 + "\r\n", "user_agent": "ua", "device_id": None},
+                          {"token": "x" * 20, "user_agent": "ua", "device_id": None, "extra": 1}):
+                with self.assertRaises(SourceError):
+                    backend.trae_account(value, NOW)
+            request.assert_not_called()

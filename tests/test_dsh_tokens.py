@@ -31,6 +31,8 @@ def write_zstd(path, records):
     data = ("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n").encode()
     if zstd_io.HAS_STDLIB_ZSTD:
         path.write_bytes(zstd_io._zstd.compress(data))
+    elif zstd_io._zstandard is not None:
+        path.write_bytes(zstd_io._zstandard.ZstdCompressor().compress(data))
     else:
         with open(path, "wb") as handle:
             subprocess.run([shutil.which("zstd"), "-zc"], input=data, stdout=handle, check=True)
@@ -237,7 +239,7 @@ class DshTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = sessions_root(tmp) / "p" / "s"
             write_zstd(root / "session.v3.jsonl.zstd", [v3_message(ms_at(9), 1, 1, "m", 1, 1)])
-            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False):
+            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False), patch.object(zstd_io, "_zstandard", None):
                 with self.assertRaises(SourceError) as ctx:
                     collect_dsh_sessions(sessions_root(tmp), NOW, ZONE, zstd_binary=None)
                 self.assertEqual(ctx.exception.code, "zstd_unavailable")
@@ -252,7 +254,7 @@ class DshTokenTests(unittest.TestCase):
                 legacy_header(ms_at(9, 9), "m"),
                 legacy_final(ms_at(9, 10), 1, 1, 7, 3, reasoning=1, cache_read=5),
             ])
-            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False):
+            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False), patch.object(zstd_io, "_zstandard", None):
                 out = collect_dsh_sessions(sessions_root(tmp), NOW, ZONE, zstd_binary=binary)
             self.assertEqual(out["diagnostics"]["decompression_route"], "zstd_cli")
             allp = totals(out)

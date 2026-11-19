@@ -16,6 +16,11 @@ try:
 except ImportError:
     HAS_STDLIB_ZSTD = False
 
+try:
+    import zstandard as _zstandard
+except ImportError:
+    _zstandard = None
+
 # ZstdError is not an OSError subclass, so callers normalise it themselves.
 ZSTD_ERRORS = (OSError, _zstd.ZstdError) if HAS_STDLIB_ZSTD else (OSError,)
 COMPRESSED_SUFFIXES = (".zst", ".zstd")
@@ -29,6 +34,8 @@ def route(zstd_binary):
     """Which decompression route is available; raises when neither exists."""
     if HAS_STDLIB_ZSTD:
         return "stdlib_compression_zstd"
+    if _zstandard is not None:
+        return "python_zstandard"
     if zstd_binary:
         return "zstd_cli"
     raise SourceError("zstd_unavailable")
@@ -40,6 +47,15 @@ def decompressed(path, route_name, zstd_binary):
     if route_name == "stdlib_compression_zstd":
         with _zstd.open(path, "rb") as handle:
             yield handle
+    elif route_name == "python_zstandard":
+        import io
+        try:
+            with open(path, "rb") as raw:
+                with _zstandard.ZstdDecompressor().stream_reader(raw) as reader:
+                    with io.BufferedReader(reader) as handle:
+                        yield handle
+        except _zstandard.ZstdError as exc:
+            raise OSError("zstd decompression failed") from exc
     else:
         proc = subprocess.Popen([zstd_binary, "-dc", str(path)], stdout=subprocess.PIPE)
         try:

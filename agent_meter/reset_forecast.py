@@ -565,7 +565,8 @@ def default_fetchers(with_history):
 
 def read_cache(path):
     try:
-        data = json.loads(Path(path).read_text())
+        # 缓存以 UTF-8 写入，Windows 的系统默认编码不一定是 UTF-8。
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("rows"), list) or \

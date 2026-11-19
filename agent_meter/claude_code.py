@@ -24,12 +24,15 @@ WINDOWS = [("five_hour", 300), ("seven_day", 10080), ("seven_day_opus", 10080),
 SECURITY_ITEM_NOT_FOUND = 44
 
 
-def read_credentials(home, timeout, security="/usr/bin/security"):
-    path = Path(home) / ".claude/.credentials.json"
+def read_credentials(home, timeout, security="/usr/bin/security", credential_path=None):
+    path = Path(credential_path) if credential_path is not None else Path(home) / ".claude/.credentials.json"
     if path.is_file():
         if path.stat().st_size > MAX_BODY:
             raise SourceError("invalid_claude_credentials")
         raw = path.read_bytes()
+    elif credential_path is not None:
+        # 显式指定文件时不回退到 macOS 钥匙串，避免文件消失时执行错误的平台命令。
+        raise SourceError("claude_subscription_login_missing")
     else:
         try:
             # macOS asks the user once; the secret only travels over this pipe.
@@ -89,8 +92,8 @@ def normalize_claude(payload, oauth, now):
     return out
 
 
-def collect_claude(home, now, timeout=20):
-    oauth = read_credentials(home, max(timeout, 30))
+def collect_claude(home, now, timeout=20, credential_path=None):
+    oauth = read_credentials(home, max(timeout, 30), credential_path=credential_path)
     expires = oauth.get("expiresAt")
     if isinstance(expires, (int, float)) and not isinstance(expires, bool) and expires / 1000 <= now:
         raise SourceError("claude_token_expired")

@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\AgentMeter.Windows\AccountPreferences.cs" Link="AccountPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\PanelPlacement.cs" Link="PanelPlacement.cs" />
+    <Compile Include="..\AgentMeter.Windows\VisualThemes.cs" Link="VisualThemes.cs" />
+    <Compile Include="..\AgentMeter.Windows\ProviderStyle.cs" Link="ProviderStyle.cs" />
+    <Compile Include="..\AgentMeter.Windows\AccountLocalUsage.cs" Link="AccountLocalUsage.cs" />
+    <Compile Include="..\AgentMeter.Windows\AccountDetails.cs" Link="AccountDetails.cs" />
+    <Compile Include="..\AgentMeter.Windows\UsageDataExport.cs" Link="UsageDataExport.cs" />
+    <Compile Include="..\AgentMeter.Windows\UsagePeriodPreferences.cs" Link="UsagePeriodPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\UsageCostSummary.cs" Link="UsageCostSummary.cs" />
+    <Compile Include="..\AgentMeter.Windows\UsageSources.cs" Link="UsageSources.cs" />
+    <Compile Include="..\AgentMeter.Windows\ModelRanking.cs" Link="ModelRanking.cs" />
+    <Compile Include="..\AgentMeter.Windows\BudgetPreferences.cs" Link="BudgetPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\BudgetAlerts.cs" Link="BudgetAlerts.cs" />
+    <Compile Include="..\AgentMeter.Windows\BudgetState.cs" Link="BudgetState.cs" />
+    <Compile Include="..\AgentMeter.Windows\UsageBreakdown.cs" Link="UsageBreakdown.cs" />
+    <Compile Include="..\AgentMeter.Windows\ReportComparison.cs" Link="ReportComparison.cs" />
+    <Compile Include="..\AgentMeter.Windows\StartupRegistration.cs" Link="StartupRegistration.cs" />
+    <Compile Include="..\AgentMeter.Windows\SingleInstanceSignal.cs" Link="SingleInstanceSignal.cs" />
+    <Compile Include="..\AgentMeter.Windows\TrayIndicator.cs" Link="TrayIndicator.cs" />
+    <Compile Include="..\AgentMeter.Windows\TrayIndicatorIcon.cs" Link="TrayIndicatorIcon.cs" />
+    <Compile Include="..\AgentMeter.Windows\ApplicationOverview.cs" Link="ApplicationOverview.cs" />
+    <Compile Include="..\AgentMeter.Windows\ActivityRefreshPolicy.cs" Link="ActivityRefreshPolicy.cs" />
+    <Compile Include="..\AgentMeter.Windows\RefreshIntervalPreferences.cs" Link="RefreshIntervalPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\PriceOverrides.cs" Link="PriceOverrides.cs" />
+    <Compile Include="..\AgentMeter.Windows\QuotaAlerts.cs" Link="QuotaAlerts.cs" />
+    <Compile Include="..\AgentMeter.Windows\ResetCardAlerts.cs" Link="ResetCardAlerts.cs" />
+    <Compile Include="..\AgentMeter.Windows\ForecastPreferences.cs" Link="ForecastPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\ForecastPresentation.cs" Link="ForecastPresentation.cs" />
+    <Compile Include="..\AgentMeter.Windows\QuotaWindows.cs" Link="QuotaWindows.cs" />
+    <Compile Include="..\AgentMeter.Windows\QuotaResetClock.cs" Link="QuotaResetClock.cs" />
+    <Compile Include="..\AgentMeter.Windows\CalendarReportExport.cs" Link="CalendarReportExport.cs" />
+    <Compile Include="..\AgentMeter.Windows\ShareCardRenderer.cs" Link="ShareCardRenderer.cs" />
+    <Compile Include="..\AgentMeter.Windows\CredentialVault.cs" Link="CredentialVault.cs" />
+    <Compile Include="..\AgentMeter.Windows\MiniMaxProfiles.cs" Link="MiniMaxProfiles.cs" />
+    <Compile Include="..\AgentMeter.Windows\MiniMaxAccountInput.cs" Link="MiniMaxAccountInput.cs" />
+    <Compile Include="..\AgentMeter.Windows\CardInput.cs" Link="CardInput.cs" />
+    <Compile Include="..\AgentMeter.Windows\DeepSeekKeyStore.cs" Link="DeepSeekKeyStore.cs" />
+    <Compile Include="..\AgentMeter.Windows\ZCodeKeyStore.cs" Link="ZCodeKeyStore.cs" />
+    <Compile Include="..\AgentMeter.Windows\VolcengineKeyStore.cs" Link="VolcengineKeyStore.cs" />
+    <Compile Include="..\AgentMeter.Windows\WebCookieFilter.cs" Link="WebCookieFilter.cs" />
+    <Compile Include="..\AgentMeter.Windows\WorkBuddyNavigation.cs" Link="WorkBuddyNavigation.cs" />
+    <Compile Include="..\AgentMeter.Windows\MiMoNavigation.cs" Link="MiMoNavigation.cs" />
+    <Compile Include="..\AgentMeter.Windows\QoderNavigation.cs" Link="QoderNavigation.cs" />
+    <Compile Include="..\AgentMeter.Windows\TraeHeaderFilter.cs" Link="TraeHeaderFilter.cs" />
+    <Compile Include="..\AgentMeter.Windows\TraeNavigation.cs" Link="TraeNavigation.cs" />
+    <Compile Include="..\AgentMeter.Windows\WebViewSafety.cs" Link="WebViewSafety.cs" />
+    <Compile Include="..\AgentMeter.Windows\SpritePet.cs" Link="SpritePet.cs" />
+    <Compile Include="..\AgentMeter.Windows\PetState.cs" Link="PetState.cs" />
+    <Compile Include="..\AgentMeter.Windows\PetInteractionQueue.cs" Link="PetInteractionQueue.cs" />
+    <Compile Include="..\AgentMeter.Windows\PetPreferences.cs" Link="PetPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\PetWindow.cs" Link="PetWindow.cs" />
+    <EmbeddedResource Include="..\..\pets\presets\mochi\pet.json" LogicalName="AgentMeter.Pet.mochi.pet.json" />
+    <EmbeddedResource Include="..\..\pets\presets\bit\pet.json" LogicalName="AgentMeter.Pet.bit.pet.json" />
+    <EmbeddedResource Include="..\..\pets\presets\mochi\sprites\*.png" LogicalName="AgentMeter.Pet.mochi.%(Filename).png" />
+    <EmbeddedResource Include="..\..\pets\presets\bit\sprites\*.png" LogicalName="AgentMeter.Pet.bit.%(Filename).png" />
+  </ItemGroup>
+</Project>

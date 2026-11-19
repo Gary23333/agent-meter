@@ -67,14 +67,42 @@ def normalize_kimi(envelope, now):
     return out
 
 
-def instance_urls(home):
+def process_exists(pid):
+    """检查进程是否存在，不在 Windows 上发送信号或结束进程。"""
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        code = wintypes.DWORD()
+        return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def instance_urls(home, server_root=None):
     urls = []
-    for path in sorted((Path(home)/".kimi-code/server/instances").glob("*.json")):
+    root = Path(server_root) if server_root else Path(home)/".kimi-code"
+    for path in sorted((root/"server/instances").glob("*.json")):
         try:
             row = json.loads(path.read_text())
             if row.get("host") not in {"127.0.0.1", "localhost"}:
                 continue
-            os.kill(integer(row["pid"]), 0)
+            if not process_exists(integer(row["pid"])):
+                continue
             port = integer(row["port"])
             if 0 < port < 65536:
                 urls.append("http://127.0.0.1:"+str(port))
@@ -83,8 +111,9 @@ def instance_urls(home):
     return urls
 
 
-def collect_kimi(home, binary, now, timeout=15, url=None, start_server=False, cwd=None):
-    token_path = Path(home)/".kimi-code/server.token"
+def collect_kimi(home, binary, now, timeout=15, url=None, start_server=False, cwd=None, server_root=None):
+    root = Path(server_root) if server_root else Path(home)/".kimi-code"
+    token_path = root/"server.token"
     if not token_path.is_file():
         raise SourceError("kimi_server_token_missing")
     try:
@@ -93,7 +122,7 @@ def collect_kimi(home, binary, now, timeout=15, url=None, start_server=False, cw
         raise SourceError("kimi_server_token_invalid") from None
     if not token or "\n" in token:
         raise SourceError("kimi_server_token_invalid")
-    urls = [url] if url else instance_urls(home)
+    urls = [url] if url else instance_urls(home, server_root=root)
     last_error = SourceError("kimi_server_not_running")
     for endpoint in urls:
         try:

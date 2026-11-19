@@ -26,7 +26,9 @@ Per-source granularity and what a row can NOT claim:
   (停止写入不能算成功, 应用退出也不能算失败).
 """
 import json
+import sqlite3
 import time
+from itertools import chain
 from pathlib import Path, PurePath
 
 from . import opencode_tokens, peak, zcode_local
@@ -741,21 +743,60 @@ def gemini_activities(gemini_dir, window_start, idle_seconds, now):
 # OpenCode: message db grouped by session; directory from the session table.
 
 
+class PartialActivityRows(list):
+    """携带来源不完整状态，仍保留可读取的旧版活动。"""
+    pass
+
+
 def opencode_activities(db_path, window_start, idle_seconds, now, *, app="opencode",
                         schema_code="unsupported_opencode_schema",
                         missing_code="opencode_db_not_found", read_code="opencode_db_read_failed"):
     with opencode_tokens.readonly_database(db_path, missing_code=missing_code, read_code=read_code) as conn:
         columns = {r[1] for r in conn.execute("PRAGMA table_info(message)")}
-        if not {"time_created", "data", "session_id"} <= columns:
+        has_legacy = {"time_created", "data", "session_id"} <= columns
+        v2_columns = {r[1] for r in conn.execute("PRAGMA table_info(session_message)")} if app == "opencode" else set()
+        v2_present = bool(v2_columns and conn.execute("SELECT 1 FROM session_message LIMIT 1").fetchone())
+        if not has_legacy and not v2_present:
             raise SourceError(schema_code)
         directories = {}
-        if {"id", "directory"} <= {r[1] for r in conn.execute("PRAGMA table_info(session)")}:
-            directories = {r[0]: r[1] for r in conn.execute("SELECT id, directory FROM session")
-                           if isinstance(r[1], str) and r[1]}
+        for table in ("session", "session_v2") if app == "opencode" else ("session",):
+            if {"id", "directory"} <= {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+                directories.update({r[0]: r[1] for r in conn.execute(f"SELECT id, directory FROM {table}")
+                                    if isinstance(r[1], str) and r[1]})
         sessions = {}
-        for time_created, session_id, data in conn.execute(
-                "SELECT time_created, session_id, data FROM message WHERE time_created BETWEEN ? AND ?",
-                (int(window_start * 1000), int(now * 1000))):
+        legacy_rows = conn.execute(
+            "SELECT time_created, session_id, data FROM message WHERE time_created BETWEEN ? AND ?",
+            (int(window_start * 1000), int(now * 1000))) if has_legacy else ()
+        v2_rows = []
+        v2_partial = v2_present and (not {"id", "session_id", "type", "time_created", "data"} <= v2_columns or
+                                     (has_legacy and "id" not in columns))
+        if v2_present and not v2_partial:
+            exclude = " AND NOT EXISTS (SELECT 1 FROM message AS old WHERE old.id = newer.id)" if has_legacy else ""
+            try:
+                query = ("SELECT time_created, session_id, json_valid(data), "
+                         "CASE WHEN json_valid(data) THEN json_extract(data, '$.model.id') END, "
+                         "CASE WHEN json_valid(data) THEN json_extract(data, '$.tokens') END "
+                         "FROM session_message AS newer WHERE type = 'assistant' AND time_created BETWEEN ? AND ?" + exclude)
+                for stamp, session_id, valid, model, tokens in conn.execute(query, (int(window_start * 1000), int(now * 1000))):
+                    if not valid:
+                        v2_partial = True
+                        continue
+                    try:
+                        decoded = json.loads(tokens) if isinstance(tokens, str) else None
+                    except ValueError:
+                        v2_partial = True
+                        continue
+                    data = json.dumps({"role": "assistant", "modelID": model, "tokens": decoded})
+                    if tokens is not None and opencode_tokens._tokens(data) is None:
+                        v2_partial = True
+                        continue
+                    v2_rows.append((stamp, session_id, data))
+                if conn.execute("SELECT 1 FROM session_message WHERE type = 'compaction' AND time_created BETWEEN ? AND ? LIMIT 1",
+                                (int(window_start * 1000), int(now * 1000))).fetchone():
+                    v2_partial = True
+            except sqlite3.OperationalError:
+                v2_partial = True
+        for time_created, session_id, data in chain(legacy_rows, v2_rows):
             parsed = opencode_tokens._tokens(data)
             if parsed is None:
                 continue
@@ -774,7 +815,7 @@ def opencode_activities(db_path, window_start, idle_seconds, now, *, app="openco
             state["models"][model] = when
             state["started"] = when if state["started"] is None else min(state["started"], when)
             state["last"] = when if state["last"] is None else max(state["last"], when)
-    out = []
+    out = PartialActivityRows() if v2_partial else []
     for session_id, state in sorted(sessions.items()):
         status, basis = _recency_status(state["last"], now, idle_seconds)
         out.append(_activity(
@@ -857,7 +898,8 @@ def collect_activity(config, now=None, table=None):
             return
         try:
             rows = fn()
-            meta = {"status": "available", "activities": len(rows)}
+            meta = {"status": "partial" if isinstance(rows, PartialActivityRows) else "available", "activities": len(rows)}
+            if isinstance(rows, PartialActivityRows): meta["reason"] = "opencode_v2_activity_partial"
         except SourceError as error:
             rows, meta = [], {"status": "not_connected", "reason": error.code, "activities": 0}
         except Exception:
@@ -867,7 +909,7 @@ def collect_activity(config, now=None, table=None):
     run("zcode", lambda: zcode_activities(config["zcode_usage_db"], window_start, idle_seconds, now))
     run("codex", lambda: codex_activities(config["codex_state_db"], window_start, idle_seconds, now))
     run("codex_images", lambda: codex_image_activities(config["codex_history_db"], window_start, idle_seconds, now))
-    run("kimi", lambda: _kimi_session_activities(Path(config["home"]) / ".kimi-code/sessions",
+    run("kimi", lambda: _kimi_session_activities(config.get("kimi_code_sessions_dir") or Path(config["home"]) / ".kimi-code/sessions",
                                                  "kimi", window_start, idle_seconds, now))
     run("kimi_desktop", lambda: _kimi_session_activities(config["kimi_desktop_sessions_dir"],
                                                          "kimi_desktop", window_start, idle_seconds, now))

@@ -385,6 +385,39 @@ class OpencodeTests(unittest.TestCase):
                    " time_created integer, time_updated integer, data text)")
     SESSION_DDL = "CREATE TABLE session (id text primary key, directory text)"
 
+    def test_v2_activity_is_explicitly_partial(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "opencode.db"
+            conn = sqlite3.connect(db)
+            conn.execute("CREATE TABLE session_message(id TEXT PRIMARY KEY)")
+            conn.execute("INSERT INTO session_message VALUES ('new')")
+            conn.commit(); conn.close()
+            rows = activity_module.opencode_activities(db, WINDOW_START, IDLE, NOW)
+            self.assertIsInstance(rows, activity_module.PartialActivityRows)
+            self.assertEqual(rows, [])
+
+    def test_v2_activity_deduplicates_migrated_messages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "opencode.db"
+            conn = sqlite3.connect(db)
+            conn.executescript(self.MESSAGE_DDL + ";" + self.SESSION_DDL + ";" +
+                "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT);" +
+                "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT)")
+            conn.execute("INSERT INTO session_v2 VALUES ('s1', '/example/project')")
+            tokens = {"input": 10, "output": 2, "reasoning": 1, "cache": {"read": 3, "write": 0}}
+            old = json.dumps({"role": "assistant", "modelID": "legacy", "tokens": tokens})
+            new = json.dumps({"model": {"id": "new"}, "tokens": tokens, "content": [{"text": "private"}]})
+            conn.execute("INSERT INTO message VALUES ('same', 's1', ?, ?, ?)", (ms_ago(120), ms_ago(120), old))
+            conn.executemany("INSERT INTO session_message VALUES (?, 's1', 'assistant', ?, ?)",
+                             [('same', ms_ago(120), new), ('new', ms_ago(30), new)])
+            conn.commit(); conn.close()
+            rows = activity_module.opencode_activities(db, WINDOW_START, IDLE, NOW)
+            self.assertNotIsInstance(rows, activity_module.PartialActivityRows)
+            self.assertEqual((len(rows), rows[0]['requests'], rows[0]['tokens']['fresh_input']), (1, 2, 20))
+            self.assertEqual(rows[0]['project_path'], '/example/project')
+            self.assertEqual(rows[0]['last_model'], 'new')
+            self.assertNotIn('private', str(rows))
+
     def test_project_join_and_tokens(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "opencode.db"
@@ -465,6 +498,7 @@ class CollectActivityTests(unittest.TestCase):
                 db.execute("CREATE TABLE threads(id,cwd,created_at,updated_at,recency_at,title,tokens_used)")
                 db.execute("INSERT INTO threads VALUES('t','/project',?,?,?,'private',900000)",
                            (NOW-3000, NOW, NOW-2000))
+            db.close()  # SQLite 上下文只负责事务；Windows 上必须显式关闭文件句柄。
             feed = collect_activity(config, now=NOW)
             row = feed["activities"][0]
             self.assertEqual((row["application_id"], row["status"]), ("codex", "suspected_ended"))

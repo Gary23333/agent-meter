@@ -39,6 +39,8 @@ def write_zstd(path, lines):
     data = ("\n".join(json.dumps(x) for x in lines) + "\n").encode()
     if zstd_io.HAS_STDLIB_ZSTD:
         path.write_bytes(zstd_io._zstd.compress(data))
+    elif zstd_io._zstandard is not None:
+        path.write_bytes(zstd_io._zstandard.ZstdCompressor().compress(data))
     else:
         with open(path, "wb") as handle:
             subprocess.run([shutil.which("zstd"), "-zc"], input=data, stdout=handle, check=True)
@@ -119,7 +121,7 @@ class CodexTests(unittest.TestCase):
                 {"timestamp": ts(9), "type": "session_meta", "payload": {"model": "gpt-6-astra"}},
                 codex_event(ts(9, 10), TOTAL(100, 10, 2, 50)),
             ])
-            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False):
+            with patch.object(zstd_io, "HAS_STDLIB_ZSTD", False), patch.object(zstd_io, "_zstandard", None):
                 with self.assertRaises(SourceError) as failure:
                     codex_tokens_metric(root, Path(tmp) / "archive", NOW, zstd_binary=None)
             self.assertEqual(failure.exception.code, "zstd_unavailable")
