@@ -140,7 +140,12 @@ auth_hash   = SHA256(auth_token)          # 建空间时交给服务，之后不
 `space_id` 由客户端生成，因此客户端能先派生出 token 再建空间；token **按空间限定**，
 一个空间泄漏的 token 打不开另一个空间。
 
-设备配对：二维码携带 `space_id + master_key + 服务地址`；第二台设备扫码后自行输入同一口令。
+设备配对：6 位短码（类似微信输入法多设备配对），不带 `space_id` / `master_key` / 服务地址。
+发起端建一个一次性槽位并提交临时公钥 `pub_a`；加入端输码取得 `pub_a`，提交自己的
+临时公钥 `pub_b`；发起端用 X25519 共享秘密派生包装密钥，把 `{space_id, master_key}`
+用 ChaChaPoly 封装后上传；加入端取回解密。两端再用同一个共享秘密派生 6 位安全码
+（SAS）由人核对，防中间人。服务端只中转公钥、密文和槽位状态，**零知识**。短码 5 分钟
+过期，单槽 5 次尝试，每 IP 每分钟 10 次 lookup。两台设备必须事先配置同一个服务地址。
 
 ### 4.5 会员（M1 设计，尚未实现）
 
@@ -153,11 +158,11 @@ auth_hash   = SHA256(auth_token)          # 建空间时交给服务，之后不
 
 ## 5. 已知边界与待办
 
-- **空间是互信组**：同一空间里的设备共享 master key，因此任何一台都能写别的设备的 blob。要收紧就得给每台设备独立密钥，配对方式要重做（M2 决定）。
+- **空间是互信组**：同一空间里的设备共享 master key，因此任何一台都能写别的设备的 blob。P0 保留这个模型；要收紧就得给每台设备独立密钥，配对方式要重做（后续里程碑）。
 - 用量行按设备累加：同一台机器的账本被两台设备读到就会算两遍。这是用户自己的部署方式，存储层无法识别。
-- 卸载重装会产生新的 `device` id，旧设备的桶仍留在库里，会与新设备的行重复计入同一台机器。解决方式留给 M2（配对时声明「替换旧设备」）。
+- 卸载重装会产生新的 `device` id，旧设备的桶仍留在库里，会与新设备的行重复计入同一台机器。设备 id 目前存在 UserDefaults，重装后不保留；后续可在配对时声明「替换旧设备」。
 - 服务端目前是自建轻量服务（Python 标准库 + SQLite）。协议刻意做得很瘦，日后换 Cloudflare Workers 只是换实现。
-- 服务没有限速与配额管理（M2 上公网前必须补）。
+- 短码 lookup 已按 IP 限速（每分钟 10 次）；其余写接口仍无通用限速与配额，公网部署前需在 Cloudflare 层补规则。
 - 会员的收款与售后流程未定义（M1）。
 
 ## 6. 里程碑
@@ -166,7 +171,7 @@ auth_hash   = SHA256(auth_token)          # 建空间时交给服务，之后不
 |---|---|---|
 | **M0** | 骨架与契约：载荷 / 存储 / 本机接口 / 加密客户端 / 同步服务 | **已完成（2026-11-10）** |
 | M1 | 会员闭环：签发工具、license 校验、权益门控、兑换 UI | 未开始 |
-| M2 | 云同步闭环：空间创建、扫码配对、手动同步、状态展示 | 未开始 |
+| M2 | 云同步闭环：空间创建、短码配对、手动同步、状态展示 | **已完成（2026-11-19，服务端 + 客户端 + UI）** |
 | M3 | UI：跨设备「历史」页、Pro 分享图模板 | 未开始 |
 | M4 | 文档与发布：README/SECURITY 隐私章节、CI job、发版 | 未开始 |
 
@@ -183,3 +188,13 @@ auth_hash   = SHA256(auth_token)          # 建空间时交给服务，之后不
 - 回归：Python 694 项、Swift 87 项、同步服务 20 项全过；真机 `verify` 0 失败（同步数据未污染本机合计与覆盖矩阵）。
 - 顺带修掉 `agent_meter/server.py` 里一个潜在缺陷：`do_PUT` 内的局部 `from .model import SourceError`
   让 `SourceError` 变成整个函数的局部名，任何在价格分支之外引用它的代码都会 `UnboundLocalError`。
+
+## 实施状态（2026-11-19）
+
+分支 `feat/cloud-sync-pairing`，M2 已完成：
+
+- `sync_server/app.py` —— 新增 `pair_slots` 表与 `/v1/pair/*`：建槽、lookup、上传 `pub_b`、发起端封密钥、加入端取密文、消费；6 位码只存 sha256，join token 只存 sha256，5 分钟 TTL、5 次尝试、每 IP 每分钟 10 次 lookup、每空间 3 个未消费槽。
+- `menubar/Sources/AgentMeterBar/SyncPairing.swift` —— X25519 临时密钥、HKDF 派生包装密钥与 SAS、ChaChaPoly 封装主密钥、`PairingTransport` / `PairingService` / `PairingInitiator` / `PairingJoiner`。
+- `menubar/Sources/AgentMeterBar/SyncConfigurationStore.swift` —— master key 与 space/device id 存登录 Keychain（`local.agent-meter.sync`），服务地址与 device id 存 UserDefaults。
+- `menubar/Sources/AgentMeterBar/SyncPairingView.swift` —— 设置菜单「多机同步（合并用量）…」：创建配对码、输码加入、安全码核对、立即同步、解除配对。
+- 测试：服务端 45 项、`tests.test_sync_payload` 39 项、Swift 118 项全过；其中 Swift 集成测试会启动真实 Python 服务并在两端跑完整短码交接。

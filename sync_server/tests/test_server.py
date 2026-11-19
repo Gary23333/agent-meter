@@ -1,19 +1,31 @@
+import base64
 import hashlib
 import http.client
 import json
 import secrets
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 from sync_server.app import MAX_BLOB, Store, make_server
 
 SPACE = "1" * 32
 DEVICE = "2" * 32
 OTHER = "3" * 32
+
+
+def b64url(raw):
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+PUB_A = b64url(bytes([1]) * 32)
+PUB_B = b64url(bytes([2]) * 32)
+CIPHERTEXT = b64url(bytes(range(64)))
 
 
 def hash_token(token):
@@ -284,6 +296,209 @@ class BoundaryTests(ServiceTestCase):
         path = Path(self.tmp.name) / "sync.db"
         self.assertTrue(path.exists())
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+
+class PairingTests(ServiceTestCase):
+    def create_slot(self, space=None):
+        space = space or self.create_space()
+        status, body = self.call("POST", "/v1/pair/slots",
+                                 {"space_id": space, "pub_a": PUB_A}, token=self.token)
+        self.assertEqual(status, 201)
+        return space, json.loads(body)
+
+    def lookup(self, code):
+        return self.call("POST", "/v1/pair/lookup", {"code": code})
+
+    def join(self, slot_id, join_token, pub_b=PUB_B):
+        return self.call("PUT", "/v1/pair/slots/%s" % slot_id,
+                         {"pub_b": pub_b}, token=join_token)
+
+    def seal(self, slot_id, ciphertext=CIPHERTEXT, token=None):
+        return self.call("PUT", "/v1/pair/slots/%s/sealed" % slot_id,
+                         {"ciphertext": ciphertext}, token=token or self.token)
+
+    def sealed(self, slot_id, join_token):
+        return self.call("GET", "/v1/pair/slots/%s/sealed" % slot_id, token=join_token)
+
+    def test_a_slot_has_a_six_digit_code(self):
+        _, slot = self.create_slot()
+        self.assertRegex(slot["code"], r"^[0-9]{6}$")
+        self.assertEqual(len(slot["slot_id"]), 32)
+        self.assertEqual(slot["ttl"], 300)
+
+    def test_the_store_keeps_no_code(self):
+        _, slot = self.create_slot()
+        stored = self.store.pair_slot(slot["slot_id"])
+        self.assertNotIn(slot["code"], json.dumps(stored))
+        self.assertNotIn("join_token", json.dumps(stored))
+
+    def test_creating_a_slot_needs_the_space_token(self):
+        space = self.create_space()
+        status, _ = self.call("POST", "/v1/pair/slots",
+                              {"space_id": space, "pub_a": PUB_A})
+        self.assertEqual(status, 401)
+        status, _ = self.call("POST", "/v1/pair/slots",
+                              {"space_id": space, "pub_a": PUB_A}, token="wrong-token")
+        self.assertEqual(status, 403)
+
+    def test_a_bad_public_key_is_refused(self):
+        space = self.create_space()
+        status, body = self.call("POST", "/v1/pair/slots",
+                                 {"space_id": space, "pub_a": "short"}, token=self.token)
+        self.assertEqual(status, 400)
+        self.assertEqual(json.loads(body)["error"], "invalid_public_key")
+
+    def test_a_wrong_code_is_not_found(self):
+        _, slot = self.create_slot()
+        wrong = "000000" if slot["code"] != "000000" else "111111"
+        status, body = self.lookup(wrong)
+        self.assertEqual(status, 404)
+        self.assertEqual(json.loads(body)["error"], "pair_code_not_found")
+
+    def test_the_full_handoff(self):
+        space, slot = self.create_slot()
+        status, body = self.lookup(slot["code"])
+        self.assertEqual(status, 200)
+        found = json.loads(body)
+        self.assertEqual(found["slot_id"], slot["slot_id"])
+        self.assertEqual(found["space_id"], space)
+        self.assertEqual(found["pub_a"], PUB_A)
+        self.assertEqual(found["attempts_left"], 4)
+        self.assertTrue(found["join_token"])
+
+        status, body = self.join(slot["slot_id"], found["join_token"])
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["public_key_received"])
+
+        status, body = self.call("GET", "/v1/pair/slots/%s" % slot["slot_id"],
+                                 token=self.token)
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertTrue(result["ready"])
+        self.assertEqual(result["pub_b"], PUB_B)
+        self.assertIsNone(result["ciphertext"])
+
+        status, body = self.seal(slot["slot_id"])
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["sealed"])
+
+        status, body = self.sealed(slot["slot_id"], found["join_token"])
+        self.assertEqual(status, 200)
+        joined = json.loads(body)
+        self.assertTrue(joined["ready"])
+        self.assertEqual(joined["space_id"], space)
+        self.assertEqual(joined["ciphertext"], CIPHERTEXT)
+
+        status, body = self.call("GET", "/v1/pair/slots/%s" % slot["slot_id"],
+                                 token=self.token)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["ciphertext"], CIPHERTEXT)
+
+        status, _ = self.call("GET", "/v1/pair/slots/%s" % slot["slot_id"],
+                              token="wrong-token")
+        self.assertEqual(status, 403)
+
+        status, _ = self.call("DELETE", "/v1/pair/slots/%s" % slot["slot_id"],
+                              token=self.token)
+        self.assertEqual(status, 200)
+        status, body = self.call("GET", "/v1/pair/slots/%s" % slot["slot_id"],
+                                 token=self.token)
+        self.assertEqual(status, 410)
+        self.assertEqual(json.loads(body)["error"], "pair_slot_consumed")
+
+    def test_the_join_token_is_scoped_to_the_slot(self):
+        _, slot = self.create_slot()
+        _, body = self.lookup(slot["code"])
+        join_token = json.loads(body)["join_token"]
+        status, _ = self.join(slot["slot_id"], "wrong-join-token")
+        self.assertEqual(status, 403)
+        status, _ = self.join(slot["slot_id"], join_token)
+        self.assertEqual(status, 200)
+
+    def test_a_slot_can_only_be_joined_once(self):
+        _, slot = self.create_slot()
+        _, body = self.lookup(slot["code"])
+        join_token = json.loads(body)["join_token"]
+        self.assertEqual(self.join(slot["slot_id"], join_token)[0], 200)
+        status, body = self.join(slot["slot_id"], join_token)
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["error"], "pair_slot_already_paired")
+
+    def test_a_bad_ciphertext_is_refused(self):
+        _, slot = self.create_slot()
+        _, body = self.lookup(slot["code"])
+        join_token = json.loads(body)["join_token"]
+        self.assertEqual(self.join(slot["slot_id"], join_token)[0], 200)
+        status, body = self.seal(slot["slot_id"], ciphertext="x")
+        self.assertEqual(status, 400)
+        self.assertEqual(json.loads(body)["error"], "invalid_ciphertext")
+
+    def test_the_sealed_blob_needs_the_space_token(self):
+        _, slot = self.create_slot()
+        _, body = self.lookup(slot["code"])
+        join_token = json.loads(body)["join_token"]
+        self.assertEqual(self.join(slot["slot_id"], join_token)[0], 200)
+        status, _ = self.seal(slot["slot_id"], token="wrong-token")
+        self.assertEqual(status, 403)
+
+    def test_the_sealed_blob_is_only_readable_with_the_join_token(self):
+        _, slot = self.create_slot()
+        _, body = self.lookup(slot["code"])
+        join_token = json.loads(body)["join_token"]
+        self.assertEqual(self.join(slot["slot_id"], join_token)[0], 200)
+        status, _ = self.sealed(slot["slot_id"], "wrong-join-token")
+        self.assertEqual(status, 403)
+        status, body = self.sealed(slot["slot_id"], join_token)
+        self.assertEqual(status, 200)
+        self.assertFalse(json.loads(body)["ready"])
+        self.assertEqual(self.seal(slot["slot_id"])[0], 200)
+        status, body = self.sealed(slot["slot_id"], join_token)
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["ready"])
+        self.assertEqual(json.loads(body)["ciphertext"], CIPHERTEXT)
+
+    def test_an_expired_slot_is_gone(self):
+        _, slot = self.create_slot()
+        with mock.patch("sync_server.app.time.time", return_value=slot["expires_at"] + 1):
+            status, body = self.lookup(slot["code"])
+        self.assertEqual(status, 404)
+        self.assertEqual(json.loads(body)["error"], "pair_code_not_found")
+
+    def test_attempts_burn_the_slot(self):
+        _, slot = self.create_slot()
+        for _ in range(5):
+            status, _ = self.lookup(slot["code"])
+            self.assertEqual(status, 200)
+        status, body = self.lookup(slot["code"])
+        self.assertEqual(status, 429)
+        self.assertEqual(json.loads(body)["error"], "pair_attempts_exceeded")
+        status, body = self.lookup(slot["code"])
+        self.assertEqual(status, 404)
+
+    def test_lookup_is_rate_limited_per_ip(self):
+        for _ in range(10):
+            status, _ = self.lookup("000000")
+            self.assertEqual(status, 404)
+        status, body = self.lookup("000000")
+        self.assertEqual(status, 429)
+        self.assertEqual(json.loads(body)["error"], "rate_limited")
+
+    def test_a_space_keeps_at_most_three_open_slots(self):
+        space = self.create_space()
+        for _ in range(3):
+            status, _ = self.call("POST", "/v1/pair/slots",
+                                  {"space_id": space, "pub_a": PUB_A}, token=self.token)
+            self.assertEqual(status, 201)
+        status, body = self.call("POST", "/v1/pair/slots",
+                                 {"space_id": space, "pub_a": PUB_A}, token=self.token)
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["error"], "too_many_pair_slots")
+
+    def test_a_browser_origin_is_refused_for_lookup(self):
+        status, body = self.call("POST", "/v1/pair/lookup", {"code": "000000"},
+                                 headers={"Origin": "https://example.com"})
+        self.assertEqual(status, 403)
+        self.assertEqual(json.loads(body)["error"], "origin_rejected")
 
 
 if __name__ == "__main__":

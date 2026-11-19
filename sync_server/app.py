@@ -12,6 +12,7 @@ deployment decision, and the transport in front of it must be https.
 """
 
 import argparse
+import base64
 import hashlib
 import hmac
 import json
@@ -27,9 +28,42 @@ from pathlib import Path
 MAX_BLOB = 8 * 1024 * 1024
 MAX_DEVICES_PER_SPACE = 10
 MAX_SPACE_BYTES = 64 * 1024 * 1024
+MAX_PAIR_SLOTS_PER_SPACE = 3
+PAIR_TTL = 300.0
+PAIR_ATTEMPTS = 5
+PAIR_RATE_LIMIT = 10
+PAIR_MAX_BODY = 8 * 1024
 # Identifiers are opaque hex; anything else is a path-traversal probe.
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+# A 32-byte X25519 public key in unpadded base64url is exactly 43 chars.
+PUBLIC_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+CODE_RE = re.compile(r"^[0-9]{6}$")
+CIPHERTEXT_RE = re.compile(r"^[A-Za-z0-9_-]{40,5462}$")
+
+
+def b64url_bytes(value):
+    """Decode unpadded base64url, or None when it is not valid."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    except (ValueError, TypeError):
+        return None
+
+
+def valid_public_key(value):
+    if not isinstance(value, str) or not PUBLIC_KEY_RE.match(value):
+        return False
+    raw = b64url_bytes(value)
+    return raw is not None and len(raw) == 32
+
+
+def valid_ciphertext(value):
+    if not isinstance(value, str) or not CIPHERTEXT_RE.match(value):
+        return False
+    raw = b64url_bytes(value)
+    return raw is not None and 48 <= len(raw) <= 4096
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS spaces (
@@ -47,6 +81,22 @@ CREATE TABLE IF NOT EXISTS blobs (
     PRIMARY KEY (space_id, device_id)
 );
 CREATE INDEX IF NOT EXISTS blobs_by_space ON blobs(space_id);
+CREATE TABLE IF NOT EXISTS pair_slots (
+    slot_id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    pub_a TEXT NOT NULL,
+    pub_b TEXT,
+    ciphertext TEXT,
+    join_hash TEXT,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    consumed_at REAL,
+    attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pair_slots_code
+    ON pair_slots(code_hash) WHERE consumed_at IS NULL;
+CREATE INDEX IF NOT EXISTS pair_slots_by_space ON pair_slots(space_id);
 """
 
 
@@ -148,6 +198,153 @@ class Store:
                                      (space_id, device_id))
             self._connection.commit()
         return True
+
+    # Pair slots are the short-code handoff. The code only locates a slot;
+    # the master key is sealed with a key both devices derive from an
+    # ephemeral X25519 exchange, so the service never sees it.
+
+    def _purge_pair_slots_locked(self, now):
+        self._connection.execute(
+            "DELETE FROM pair_slots WHERE expires_at <= ? "
+            "OR (consumed_at IS NOT NULL AND consumed_at <= ?)",
+            (now, now - 3600))
+
+    def create_pair_slot(self, space_id, pub_a, ttl=PAIR_TTL):
+        now = time.time()
+        with self._lock:
+            self._purge_pair_slots_locked(now)
+            active = self._connection.execute(
+                "SELECT COUNT(*) FROM pair_slots "
+                "WHERE space_id=? AND consumed_at IS NULL AND expires_at>?",
+                (space_id, now)).fetchone()[0]
+            if active >= MAX_PAIR_SLOTS_PER_SPACE:
+                raise ValueError("too_many_pair_slots")
+            for _ in range(8):
+                code = "%06d" % secrets.randbelow(1_000_000)
+                code_hash = hashlib.sha256(code.encode()).hexdigest()
+                slot_id = secrets.token_hex(16)
+                try:
+                    self._connection.execute(
+                        "INSERT INTO pair_slots(slot_id,space_id,code_hash,pub_a,created_at,expires_at) "
+                        "VALUES(?,?,?,?,?,?)",
+                        (slot_id, space_id, code_hash, pub_a, now, now + ttl))
+                    self._connection.commit()
+                    return {"slot_id": slot_id, "code": code,
+                            "expires_at": now + ttl, "ttl": ttl}
+                except sqlite3.IntegrityError:
+                    self._connection.rollback()
+        raise ValueError("pair_code_unavailable")
+
+    def lookup_pair_slot(self, code):
+        now = time.time()
+        code_hash = hashlib.sha256(code.encode()).hexdigest()
+        with self._lock:
+            self._purge_pair_slots_locked(now)
+            row = self._connection.execute(
+                "SELECT slot_id,space_id,pub_a,attempts,expires_at FROM pair_slots "
+                "WHERE code_hash=? AND consumed_at IS NULL AND expires_at>?",
+                (code_hash, now)).fetchone()
+            if row is None:
+                return None
+            slot_id, space_id, pub_a, attempts, expires_at = row
+            attempts += 1
+            if attempts > PAIR_ATTEMPTS:
+                self._connection.execute("DELETE FROM pair_slots WHERE slot_id=?", (slot_id,))
+                self._connection.commit()
+                return {"error": "pair_attempts_exceeded"}
+            join_token = secrets.token_urlsafe(32)
+            join_hash = hashlib.sha256(join_token.encode()).hexdigest()
+            self._connection.execute(
+                "UPDATE pair_slots SET attempts=?, join_hash=? WHERE slot_id=?",
+                (attempts, join_hash, slot_id))
+            self._connection.commit()
+            return {"slot_id": slot_id, "space_id": space_id, "pub_a": pub_a,
+                    "join_token": join_token, "expires_at": expires_at,
+                    "attempts_left": PAIR_ATTEMPTS - attempts}
+
+    def pair_slot(self, slot_id):
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT slot_id,space_id,pub_a,pub_b,ciphertext,expires_at,consumed_at "
+                "FROM pair_slots WHERE slot_id=?", (slot_id,)).fetchone()
+        if row is None:
+            return None
+        return {"slot_id": row[0], "space_id": row[1], "pub_a": row[2],
+                "pub_b": row[3], "ciphertext": row[4], "expires_at": row[5],
+                "consumed_at": row[6]}
+
+    def set_pair_public_key(self, slot_id, join_token, pub_b):
+        now = time.time()
+        join_hash = hashlib.sha256(join_token.encode()).hexdigest()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT join_hash,expires_at,consumed_at,pub_b FROM pair_slots "
+                "WHERE slot_id=?", (slot_id,)).fetchone()
+            if row is None:
+                return "not_found"
+            stored_join, expires_at, consumed_at, existing_b = row
+            if consumed_at is not None:
+                return "consumed"
+            if expires_at <= now:
+                return "expired"
+            if not stored_join or not hmac.compare_digest(join_hash, stored_join):
+                return "forbidden"
+            if existing_b is not None:
+                return "already_paired"
+            self._connection.execute(
+                "UPDATE pair_slots SET pub_b=? WHERE slot_id=?", (pub_b, slot_id))
+            self._connection.commit()
+        return "ok"
+
+    def set_pair_ciphertext(self, slot_id, ciphertext):
+        now = time.time()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT expires_at,consumed_at,ciphertext FROM pair_slots "
+                "WHERE slot_id=?", (slot_id,)).fetchone()
+            if row is None:
+                return "not_found"
+            expires_at, consumed_at, existing = row
+            if consumed_at is not None:
+                return "consumed"
+            if expires_at <= now:
+                return "expired"
+            if existing is not None:
+                return "already_sealed"
+            self._connection.execute(
+                "UPDATE pair_slots SET ciphertext=? WHERE slot_id=?", (ciphertext, slot_id))
+            self._connection.commit()
+        return "ok"
+
+    def pair_ciphertext(self, slot_id, join_token):
+        """What the joining device is allowed to see: the sealed bytes only."""
+        now = time.time()
+        join_hash = hashlib.sha256(join_token.encode()).hexdigest()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT join_hash,expires_at,consumed_at,ciphertext,space_id "
+                "FROM pair_slots WHERE slot_id=?", (slot_id,)).fetchone()
+        if row is None:
+            return {"status": "not_found"}
+        stored_join, expires_at, consumed_at, ciphertext, space_id = row
+        if consumed_at is not None:
+            return {"status": "consumed"}
+        if expires_at <= now:
+            return {"status": "expired"}
+        if not stored_join or not hmac.compare_digest(join_hash, stored_join):
+            return {"status": "forbidden"}
+        if ciphertext is None:
+            return {"status": "pending", "space_id": space_id, "expires_at": expires_at}
+        return {"status": "ready", "space_id": space_id, "ciphertext": ciphertext,
+                "expires_at": expires_at}
+
+    def consume_pair_slot(self, space_id, slot_id):
+        with self._lock:
+            cursor = self._connection.execute(
+                "UPDATE pair_slots SET consumed_at=? WHERE slot_id=? AND space_id=? "
+                "AND consumed_at IS NULL", (time.time(), slot_id, space_id))
+            self._connection.commit()
+            return cursor.rowcount
 
 
 def make_handler(store, clock=time.time):
@@ -260,6 +457,20 @@ def make_handler(store, clock=time.time):
                 return None
             return data
 
+        def pair_rate_limited(self):
+            """A per-IP budget for the only unauthenticated lookup endpoint."""
+            ip = self.client_address[0]
+            now = time.time()
+            with self.server.pair_rate_lock:
+                bucket = [stamp for stamp in self.server.pair_rate.get(ip, ())
+                          if now - stamp < 60]
+                if len(bucket) >= PAIR_RATE_LIMIT:
+                    self.server.pair_rate[ip] = bucket
+                    return True
+                bucket.append(now)
+                self.server.pair_rate[ip] = bucket
+            return False
+
         def route(self):
             path = self.path.split("?", 1)[0]
             parts = [p for p in path.split("/") if p]
@@ -273,6 +484,63 @@ def make_handler(store, clock=time.time):
             parts = self.route()
             if parts == ["health"]:
                 self.send_json(200, {"status": "ok", "spaces": store.count_spaces()})
+                return
+            if parts and parts[0] == "pair" and len(parts) == 4 and parts[3] == "sealed":
+                # The joining device polls for the sealed master key. The
+                # join token is scoped to this slot and nothing else.
+                slot_id = parts[2]
+                if not ID_RE.match(slot_id):
+                    self.send_json(400, {"error": "invalid_slot_id"})
+                    return
+                token = self.bearer()
+                if not token:
+                    self.send_json(401, {"error": "authentication_required"})
+                    return
+                result = store.pair_ciphertext(slot_id, token)
+                status = result["status"]
+                if status == "ready":
+                    self.send_json(200, {"slot_id": slot_id, "ready": True,
+                                         "space_id": result["space_id"],
+                                         "ciphertext": result["ciphertext"],
+                                         "expires_at": result["expires_at"]})
+                elif status == "pending":
+                    self.send_json(200, {"slot_id": slot_id, "ready": False,
+                                         "expires_at": result["expires_at"]})
+                elif status == "not_found":
+                    self.send_json(404, {"error": "not_found"})
+                elif status == "forbidden":
+                    self.send_json(403, {"error": "authentication_failed"})
+                else:
+                    self.send_json(410, {"error": "pair_slot_" + status})
+                return
+            if parts and parts[0] == "pair" and len(parts) == 3:
+                # The first device polls for the second device's public key
+                # and sealed master key. The slot is scoped to its space.
+                slot_id = parts[2]
+                if not ID_RE.match(slot_id):
+                    self.send_json(400, {"error": "invalid_slot_id"})
+                    return
+                slot = store.pair_slot(slot_id)
+                if slot is None:
+                    self.send_json(404, {"error": "not_found"})
+                    return
+                if not self.authorize(slot["space_id"]):
+                    return
+                if slot["consumed_at"] is not None:
+                    self.send_json(410, {"error": "pair_slot_consumed"})
+                    return
+                if slot["expires_at"] <= clock():
+                    self.send_json(410, {"error": "pair_slot_expired"})
+                    return
+                if slot["pub_b"] is None:
+                    self.send_json(200, {"slot_id": slot_id, "ready": False,
+                                         "expires_at": slot["expires_at"]})
+                    return
+                self.send_json(200, {"slot_id": slot_id, "ready": True,
+                                     "space_id": slot["space_id"],
+                                     "pub_a": slot["pub_a"], "pub_b": slot["pub_b"],
+                                     "ciphertext": slot["ciphertext"],
+                                     "expires_at": slot["expires_at"]})
                 return
             if parts and parts[0] == "sync" and len(parts) in (2, 3):
                 space_id = parts[1]
@@ -300,6 +568,57 @@ def make_handler(store, clock=time.time):
             if self.browser_rejected():
                 return
             parts = self.route()
+            if parts == ["pair", "slots"]:
+                # The first device asks for a short code and proves it owns
+                # the space. The code is shown once, then never returned.
+                body = self.read_json(PAIR_MAX_BODY)
+                if body is None:
+                    return
+                if not isinstance(body, dict):
+                    self.send_json(400, {"error": "invalid_body"})
+                    return
+                space_id = body.get("space_id")
+                pub_a = body.get("pub_a")
+                if not isinstance(space_id, str) or not ID_RE.match(space_id):
+                    self.send_json(400, {"error": "invalid_space_id"})
+                    return
+                if not valid_public_key(pub_a):
+                    self.send_json(400, {"error": "invalid_public_key"})
+                    return
+                if not self.authorize(space_id):
+                    return
+                try:
+                    slot = store.create_pair_slot(space_id, pub_a)
+                except ValueError as exc:
+                    self.send_json(409, {"error": str(exc)})
+                    return
+                self.send_json(201, slot)
+                return
+            if parts == ["pair", "lookup"]:
+                # The only unauthenticated endpoint. It is rate-limited per
+                # IP and every slot burns after PAIR_ATTEMPTS tries.
+                if self.pair_rate_limited():
+                    self.send_json(429, {"error": "rate_limited"})
+                    return
+                body = self.read_json(PAIR_MAX_BODY)
+                if body is None:
+                    return
+                if not isinstance(body, dict):
+                    self.send_json(400, {"error": "invalid_body"})
+                    return
+                code = body.get("code")
+                if not isinstance(code, str) or not CODE_RE.match(code):
+                    self.send_json(400, {"error": "invalid_pair_code"})
+                    return
+                slot = store.lookup_pair_slot(code)
+                if slot is None:
+                    self.send_json(404, {"error": "pair_code_not_found"})
+                    return
+                if slot.get("error"):
+                    self.send_json(429, {"error": slot["error"]})
+                    return
+                self.send_json(200, slot)
+                return
             if parts == ["sync", "spaces"]:
                 # The client generates the space id, so it can derive the
                 # token before the space exists. Creating a space needs that
@@ -338,6 +657,72 @@ def make_handler(store, clock=time.time):
             if self.browser_rejected():
                 return
             parts = self.route()
+            if parts and parts[0] == "pair" and len(parts) == 3:
+                # The joining device publishes its ephemeral public key.
+                # The first device will seal the master key to it next.
+                slot_id = parts[2]
+                if not ID_RE.match(slot_id):
+                    self.send_json(400, {"error": "invalid_slot_id"})
+                    return
+                token = self.bearer()
+                if not token:
+                    self.send_json(401, {"error": "authentication_required"})
+                    return
+                body = self.read_json(PAIR_MAX_BODY)
+                if body is None:
+                    return
+                if not isinstance(body, dict):
+                    self.send_json(400, {"error": "invalid_body"})
+                    return
+                pub_b = body.get("pub_b")
+                if not valid_public_key(pub_b):
+                    self.send_json(400, {"error": "invalid_public_key"})
+                    return
+                result = store.set_pair_public_key(slot_id, token, pub_b)
+                if result == "ok":
+                    self.send_json(200, {"slot_id": slot_id, "public_key_received": True})
+                elif result == "not_found":
+                    self.send_json(404, {"error": "not_found"})
+                elif result == "forbidden":
+                    self.send_json(403, {"error": "authentication_failed"})
+                elif result == "already_paired":
+                    self.send_json(409, {"error": "pair_slot_already_paired"})
+                else:
+                    self.send_json(410, {"error": "pair_slot_" + result})
+                return
+            if parts and parts[0] == "pair" and len(parts) == 4 and parts[3] == "sealed":
+                # The first device seals the master key under the shared
+                # secret and stores only the sealed bytes.
+                slot_id = parts[2]
+                if not ID_RE.match(slot_id):
+                    self.send_json(400, {"error": "invalid_slot_id"})
+                    return
+                slot = store.pair_slot(slot_id)
+                if slot is None:
+                    self.send_json(404, {"error": "not_found"})
+                    return
+                if not self.authorize(slot["space_id"]):
+                    return
+                body = self.read_json(PAIR_MAX_BODY)
+                if body is None:
+                    return
+                if not isinstance(body, dict):
+                    self.send_json(400, {"error": "invalid_body"})
+                    return
+                ciphertext = body.get("ciphertext")
+                if not valid_ciphertext(ciphertext):
+                    self.send_json(400, {"error": "invalid_ciphertext"})
+                    return
+                result = store.set_pair_ciphertext(slot_id, ciphertext)
+                if result == "ok":
+                    self.send_json(200, {"slot_id": slot_id, "sealed": True})
+                elif result == "not_found":
+                    self.send_json(404, {"error": "not_found"})
+                elif result == "already_sealed":
+                    self.send_json(409, {"error": "pair_slot_already_sealed"})
+                else:
+                    self.send_json(410, {"error": "pair_slot_" + result})
+                return
             if parts and parts[0] == "sync" and len(parts) == 3:
                 space_id, device_id = parts[1], parts[2]
                 if not ID_RE.match(space_id):
@@ -365,6 +750,20 @@ def make_handler(store, clock=time.time):
             if self.browser_rejected():
                 return
             parts = self.route()
+            if parts and parts[0] == "pair" and len(parts) == 3:
+                slot_id = parts[2]
+                if not ID_RE.match(slot_id):
+                    self.send_json(400, {"error": "invalid_slot_id"})
+                    return
+                slot = store.pair_slot(slot_id)
+                if slot is None:
+                    self.send_json(404, {"error": "not_found"})
+                    return
+                if not self.authorize(slot["space_id"]):
+                    return
+                store.consume_pair_slot(slot["space_id"], slot_id)
+                self.send_json(200, {"slot_id": slot_id, "deleted": True})
+                return
             if parts and parts[0] == "sync" and len(parts) == 3:
                 space_id, device_id = parts[1], parts[2]
                 if not ID_RE.match(space_id) or not ID_RE.match(device_id):
@@ -396,6 +795,8 @@ def make_server(store, port=8899, host="127.0.0.1", extra_hosts=()):
     server.daemon_threads = True
     bound_host, bound_port = server.server_address[0], server.server_address[1]
     server.allowed_hosts = default_allowed_hosts(bound_host, bound_port, extra_hosts)
+    server.pair_rate = {}
+    server.pair_rate_lock = threading.Lock()
     return server
 
 

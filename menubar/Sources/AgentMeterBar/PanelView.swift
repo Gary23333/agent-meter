@@ -161,6 +161,7 @@ struct PanelView: View {
             }
             Divider()
             Button("连接网页账户 / API 密钥…") { ConnectionManager.shared.showConnections() }
+            Button("多机同步（合并用量）…") { SyncWindow.show() }
             Button("调整卡片顺序…") { SourceOrderWindow.show() }
             Button("API 价格表（本机估算）…") { PricesWindow.show() }
             Button("预算与异常提醒…") { BudgetWindow.show() }

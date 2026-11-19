@@ -297,6 +297,75 @@ final class SyncServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(emptied, [])
     }
 
+    /// The two-device handoff against the real Python service. This proves
+    /// the Swift client and the service agree on every `/v1/pair/*` step.
+    func testTheTwoDeviceHandoffAgainstTheRealService() async throws {
+        guard let python = Self.pythonPath() else {
+            throw XCTSkip("no python3 on this machine")
+        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agentmeter-pair-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: python)
+        process.arguments = ["sync_server/app.py", "--db",
+                             directory.appendingPathComponent("sync.db").path, "--port", "0"]
+        process.currentDirectoryURL = Self.repositoryRoot
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        try process.run()
+        defer { process.terminate() }
+
+        let line = try await Self.firstLine(of: output, process: process, errors: errors)
+        guard let data = line.data(using: .utf8),
+              let object = try? JSONDecoder().decode(JSON.self, from: data),
+              let listening = object["listening"].string,
+              let url = URL(string: listening) else {
+            XCTFail("the service did not announce its address: \(line)")
+            return
+        }
+
+        let spaceID = SyncKeys.randomIdentifier()
+        let master = SyncKeys.randomMasterKey()
+        let keys = try SyncKeys(masterKey: master, spaceID: spaceID)
+        let sync = try SyncService(baseURL: url)
+        _ = try await sync.createSpace(spaceID: spaceID, token: keys.authToken,
+                                       authHash: keys.authHash)
+        let pairing = try PairingService(baseURL: url)
+
+        let initiator = PairingInitiator(transport: pairing, spaceID: spaceID,
+                                         token: keys.authToken, masterKey: master)
+        let invitation = try await initiator.start()
+        XCTAssertEqual(invitation.slot.code.count, 6)
+
+        let joiner = try await PairingJoiner.begin(
+            transport: pairing, code: PairingCode.grouped(invitation.slot.code))
+        XCTAssertEqual(joiner.lookup.spaceID, spaceID)
+
+        guard case .sealed(let sasA) = try await initiator.poll(invitation) else {
+            return XCTFail("the first device did not seal the key")
+        }
+        guard case .joined(let joinedSpace, let joinedMaster, let sasB) = try await joiner.poll() else {
+            return XCTFail("the joining device did not receive the key")
+        }
+        XCTAssertEqual(joinedSpace, spaceID)
+        XCTAssertEqual(joinedMaster, master)
+        XCTAssertEqual(sasA, sasB)
+
+        try await pairing.consume(slotID: invitation.slot.slotID, token: keys.authToken)
+        do {
+            _ = try await pairing.sealedState(slotID: invitation.slot.slotID,
+                                              joinToken: joiner.lookup.joinToken)
+            XCTFail("a consumed slot must not answer")
+        } catch {
+            XCTAssertEqual(error as? PairingError, .expired)
+        }
+    }
+
     /// The service announces its address on the first line of stdout.
     private static func firstLine(of pipe: Pipe, process: Process, errors: Pipe) async throws -> String {
         var buffer = Data()
