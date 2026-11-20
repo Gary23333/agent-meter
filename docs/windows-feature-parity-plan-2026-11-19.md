@@ -34,9 +34,9 @@
 | 预算、低额度提醒、重置卡提醒 | 支持 | 支持 | 已对齐 |
 | 用量导出 JSON/CSV | 支持 | 支持 | 已对齐 |
 | 登录启动 | 支持 | 支持 | 已对齐 |
-| **自动领取每日积分**（TRAE/WorkBuddy/Qoder） | 支持 | **不支持** | **P1 新增 Windows** |
+| **自动领取每日积分**（TRAE/WorkBuddy/Qoder） | 支持 | **已实现**（TRAE/WorkBuddy；Qoder 不支持） | P1 已合并；真实领取暂不测试，后续可能重评 |
 | **历史导入**（`imported_history`） | 支持 | **不支持** | **P2 新增 Windows** |
-| **云同步**（配对、加密、跨设备历史合并） | 支持 | **不支持** | **P3 新增 Windows**（最大缺口） |
+| **云同步**（配对、加密、跨设备历史合并） | 支持 | **已实现**（协议/UI/自动化；真实双机待联调） | P3 已完成主体 |
 | 多账户 | 仅 MiniMax 做多账户 | 仅 MiniMax 做多账户 | 当前对等；是否扩展列 P5 |
 | 平台形态 | 菜单栏、钥匙串 | 托盘、WebView2、凭据管理器 | 平台专属，不做统一 |
 
@@ -74,15 +74,22 @@
 
 ### P3 · Windows 云同步（最高工作量）
 
-**协议不变**：沿用 macOS 的 X25519 配对、HKDF-SHA256、AES-GCM、pairing slot、space token；服务端 `sync_server` 不改，保证 Mac ↔ Windows 互通。
+**协议不变**：沿用 macOS 的 X25519 配对、HKDF-SHA256、ChaCha20-Poly1305、pairing slot、space token；服务端 `sync_server` 不改，保证 Mac ↔ Windows 互通。
 **Python 侧**：
-1. 新增 `agent_meter/sync_crypto.py`：X25519/HKDF/AES-GCM、SAS、短码规范，对齐 Swift `SyncPairing.swift` 的 info 字符串与密钥派生。
-2. 新增 CLI：`--sync-space-create`、`--sync-pair-create`、`--sync-pair-join`、`--sync-push`、`--sync-pull`、`--sync-devices`；复用 `sync_payload.py` / `sync_store.py`。
+1. 新增 `agent_meter/sync_crypto.py`：X25519/HKDF/ChaCha20-Poly1305、SAS、短码规范，对齐 Swift `SyncPairing.swift` 的 info 字符串与密钥派生。
+2. 新增 CLI：`--sync-space-create`、`--sync-pair-create`、`--sync-pair-join`、`--sync-push`、`--sync-pull`、`--sync-devices`、`--sync-device-remove`、`--sync-reset`；复用 `sync_payload.py` / `sync_store.py`。
 3. 依赖：`cryptography`（仅 Windows 构建 requirements 增加）。
 **C# 侧**：Sync 页面（创建空间、输入短码配对、设备列表、上次同步、立即同步、断开设备）；配置 `%LOCALAPPDATA%\AgentMeter\sync.json`，主密钥存 Windows 凭据管理器。
 **互操作测试**：与 Swift 客户端共用同一 `sync_server`；固定测试向量验证封装/解封；Mac 推送 → Windows 拉取 → 合并展示，反向再来一轮。
 **安全**：payload 仅聚合（现有规则）；密钥不明文落盘；日志脱敏；设备删除走服务端接口。
 **验收**：Mac ↔ Windows 双向同步成功；离线、重复推送、设备删除、损坏 store 四类异常可控。
+
+**实施记录（2026-11-20）**：
+- 协议以 Swift `SyncPairing.swift` / `SyncClient.swift` 为准：实际加密为 **ChaCha20-Poly1305**（计划早期写的 AES-GCM 是过时表述，已修正）；`authToken` 为标准 base64，配对封装用无填充 base64url。
+- 新增 `agent_meter/sync_crypto.py`、`agent_meter/sync_remote.py`、`windows/sync_ops.py`；`windows/backend.py` 增加 `--sync-space-create` / `--sync-pair-create` / `--sync-pair-join` / `--sync-push` / `--sync-pull` / `--sync-devices` / `--sync-device-remove` / `--sync-reset`。
+- C# 新增 `SyncPreferences` / `SyncSecrets` / `SyncBackendClient` / `SyncReport` / `SyncDialog`，托盘加入「多机同步」；Windows 主密钥存凭据管理器，`sync.json` 只存非密配置。
+- 自动化：Python 固定向量、真实本地 `sync_server` 双设备端到端（创建/push/pull/devices/幂等/坏 blob/坏 base URL/配对 SAS/畸形设备标识/移除设备/断开本机）、Swift ↔ Python 向量互通，共 `988 passed, 1 skipped`；Swift 全量 `122 tests` 通过；Windows `dotnet build` 0 warnings / 0 errors，偏好与报告测试通过；打包后的 `AgentMeterBackend.exe` 已真实创建空间、完成 push、列出设备并由第二台设备 pull 成功。
+- 剩余：真实 Mac ↔ Windows 双机联调（两端同时连同一 `sync_server`，核对 SAS 与双向账本合并）尚未执行；`SyncDialog` 布局与按钮状态需真机点验。
 
 ### P4 · macOS 回移「已结束自然日对照」
 
@@ -119,7 +126,7 @@
 
 ## 6. 风险与约束
 
-- **协议互操作**：X25519/HKDF/AES-GCM 的 info 字符串、短码编码、SAS 必须逐字节对齐；先做测试向量，再联调。
+- **协议互操作**：X25519/HKDF/ChaCha20-Poly1305 的 info 字符串、短码编码、SAS 必须逐字节对齐；固定向量已通过，真实双机联调仍需执行。
 - **真实账户**：Windows 机器没有所有服务的登录态；P1 的真实领取、P3 的双设备同步需要用户授权或提供一台已登录的 Mac。
 - **写操作合规**：自动领取默认关闭，逐平台确认；失败不重试写操作。
 - **并行开发冲突**：`main` 上仍有 v0.12.0 未提交改动；本计划全部落在 `feat/windows-port`，待 v0.12.0 落地后再合并 main，避免 `server.py`/`report_periods.py` 冲突。
@@ -131,7 +138,7 @@
 - [ ] macOS 全量 Python 测试通过（平台专属断言除外）
 - [ ] P1：Windows 真实账户自动领取一次，规则与 macOS 一致（暂不测试；实现与模拟测试已完成，后续重新评估）
 - [ ] P2：历史导入样例两端统计一致
-- [ ] P3：Mac ↔ Windows 双向云同步成功，异常场景可控
+- [ ] P3：真实 Mac ↔ Windows 双向云同步与异常场景真机验收；协议固定向量、本地 `sync_server` 双设备端到端、打包后端创建空间／push 已验证
 - [ ] P4：两端同一账本的自然日对照数值一致（字段与两端展示已自动化通过，真机同账本待对照）
 - [ ] P5：桌宠/通知/收集册验收记录齐全
 - [ ] `windows/PORT_PLAN.md` 与本对照表同步更新

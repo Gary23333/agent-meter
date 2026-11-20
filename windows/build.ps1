@@ -4,7 +4,7 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $python = Join-Path $root '.venv-win\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python)) { throw 'Create .venv-win and install windows/requirements.txt first.' }
-& $python -m PyInstaller --noconfirm --clean --onedir --name AgentMeterBackend --paths . --collect-all tzdata --collect-all zstandard windows\backend.py --distpath windows\dist --workpath windows\build\pyinstaller --specpath windows\build
+& $python -m PyInstaller --noconfirm --clean --onedir --name AgentMeterBackend --paths . --collect-all tzdata --collect-all zstandard --collect-all cryptography windows\backend.py --distpath windows\dist --workpath windows\build\pyinstaller --specpath windows\build
 if ($LASTEXITCODE -ne 0) { throw 'Backend build failed.' }
 $publishArgs = @('publish', 'windows\AgentMeter.Windows', '-c', 'Release', '-r', 'win-x64', '-o', 'windows\dist\AgentMeter')
 if ($FrameworkDependent) { $publishArgs += @('--self-contained', 'false') } else { $publishArgs += @('--self-contained', 'true') }

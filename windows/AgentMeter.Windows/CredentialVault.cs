@@ -45,9 +45,16 @@ internal static class CredentialVault
         return $"AgentMeter/{provider}/{id:N}";
     }
 
-    public static void Write(string provider, Guid id, string secret)
+    public static void Write(string provider, Guid id, string secret) => WriteTarget(Target(provider, id), secret);
+
+    public static string? Read(string provider, Guid id) => ReadTarget(Target(provider, id));
+
+    public static void Delete(string provider, Guid id) => DeleteTarget(Target(provider, id));
+
+    /// <summary>同步主密钥按空间保存，目标名由 32 位十六进制空间标识组成。</summary>
+    public static void WriteTarget(string target, string secret)
     {
-        string target = Target(provider, id);
+        if (string.IsNullOrEmpty(target) || target.Any(char.IsControl)) throw new ArgumentException("凭据目标无效", nameof(target));
         if (string.IsNullOrEmpty(secret) || secret.Any(char.IsControl)) throw new ArgumentException("密钥为空或包含控制字符", nameof(secret));
         byte[] bytes = Encoding.Unicode.GetBytes(secret);
         if (bytes.Length > MaxBytes) { CryptographicOperations.ZeroMemory(bytes); throw new ArgumentException("密钥过长", nameof(secret)); }
@@ -66,9 +73,9 @@ internal static class CredentialVault
         }
     }
 
-    public static string? Read(string provider, Guid id)
+    public static string? ReadTarget(string target)
     {
-        string target = Target(provider, id);
+        if (string.IsNullOrEmpty(target) || target.Any(char.IsControl)) throw new ArgumentException("凭据目标无效", nameof(target));
         if (!CredRead(target, Generic, 0, out var pointer))
         {
             int error = Marshal.GetLastWin32Error();
@@ -92,9 +99,9 @@ internal static class CredentialVault
         }
     }
 
-    public static void Delete(string provider, Guid id)
+    public static void DeleteTarget(string target)
     {
-        string target = Target(provider, id);
+        if (string.IsNullOrEmpty(target) || target.Any(char.IsControl)) throw new ArgumentException("凭据目标无效", nameof(target));
         if (!CredDelete(target, Generic, 0))
         {
             int error = Marshal.GetLastWin32Error();

@@ -208,6 +208,13 @@ internal sealed partial class MeterContext : ApplicationContext
                 using var editor = new RewardsDialog(window) { Icon = dialogIcon };
                 editor.ShowDialog(window);
             });
+            menu.Items.Add("多机同步", null, (_, _) =>
+            {
+                ShowPanel(true);
+                using var dialogIcon = (Icon)window.Icon.Clone();
+                using var editor = new SyncDialog(window) { Icon = dialogIcon };
+                editor.ShowDialog(window);
+            });
             menu.Items.Add("管理 MiniMax 账户", null, async (_, _) =>
             {
                 ShowPanel(true);
@@ -1204,6 +1211,14 @@ internal sealed partial class MeterWindow : Form
     }
     public int AlertThreshold => alertThreshold;
     public bool CardAlertsEnabled => cardAlertsEnabled;
+    /// <summary>跨设备同步只带不随机器变化的设置；开关与项目别名留在本机。</summary>
+    internal string SyncSettingsJson() => new JsonObject
+    {
+        ["theme"] = ThemeId,
+        ["low_quota_threshold"] = AlertThreshold,
+        ["claim_time"] = rewardSettings.ClaimTime,
+        ["alerts_enabled"] = AlertsEnabled
+    }.ToJsonString();
     public bool ForecastEnabled => forecastEnabled;
     public bool SetForecastEnabled(bool enabled)
     {

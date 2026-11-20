@@ -33,6 +33,7 @@ from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
 from windows import rewards as windows_rewards
+from windows import sync_ops as windows_sync
 from windows.forecast import forecast_summary
 from windows.cost_medals import daily_cost_metric
 from windows.budget import budget_from_compact
@@ -934,6 +935,14 @@ def main():
     parser.add_argument("--activity-only", action="store_true", help="只读取本机活动汇总，不查询账户")
     parser.add_argument("--rewards-status", action="store_true", help="只读每日积分领取账本，不发网络请求")
     parser.add_argument("--rewards-claim", action="store_true", help="使用标准输入中的应用会话查询并领取每日积分")
+    parser.add_argument("--sync-space-create", action="store_true", help="使用标准输入中的密钥创建同步空间")
+    parser.add_argument("--sync-pair-create", action="store_true", help="创建配对短码并等待另一台设备")
+    parser.add_argument("--sync-pair-join", action="store_true", help="使用短码加入已有同步空间")
+    parser.add_argument("--sync-push", action="store_true", help="加密上传本机汇总并拉取其他设备")
+    parser.add_argument("--sync-pull", action="store_true", help="只拉取其他设备的加密汇总")
+    parser.add_argument("--sync-devices", action="store_true", help="读取同步空间的设备列表")
+    parser.add_argument("--sync-device-remove", action="store_true", help="从同步空间删除一台设备的密文")
+    parser.add_argument("--sync-reset", action="store_true", help="断开本机同步并清空已拉取的远端记录")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
@@ -947,6 +956,9 @@ def main():
                   args.deepseek_only, args.zcode_only, args.volcengine_only, args.cards_update, args.forecast_only,
                   args.history_worker, args.account_only, args.local_only, args.account_input,
                   args.enable_minimax_account, args.rewards_status, args.rewards_claim,
+                  args.sync_space_create, args.sync_pair_create, args.sync_pair_join,
+                  args.sync_push, args.sync_pull, args.sync_devices,
+                  args.sync_device_remove, args.sync_reset,
                   *[getattr(args, "disable_" + provider + "_account") for provider in ("codex", "kimi", "claude")]]
         if sum(bool(item) for item in others) != 1:
             raise SystemExit(2)
@@ -976,6 +988,59 @@ def main():
                       "unsupported": list(windows_rewards.UNSUPPORTED),
                       "status": "error", "reason": "rewards_failed"}
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+        return
+    sync_modes = [args.sync_space_create, args.sync_pair_create, args.sync_pair_join,
+                  args.sync_push, args.sync_pull, args.sync_devices,
+                  args.sync_device_remove, args.sync_reset]
+    if any(sync_modes):
+        others = [args.activity_only, args.trae_only, args.qoder_only, args.mimo_only, args.workbuddy_only,
+                  args.deepseek_only, args.zcode_only, args.volcengine_only, args.cards_update, args.forecast_only,
+                  args.history_worker, args.account_only, args.local_only, args.account_input,
+                  args.enable_minimax_account, args.rewards_status, args.rewards_claim,
+                  *[getattr(args, "disable_" + provider + "_account") for provider in ("codex", "kimi", "claude")]]
+        if sum(bool(item) for item in sync_modes) != 1 or any(others):
+            raise SystemExit(2)
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+            raw = sys.stdin.read(windows_sync.MAX_INPUT + 1)
+            request = windows_sync.parse_request(raw)
+        except (ValueError, TypeError, RecursionError):
+            # 不回显输入内容、主密钥或异常原文。
+            print(json.dumps({"status": "error", "reason": "invalid_sync_input"},
+                             ensure_ascii=False, separators=(",", ":")))
+            return
+
+        def emit(value):
+            print(value, flush=True)
+
+        try:
+            if args.sync_pair_create:
+                windows_sync.pair_create(request, emit)
+            elif args.sync_pair_join:
+                windows_sync.pair_join(request, emit)
+            else:
+                if args.sync_space_create:
+                    windows_sync.create_space(request, emit)
+                elif args.sync_devices:
+                    windows_sync.devices(request, emit)
+                elif args.sync_device_remove:
+                    windows_sync.remove_device(request, emit)
+                elif args.sync_reset:
+                    windows_sync.reset_local(request, emit)
+                elif args.sync_pull:
+                    windows_sync.pull(request, emit)
+                else:
+                    windows_sync.push(request, emit, snapshot=collect(False, args.home))
+        except Exception as error:
+            code = getattr(error, "code", None)
+            if not isinstance(code, str):
+                candidate = str(error)
+                code = candidate if candidate.replace("_", "").isalnum() and 0 < len(candidate) <= 80 else "sync_failed"
+            if not isinstance(code, str) or len(code) > 80:
+                code = "sync_failed"
+            print(json.dumps({"event": "error", "reason": code} if args.sync_pair_create or args.sync_pair_join
+                             else {"status": "error", "reason": code},
+                             ensure_ascii=False, separators=(",", ":")))
         return
     if args.activity_only:
         if (args.trae_only or args.qoder_only or args.mimo_only or args.workbuddy_only or args.deepseek_only or args.zcode_only or args.volcengine_only or args.cards_update or args.forecast_only or args.history_worker
