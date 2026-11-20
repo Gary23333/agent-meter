@@ -34,7 +34,7 @@
 | 预算、低额度提醒、重置卡提醒 | 支持 | 支持 | 已对齐 |
 | 用量导出 JSON/CSV | 支持 | 支持 | 已对齐 |
 | 登录启动 | 支持 | 支持 | 已对齐 |
-| **自动领取每日积分**（TRAE/WorkBuddy/Qoder） | 支持 | **已实现**（TRAE/WorkBuddy；Qoder 不支持） | P1 已合并；真实领取暂不测试，后续可能重评 |
+| **手动领取每日积分**（TRAE/WorkBuddy/Qoder） | 支持 | **已实现**（TRAE/WorkBuddy 手动领取；Qoder 不支持） | P1 已合并；真实领取待用户授权后验收 |
 | **历史导入**（`imported_history`） | 支持 | **不支持** | **P2 新增 Windows** |
 | **云同步**（配对、加密、跨设备历史合并） | 支持 | **已实现**（协议/UI/自动化；真实双机待联调） | P3 已完成主体 |
 | 多账户 | 仅 MiniMax 做多账户 | 仅 MiniMax 做多账户 | 当前对等；是否扩展列 P5 |
@@ -42,12 +42,12 @@
 
 ## 4. 缺口任务
 
-### P1 · Windows 自动领取每日积分
+### P1 · Windows 手动领取每日积分
 
 **复用**：`agent_meter/rewards.py`（543 行，规则与幂等已存在）。
 **实现**：
-1. `windows/backend.py` 新增 `--rewards-status` / `--rewards-claim`，输入走 stdin（provider、账户标识、领取时刻），输出结构化结果。
-2. C# 设置页：开关（默认关闭）、领取时刻、上次领取结果、手动「立即领取」；状态写入 `%LOCALAPPDATA%\AgentMeter\rewards.json`。
+1. `windows/backend.py` 新增 `--rewards-status` / `--rewards-claim`，输入走 stdin（会话、是否本次领取、可选账户范围），输出结构化结果。
+2. C# 领取窗口：只有「立即领取」按钮，没有自动开关或领取时刻；打开时只读取本机账本，点击后才请求账户；状态写入 `%LOCALAPPDATA%\AgentMeter\rewards.json`。
 3. 规则保持 macOS 口径：TRAE 仅每日签到、WorkBuddy 仅已完成任务奖励、Qoder 仅每日活动；生日/抽奖等 bonus 只读；MiniMax Code 签到在契约确认前保持不可用。
 **安全**：只读查询与写操作分链路；密钥不进入命令行/日志；领取失败不重试写操作。
 **测试**：合成响应下的幂等、401/超时、跨天边界；C# 状态机。
@@ -55,12 +55,12 @@
 
 **实施记录（2026-11-20）**：
 - `windows/rewards.py` + `windows/backend.py --rewards-status/--rewards-claim` 已接入；只读摘要不发请求，领取复用 `RewardsService.tick`。
-- C# 新增「每日积分领取」窗口（开关默认关闭、领取时刻、今日状态、今日已领、上次检查、立即领取），托盘菜单入口；刷新结束后按开关自动 tick。
+- C# 新增「每日积分领取」窗口（今日状态、今日已领、上次检查、立即领取），托盘菜单入口；打开只读本机账本，刷新结束也不再自动 tick。领取成功后按本次真正新增的账户／项目发一条汇总托盘通知。
 - 会话只走 stdin，不落盘、不进日志；输入严格校验，失败不重试写操作。
 - **边界**：Qoder 每日活动的凭据只存在于 macOS 钥匙串与 Electron 解密，Windows 没有等价实现，界面明确显示「暂不支持」，不用网页 Cookie 冒充；MiniMax Code 同样暂不可用。
-- 自动化：`tests/test_windows_rewards.py` 10 项通过；C# 测试已加入 `RewardsTests`（需在 Windows 上构建执行）。
-- 构建验证：Windows 临时副本 `dotnet build windows/AgentMeter.Windows -c Release` 0 警告 0 错误；`AccountPreferences.Tests` 运行通过（含新增领取设置与结果检查）。
-- **2026-11-20 产品决定**：自动领取后续可能重新评估，暂不做真实账户测试；实现保留，不作为发布阻塞项。
+- 自动化：`tests/test_windows_rewards.py` 10 项及 Python 全量 `988 passed, 1 skipped` 通过；C# `RewardsTests` 在 Windows 构建机执行通过。
+- 构建验证：Windows 临时副本 `dotnet build windows/AgentMeter.Windows -c Release` 0 警告 0 错误；`AccountPreferences.Tests` 0 警告并通过（含手动领取与成功通知检查）。
+- **2026-11-20 产品决定**：改为只在窗口手动点击领取，移除自动开关、领取时刻和后台定时路径；旧 `auto-claim.json` 不再读取或写入。真实账户领取待用户授权后验收。
 
 ### P2 · Windows 历史导入
 
@@ -118,7 +118,7 @@
 
 | 阶段 | 内容 | 预估 |
 |---|---|---|
-| 阶段 1（快赢） | P1 自动领取 + P4 macOS 报告对照 | 2–3 天 |
+| 阶段 1（快赢） | P1 手动领取 + P4 macOS 报告对照 | 2–3 天 |
 | 阶段 2（核心） | P3 Windows 云同步（Python 加密/CLI + C# 页面 + 双向互操作） | 4–6 天 |
 | 阶段 3（收尾） | P2 历史导入 + P5 桌宠/通知/收集册验收 | 3–4 天 |
 
@@ -128,7 +128,7 @@
 
 - **协议互操作**：X25519/HKDF/ChaCha20-Poly1305 的 info 字符串、短码编码、SAS 必须逐字节对齐；固定向量已通过，真实双机联调仍需执行。
 - **真实账户**：Windows 机器没有所有服务的登录态；P1 的真实领取、P3 的双设备同步需要用户授权或提供一台已登录的 Mac。
-- **写操作合规**：自动领取默认关闭，逐平台确认；失败不重试写操作。
+- **写操作合规**：每日积分只在用户点击「立即领取」时写入，不使用自动或定时触发；失败不重试写操作。
 - **并行开发冲突**：`main` 上仍有 v0.12.0 未提交改动；本计划全部落在 `feat/windows-port`，待 v0.12.0 落地后再合并 main，避免 `server.py`/`report_periods.py` 冲突。
 - **Windows 打包链路**：构建脚本已修 PowerShell 5.1 的 BOM/stderr 问题；后续新增 Python 依赖时同步更新 `windows/requirements.txt` 与 PyInstaller `--collect-all`。
 
@@ -136,7 +136,7 @@
 
 - [ ] Windows 官方测试清单（252 项）与 C# 测试保持通过
 - [ ] macOS 全量 Python 测试通过（平台专属断言除外）
-- [ ] P1：Windows 真实账户自动领取一次，规则与 macOS 一致（暂不测试；实现与模拟测试已完成，后续重新评估）
+- [ ] P1：Windows 真实账户手动领取一次，规则与 macOS 一致（需用户授权；实现与模拟测试已完成）
 - [ ] P2：历史导入样例两端统计一致
 - [ ] P3：真实 Mac ↔ Windows 双向云同步与异常场景真机验收；协议固定向量、本地 `sync_server` 双设备端到端、打包后端创建空间／push 已验证
 - [ ] P4：两端同一账本的自然日对照数值一致（字段与两端展示已自动化通过，真机同账本待对照）

@@ -56,22 +56,21 @@ class Fake:
 
 
 class ParseTests(unittest.TestCase):
-    def test_accepts_the_documented_shape(self):
+    def test_accepts_the_manual_shape_without_auto_fields(self):
         request = windows_rewards.parse_request({
             "sessions": {"trae_cn": [trae_session()], "workbuddy": [workbuddy_session()]},
-            "auto_claim": ["workbuddy", "trae_cn"], "claim_time": "08:30",
-            "claim_all": False, "only": "trae_cn"})
-        self.assertEqual(request["auto_claim"], ["trae_cn", "workbuddy"])
-        self.assertEqual(request["claim_time"], "08:30")
+            "claim_all": True, "only": "trae_cn"})
+        self.assertTrue(request["claim_all"])
+        self.assertEqual(request["only"], "trae_cn")
         self.assertEqual(len(request["sessions"]["trae_cn"]), 1)
 
-    def test_rejects_unknown_fields_and_providers(self):
+    def test_rejects_auto_fields_unknown_fields_and_providers(self):
         for data in [
             {"sessions": {"qoder": [{"cookie": COOKIE, "user_agent": UA}]}},
-            {"auto_claim": ["qoder"]},
+            {"auto_claim": ["trae_cn"]},
+            {"claim_time": "08:00"},
             {"only": "qoder"},
             {"only": "trae_cn#6"},
-            {"claim_time": "8:00"},
             {"claim_all": "yes"},
             {"sessions": {"trae_cn": [dict(trae_session(), extra="x")]}},
             {"sessions": {"trae_cn": [{"token": "short", "user_agent": UA, "device_id": None}]}},
@@ -96,33 +95,39 @@ class ServiceTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def request(self, auto=("trae_cn",), claim_time="08:00", **extra):
-        return windows_rewards.parse_request({"sessions": {"trae_cn": [trae_session()]},
-                                             "auto_claim": list(auto), "claim_time": claim_time, **extra})
+    def request(self, **extra):
+        return windows_rewards.parse_request({
+            "sessions": {"trae_cn": [trae_session()]}, "claim_all": True, **extra})
 
     def adapters(self, trae):
         return {"trae_cn": (trae.status, trae.claim)}
 
-    def test_claim_once_then_rechecks_without_second_claim(self):
+    def test_manual_claim_once_then_rechecks_without_second_claim(self):
         trae = Fake([trae_open(), trae_signed()])
         out = windows_rewards.claim(self.dir, self.request(), NOW, adapters=self.adapters(trae))
         self.assertEqual(trae.calls, ["status", ("claim", "daily_checkin"), "status"])
         account = out["accounts"][0]
         self.assertEqual(account["id"], "trae_cn")
         self.assertEqual(account["claimed_credits_today"], 300)
-        self.assertEqual(account["claim_time"], "08:00")
+        self.assertEqual(account["claimed_now"], ["每日签到"])
+        self.assertEqual(account["claimed_credits_now"], 300)
+        self.assertNotIn("auto_claim", account)
+        self.assertNotIn("claim_time", account)
+        self.assertNotIn("next_claim_at", account)
         self.assertTrue(account["today"]["signed_in"])
         self.assertEqual([item["provider"] for item in out["unsupported"]], ["qoder", "minimax_code"])
 
         out = windows_rewards.claim(self.dir, self.request(), NOW + STATUS_EVERY, adapters=self.adapters(trae))
         self.assertEqual(trae.calls, ["status", ("claim", "daily_checkin"), "status", "status"])
         self.assertEqual(out["accounts"][0]["claimed_credits_today"], 300)
+        self.assertEqual(out["accounts"][0]["claimed_now"], [])
+        self.assertEqual(out["accounts"][0]["claimed_credits_now"], 0)
 
     def test_status_is_ledger_only_and_never_calls_the_network(self):
         trae = Fake([trae_open(), trae_signed()])
         windows_rewards.claim(self.dir, self.request(), NOW, adapters=self.adapters(trae))
         calls = len(trae.calls)
-        out = windows_rewards.status(self.dir, windows_rewards.parse_request({"auto_claim": ["trae_cn"]}), NOW)
+        out = windows_rewards.status(self.dir, NOW)
         self.assertEqual(len(trae.calls), calls)
         self.assertEqual(out["source"], "ledger")
         self.assertEqual(out["accounts"][0]["id"], "trae_cn")
@@ -136,15 +141,21 @@ class ServiceTests(unittest.TestCase):
         account = out["accounts"][0]
         self.assertEqual((account["status"], account["reason"]), ("not_connected", "not_authenticated"))
 
-    def test_claim_waits_for_the_daily_moment(self):
+    def test_only_claims_the_selected_slot(self):
         trae = Fake([trae_open()])
-        out = windows_rewards.claim(self.dir, self.request(claim_time="17:00"), NOW, adapters=self.adapters(trae))
-        self.assertEqual(trae.calls, ["status"])
-        self.assertEqual(out["accounts"][0]["next_claim_at"]["epoch_seconds"], NOW + 3600)
+        workbuddy = Fake([{"claimable": []}])
+        request = windows_rewards.parse_request({
+            "sessions": {"trae_cn": [trae_session()], "workbuddy": [workbuddy_session()]},
+            "only": "workbuddy"})
+        windows_rewards.claim(self.dir, request, NOW, adapters={"trae_cn": (trae.status, trae.claim),
+                                                               "workbuddy": (workbuddy.status, workbuddy.claim)})
+        self.assertEqual(trae.calls, [])
+        self.assertEqual(workbuddy.calls, ["status"])
 
     def test_unknown_slot_does_not_touch_a_session(self):
         trae = Fake([trae_open()])
-        windows_rewards.claim(self.dir, self.request(only="workbuddy#2"), NOW, adapters=self.adapters(trae))
+        windows_rewards.claim(self.dir, self.request(only="workbuddy#2", claim_all=False), NOW,
+                              adapters=self.adapters(trae))
         self.assertEqual(trae.calls, [])
 
 
@@ -155,12 +166,12 @@ class CliTests(unittest.TestCase):
             env = dict(os.environ, LOCALAPPDATA=local)
             result = subprocess.run(
                 [sys.executable, "-m", "windows.backend", "--rewards-status"],
-                input=json.dumps({"auto_claim": ["trae_cn"], "claim_time": "08:00"}),
-                capture_output=True, text=True, cwd=root, env=env, timeout=60)
+                input="{}", capture_output=True, text=True, cwd=root, env=env, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["source"], "ledger")
             self.assertEqual([row["id"] for row in payload["accounts"]], ["trae_cn", "workbuddy"])
+            self.assertNotIn("auto_claim", payload["accounts"][0])
             self.assertNotIn(TOKEN, result.stdout)
 
     def test_invalid_input_exits_without_echoing_it(self):
