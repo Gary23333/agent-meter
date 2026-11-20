@@ -67,6 +67,25 @@ final class EFeaturesTests: XCTestCase {
         let report = PeriodReport(json(#"{"current":{"tokens":5},"previous":{"tokens":0},"delta":{"tokens_pct":null}}"#))
         XCTAssertNil(report.tokensPct)
         XCTAssertNil(report.costPct)
+        XCTAssertEqual(report.comparableDays, 0)
+        XCTAssertEqual(report.comparableChange, "当前周期还没有已结束的自然日")
+    }
+
+    func testPeriodReportComparableDays() {
+        let report = PeriodReport(json("""
+        {"current":{"tokens":300},"previous":{"tokens":200},"delta":{},
+         "comparable_days":2,"current_comparable_tokens":210,"previous_comparable_tokens":0,
+         "comparable_basis":"completed_natural_days_excluding_today"}
+        """))
+        XCTAssertEqual(report.comparableDays, 2)
+        XCTAssertEqual(report.comparableCurrent, 210)
+        XCTAssertEqual(report.comparablePrevious, 0)
+        XCTAssertEqual(report.comparableChange, "上期为 0 · 不计算增幅")
+
+        let changed = PeriodReport(json("""
+        {"comparable_days":3,"current_comparable_tokens":120,"previous_comparable_tokens":100}
+        """))
+        XCTAssertEqual(changed.comparableChange, "+20.0%")
     }
 
     func testStatusFeedDecoding() {

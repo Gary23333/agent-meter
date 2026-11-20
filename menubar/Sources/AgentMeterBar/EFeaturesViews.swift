@@ -215,6 +215,10 @@ struct PeriodReport {
     let movers: [(model: String, delta: Int)]
     let basis: String
     let gaps: [String]
+    /// 已结束自然日对照：排除未结束的今天，按相同天数对齐。
+    let comparableDays: Int
+    let comparableCurrent: Int
+    let comparablePrevious: Int
 
     init(_ json: JSON) {
         func money(_ row: JSON) -> Double { row["cost_cny"].double ?? 0 }
@@ -232,6 +236,18 @@ struct PeriodReport {
         }
         basis = json["basis"].string ?? ""
         gaps = json["sources_without_daily_detail"].array.compactMap(\.string)
+        comparableDays = max(0, Int(json["comparable_days"].double ?? 0))
+        comparableCurrent = max(0, Int(json["current_comparable_tokens"].double ?? 0))
+        comparablePrevious = max(0, Int(json["previous_comparable_tokens"].double ?? 0))
+    }
+
+    /// 与 Windows 报告一致：上期为 0 时不算增幅，绝不把未知当 0 后编一个百分比。
+    var comparableChange: String {
+        guard comparableDays > 0 else { return "当前周期还没有已结束的自然日" }
+        if comparablePrevious == 0 { return comparableCurrent == 0 ? "双方均为 0" : "上期为 0 · 不计算增幅" }
+        let delta = (Double(comparableCurrent) - Double(comparablePrevious)) / Double(comparablePrevious) * 100
+        if delta > 99999 { return ">99999%" }
+        return String(format: "%@%.1f%%", delta > 0 ? "+" : "", abs(delta))
     }
 }
 
@@ -266,6 +282,9 @@ struct PeriodCompareCard: View {
                     }
                     Text("估算费用 \(Fmt.amount(report.currentCost, unit: "CNY"))  ·  \(pct(report.costPct))  ·  有效 \(report.currentDays) 天")
                         .font(.system(size: 10.5)).themeForeground(.secondary)
+                    Text(comparisonText(report))
+                        .font(.system(size: 10.5)).themeForeground(report.comparableDays > 0 ? .primary : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if !report.movers.isEmpty {
                         Text("变动主要来自：" + report.movers.prefix(3).map {
                             "\(Catalog.modelLabel($0.model)) \($0.delta >= 0 ? "+" : "")\(countText(abs($0.delta)))"
@@ -284,6 +303,11 @@ struct PeriodCompareCard: View {
             }
         }
         .task(id: kind) { await store.loadReport(kind: kind) }
+    }
+
+    private func comparisonText(_ report: PeriodReport) -> String {
+        guard report.comparableDays > 0 else { return report.comparableChange }
+        return "已结束的前 \(report.comparableDays) 个自然日：本期 \(countText(report.comparableCurrent)) · 上期 \(countText(report.comparablePrevious)) · \(report.comparableChange)（今天未计入）"
     }
 
     private func pct(_ value: Double?) -> String {

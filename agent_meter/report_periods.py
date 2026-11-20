@@ -32,6 +32,29 @@ def _date(epoch, zone):
     return datetime.fromtimestamp(epoch, zone).date().isoformat()
 
 
+def comparable_span(current_start, previous_start, today):
+    """已结束自然日数：排除今天，且不超过上期实际长度。
+
+    Windows 的 calendar_report 与这里共用同一条规则，保证两端对同一账本
+    显示相同的天数；当前周期第一天返回 0。
+    """
+    return max(0, min((today - current_start).days, (current_start - previous_start).days))
+
+
+def _window_tokens(rows, start_date, end_date):
+    """按 [start, end) 汇总行内 token；非法日期/数量按 0 计。"""
+    total = 0
+    for row in rows:
+        try:
+            day = datetime.strptime(row.get("date", ""), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            continue
+        count = row.get("total_tokens")
+        if start_date <= day < end_date and isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            total += count
+    return total
+
+
 def _window(rows, start_date, end_date, table, app_default):
     totals = {"tokens": 0, "requests": 0, "fresh_input": 0, "output": 0, "reasoning": 0,
               "cache_read": 0, "cache_write": 0}
@@ -111,6 +134,15 @@ def compute_period_report(snapshot, table, now, kind="week", zone=DISPLAY_ZONE):
                 current_rows.append(row)
     current = _window(current_rows, cur_date, end_date, table, None)
     previous = _window(previous_rows, prev_date, _date(current_start - 86400, zone), table, None)
+    # 当前日尚未结束，不能与完整上期作等长比较；按已结束的相同天数对齐。
+    current_start_date = datetime.fromtimestamp(current_start, zone).date()
+    previous_start_date = datetime.fromtimestamp(previous_start, zone).date()
+    today_date = datetime.fromtimestamp(current_end, zone).date()
+    completed = comparable_span(current_start_date, previous_start_date, today_date)
+    comparable_current = _window_tokens(current_rows, current_start_date,
+                                        current_start_date + timedelta(days=completed))
+    comparable_previous = _window_tokens(previous_rows, previous_start_date,
+                                         previous_start_date + timedelta(days=completed))
     movers = []
     for model, data in current["by_model"].items():
         before = previous["by_model"].get(model, {}).get("tokens", 0)
@@ -135,6 +167,11 @@ def compute_period_report(snapshot, table, now, kind="week", zone=DISPLAY_ZONE):
                                             and previous["cache_hit_rate"] is not None else None)},
         "top_movers": movers[:10],
         "sources_without_daily_detail": sorted(gaps),
+        # 与 Windows calendar_report 同名字段：排除未结束当天，按相同天数对齐。
+        "comparable_days": completed,
+        "current_comparable_tokens": comparable_current,
+        "previous_comparable_tokens": comparable_previous,
+        "comparable_basis": "completed_natural_days_excluding_today",
         "basis": "daily_rollup_base_price_no_peak_split",
         "note": "Current period is partial (up to now); previous period is complete. "
                 "Costs are API-equivalent estimates at base prices, not bills.",

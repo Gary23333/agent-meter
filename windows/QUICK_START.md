@@ -32,6 +32,8 @@
 
 预算设置、每日估算历史及通知去重记录分别保存在 `%LOCALAPPDATA%\AgentMeter\budget-windows.json`、`budget-history.json` 和 `budget-alerts.json`。关闭预算不会自动删除已有文件；设置或记录损坏时请先备份，程序不会静默覆盖损坏文件。
 
+托盘菜单「每日积分领取」默认关闭；开启后每天在设定时刻（默认 08:00）尝试 TRAE 每日签到和 WorkBuddy 已完成的成长任务，也可手动「立即领取」。只使用应用内登录的账户会话，不读取其他浏览器；结果写入 `%LOCALAPPDATA%\AgentMeter\rewards.json`。Qoder 每日活动需要 macOS 桌面客户端凭据，Windows 暂不支持，不会用网页 Cookie 冒充；领取失败不重试写操作。真实账户领取尚未验证，产品侧后续可能重新评估此功能。
+
 「用量报告」保留本期截至当前日期和完整上期的总量，并单独对比两期前面相同数量的已结束自然日；当天不计入对照。上月天数较短时只比较共同天数，上期为零时不显示增幅。Markdown 报告包含此对照，分享图仍展示自然周期总量。
 
 如需登录 Windows 后自动运行，可在托盘菜单开启「登录时启动」；默认关闭，启动后面板保持收起。设置只对当前 Windows 用户生效，Windows 启动应用设置仍可能阻止程序启动。移动程序前建议先在原位置关闭此选项，再从新位置开启；如旧项指向其他路径，程序会保护已有配置，可在注册表编辑器的当前用户 `Software\Microsoft\Windows\CurrentVersion\Run` 中检查 `AgentMeter.Windows` 条目。实体设备上的登录启动仍需验收。

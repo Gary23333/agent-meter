@@ -12,6 +12,7 @@ try
 {
     AccountPresentationTests.Run(directory);
     UsageExportTests.Run();
+    RewardsTests.Run(directory);
     var budgetDirectory = Path.Combine(directory, "budget");
     if (BudgetPreferences.Load(budgetDirectory).Enabled) throw new InvalidOperationException("预算默认应关闭");
     var budgetSettings = new BudgetSettings(true, true, 20.5m, 100m, 2m);

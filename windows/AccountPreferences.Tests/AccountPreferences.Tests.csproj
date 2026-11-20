@@ -34,6 +34,8 @@
     <Compile Include="..\AgentMeter.Windows\QuotaAlerts.cs" Link="QuotaAlerts.cs" />
     <Compile Include="..\AgentMeter.Windows\ResetCardAlerts.cs" Link="ResetCardAlerts.cs" />
     <Compile Include="..\AgentMeter.Windows\ForecastPreferences.cs" Link="ForecastPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\RewardPreferences.cs" Link="RewardPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\RewardsReport.cs" Link="RewardsReport.cs" />
     <Compile Include="..\AgentMeter.Windows\ForecastPresentation.cs" Link="ForecastPresentation.cs" />
     <Compile Include="..\AgentMeter.Windows\QuotaWindows.cs" Link="QuotaWindows.cs" />
     <Compile Include="..\AgentMeter.Windows\QuotaResetClock.cs" Link="QuotaResetClock.cs" />

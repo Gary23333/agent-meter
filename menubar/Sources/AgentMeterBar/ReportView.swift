@@ -74,7 +74,13 @@ struct ReportView: View {
         .padding(16)
         .frame(minWidth: 820, minHeight: 640)
         .themedRoot(store.theme)
-        .onChange(of: store.snapshot?.identity, initial: true) { rebuildReport() }
+        .onChange(of: store.snapshot?.identity, initial: true) {
+            rebuildReport()
+            Task {
+                await store.loadReport(kind: "week")
+                await store.loadReport(kind: "month")
+            }
+        }
         .onChange(of: periodRaw) { rebuildReport() }
         .onChange(of: options) { options.save() }
         .onChange(of: options.pet, initial: true) { refreshPetPhoto() }
@@ -193,6 +199,7 @@ struct ReportView: View {
                     if data.hasTokenUsage {
                     overviewCard(data)
                     costCard(data)
+                    calendarComparisonCard()
                     appsCard(data)
                     modelsCard(data)
                     } else {
@@ -226,6 +233,35 @@ struct ReportView: View {
             InfoRow(symbol: "target", title: "缓存命中率", value: data.cacheHitText,
                     detail: "命中 / (新输入 + 缓存读 + 缓存写)")
             InfoRow(symbol: "square.grid.2x2", title: "活跃应用", value: "\(data.appCount) 个")
+        }
+    }
+
+    /// 自然周/月对照：与 Windows「用量报告」同口径，只比已结束自然日。
+    @ViewBuilder
+    private func calendarComparisonCard() -> some View {
+        let week = store.weekReport
+        let month = store.monthReport
+        if week != nil || month != nil {
+            Card(tint: Color(red: 0.36, green: 0.52, blue: 1)) {
+                Text("自然周期对照").font(.system(size: 12, weight: .semibold))
+                Text("只比较已经结束的自然日；今天尚未结束，不计入。")
+                    .font(.system(size: 10.5)).themeForeground(.secondary)
+                comparisonRow("本周", week)
+                comparisonRow("本月", month)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func comparisonRow(_ title: String, _ report: PeriodReport?) -> some View {
+        if let report, report.comparableDays > 0 {
+            InfoRow(symbol: "calendar.badge.clock",
+                    title: "\(title)前 \(report.comparableDays) 个自然日",
+                    value: Fmt.tokens(Double(report.comparableCurrent)),
+                    detail: "上期同期 \(Fmt.tokens(Double(report.comparablePrevious))) · \(report.comparableChange)")
+        } else if let report {
+            InfoRow(symbol: "calendar.badge.clock", title: "\(title)自然日对照",
+                    value: report.comparableChange, valueTint: .secondary)
         }
     }
 

@@ -19,6 +19,7 @@ from agent_meter.codex import normalize_limits
 from agent_meter.model import DISPLAY_ZONE, SourceError, metric
 from agent_meter.transport import CodexRPC, get_json
 from agent_meter.workbuddy_tokens import collect_workbuddy_tokens
+from agent_meter.report_periods import comparable_span
 from agent_meter.zcode_local import zcode_tokens_metric
 from agent_meter.dsh_tokens import collect_dsh_sessions
 from agent_meter.record_cache import records_cache
@@ -31,6 +32,7 @@ from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_
 from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
+from windows import rewards as windows_rewards
 from windows.forecast import forecast_summary
 from windows.cost_medals import daily_cost_metric
 from windows.budget import budget_from_compact
@@ -459,7 +461,7 @@ def calendar_report(result):
     out = {}
     for kind, (previous, current) in bounds.items():
         # 按完整自然日对齐，当前日期仍在进行中；上月天数不足时两边都截到共同长度。
-        completed = min((today - current).days, (current - previous).days)
+        completed = comparable_span(current, previous, today)
         out[kind] = {"previous_start": previous.isoformat(), "current_start": current.isoformat(),
                      "current_end": today.isoformat(), "previous_tokens": 0, "current_tokens": 0,
                      "comparable_days": completed, "current_comparable_tokens": 0, "previous_comparable_tokens": 0}
@@ -930,6 +932,8 @@ def main():
     parser.add_argument("--qoder-only", action="store_true", help="使用标准输入中的应用专用会话查询 Qoder 中国区")
     parser.add_argument("--trae-only", action="store_true", help="使用应用专用会话查询 TRAE 中国区")
     parser.add_argument("--activity-only", action="store_true", help="只读取本机活动汇总，不查询账户")
+    parser.add_argument("--rewards-status", action="store_true", help="只读每日积分领取账本，不发网络请求")
+    parser.add_argument("--rewards-claim", action="store_true", help="使用标准输入中的应用会话查询并领取每日积分")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
@@ -938,6 +942,41 @@ def main():
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.rewards_status or args.rewards_claim:
+        others = [args.activity_only, args.trae_only, args.qoder_only, args.mimo_only, args.workbuddy_only,
+                  args.deepseek_only, args.zcode_only, args.volcengine_only, args.cards_update, args.forecast_only,
+                  args.history_worker, args.account_only, args.local_only, args.account_input,
+                  args.enable_minimax_account, args.rewards_status, args.rewards_claim,
+                  *[getattr(args, "disable_" + provider + "_account") for provider in ("codex", "kimi", "claude")]]
+        if sum(bool(item) for item in others) != 1:
+            raise SystemExit(2)
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+            raw = sys.stdin.read(windows_rewards.MAX_INPUT + 1)
+            if len(raw) > windows_rewards.MAX_INPUT:
+                raise ValueError("rewards input too large")
+            request = windows_rewards.parse_request(json.loads(raw.lstrip("\ufeff")))
+        except (ValueError, TypeError, RecursionError):
+            # 不回显输入内容、会话或异常原文。
+            raise SystemExit(2) from None
+        directory = windows_rewards.runtime_dir()
+        if directory is None:
+            print(json.dumps({"schema_version": 1, "timezone": "Asia/Shanghai", "accounts": [],
+                              "unsupported": list(windows_rewards.UNSUPPORTED),
+                              "status": "error", "reason": "rewards_directory_unavailable"},
+                             ensure_ascii=False))
+            return
+        try:
+            if args.rewards_status:
+                result = windows_rewards.status(directory, request, time.time())
+            else:
+                result = windows_rewards.claim(directory, request, time.time())
+        except Exception:
+            result = {"schema_version": 1, "timezone": "Asia/Shanghai", "accounts": [],
+                      "unsupported": list(windows_rewards.UNSUPPORTED),
+                      "status": "error", "reason": "rewards_failed"}
+        print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+        return
     if args.activity_only:
         if (args.trae_only or args.qoder_only or args.mimo_only or args.workbuddy_only or args.deepseek_only or args.zcode_only or args.volcengine_only or args.cards_update or args.forecast_only or args.history_worker
                 or args.account_only or args.local_only or args.account_input or args.enable_minimax_account

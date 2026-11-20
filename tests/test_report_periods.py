@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -79,6 +79,32 @@ class PeriodReportTests(unittest.TestCase):
         self.assertGreater(float(report["current"]["cost_cny"]), 0)   # priced models exist
         self.assertEqual(report["current"]["days_with_data"], 3)
         self.assertEqual(report["previous"]["days_with_data"], 2)
+        # 2026-11-04 尚未结束：只比较 11-02/11-03 与上周同两天。
+        self.assertEqual(report["comparable_days"], 2)
+        self.assertEqual(report["current_comparable_tokens"], 210)
+        self.assertEqual(report["previous_comparable_tokens"], 0)
+        self.assertEqual(report["comparable_basis"], "completed_natural_days_excluding_today")
+
+    def test_comparable_days_cap_to_shorter_previous_month(self):
+        now = datetime(2026, 3, 31, 12, 0, tzinfo=ZONE).timestamp()
+        snapshot = {"sources": [source("codex", [
+            row("2026-02-28", "gpt-5.3-codex", 4),
+            row("2026-03-01", "gpt-5.3-codex", 7),
+            row("2026-03-30", "gpt-5.3-codex", 5),
+            row("2026-03-31", "gpt-5.3-codex", 8),
+        ])]}
+        report = compute_period_report(snapshot, self.table, now, "month", ZONE)
+        self.assertEqual(report["comparable_days"], 28)
+        self.assertEqual(report["current_comparable_tokens"], 7)
+        self.assertEqual(report["previous_comparable_tokens"], 4)
+
+    def test_first_day_of_month_has_no_comparable_days(self):
+        now = datetime(2026, 12, 1, 12, 0, tzinfo=ZONE).timestamp()
+        snapshot = {"sources": [source("codex", [row("2026-12-01", "gpt-5.3-codex", 9)])]}
+        report = compute_period_report(snapshot, self.table, now, "month", ZONE)
+        self.assertEqual(report["comparable_days"], 0)
+        self.assertEqual(report["current_comparable_tokens"], 0)
+        self.assertEqual(report["previous_comparable_tokens"], 0)
 
     def test_empty_previous_delta_is_null(self):
         snapshot = {"sources": [source("codex", [row("2026-11-02", "unknown-model-x", 10)])]}
