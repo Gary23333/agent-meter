@@ -105,6 +105,8 @@ function Wait-Panel([bool]$visible, [string]$step) {
 }
 function Save-Navigation($panel,[string]$name) {
     # 移出导航，排除鼠标悬停颜色，比较完整七个标签（包括文字）。
+    $cost = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'API 等价估算'))
+    if (-not $cost) { throw '重新打开的面板未显示用量页' }
     $tabs = @($panel.FindAll($desc,$all) | Where-Object { $_.Current.Name -in @('账户','应用','用量','报告','预测','桌宠','收集') })
     if ($tabs.Count -ne 7) { throw "未能唯一定位七个导航标签：$($tabs.Count)" }
     $area = [System.Windows.Rect]::Empty
@@ -134,6 +136,24 @@ try {
             $chooser = $combos | Where-Object { $_.Current.Name -match 'scale|size of text' -or $_.Current.AutomationId -match 'scal|DPI' } | Select-Object -First 1
         } while (-not $chooser -and [DateTime]::UtcNow -lt $end)
         if (-not $chooser) { throw ('找不到系统缩放选择器，可见下拉框为 ' + (($combos | ForEach-Object { $_.Current.Name + '/' + $_.Current.AutomationId }) -join ', ')) }
+        if ($Scale -eq '150') {
+            $res = $combos | Where-Object { $_.Current.Name -match 'display resolution' -or $_.Current.AutomationId -match 'Resolution' } | Select-Object -First 1
+            if ($res) {
+                Click-Control $res
+                Start-Sleep -Milliseconds 250
+                $sizes = @($settings.FindAll($desc,$all) | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::ListItem -and -not $_.Current.IsOffscreen -and $_.Current.Name -match '^\d+\s*[×x]\s*\d+' })
+                $report.resolutions = @($sizes | ForEach-Object { $_.Current.Name })
+                $larger = $sizes | Where-Object { $_.Current.Name -match '^(1920\s*[×x]\s*1080|1600\s*[×x]\s*900|1280\s*[×x]\s*1024)' } | Sort-Object { [int]([regex]::Match($_.Current.Name,'^\d+').Value) } -Descending | Select-Object -First 1
+                if ($larger) {
+                    Click-Control $larger
+                    Start-Sleep -Seconds 2
+                    $keep = $settings.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Keep changes'))
+                    if ($keep) { Click-Control $keep }
+                } else {
+                    [TrayDesktop]::keybd_event(27,0,0,[UIntPtr]::Zero); [TrayDesktop]::keybd_event(27,0,2,[UIntPtr]::Zero)
+                }
+            }
+        }
         Click-Control $chooser
         Start-Sleep -Milliseconds 250
         $choices = @($settings.FindAll($desc,$all) | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::ListItem })
