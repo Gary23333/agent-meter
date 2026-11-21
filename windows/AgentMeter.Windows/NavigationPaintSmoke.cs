@@ -49,17 +49,18 @@ internal sealed partial class MeterWindow
         // 只在隔离构建机运行，移开鼠标以免悬停色干扰像素判断。
         Cursor.Position = new Point(1, 1);
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
-        foreach (var (selected, page) in new[] { (0, View.Accounts), (1, View.Applications), (2, View.Usage), (5, View.Pet) })
+        foreach (var (selected, page) in new[] { (0, View.Accounts), (1, View.Applications), (2, View.Usage),
+            (3, View.Report), (4, View.Forecast), (5, View.Pet), (6, View.Collection), (0, View.Accounts) })
         {
             ClickOnIsolatedDesktop(tabs[selected]);
             await Task.Delay(350);
             Cursor.Position = new Point(1, 1);
             if (view != page) throw new InvalidOperationException("导航鼠标点击没有切换页面");
-            navigationStrip.Invalidate(true); Update();
             await Task.Delay(100);
             using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(picture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
             picture.Save(Path.Combine(output, $"navigation-{selected}.png"), ImageFormat.Png);
+            CheckNaturalNavigationFrame(picture, output, $"{page}");
             for (int i = 0; i < tabs.Length; i++)
             {
                 if (tabs[i].IsSelected != (i == selected)) throw new InvalidOperationException("导航选中状态错误");
@@ -232,6 +233,27 @@ internal sealed partial class MeterWindow
                 !((Label)broken.Controls.Find("budget-message", true).Single()).Text.Contains("无法读取") || File.ReadAllText(testConfig) != "invalid")
                 throw new InvalidOperationException("损坏预算设置应保留原文件并阻止覆盖");
         }
+    }
+
+    // 先保留用户正常点击后看到的整条导航，再与同位置同步重绘的结果逐像素对照。
+    // 单点取色可以确认高亮位置，但无法发现文字笔画或胶囊边缘上的残影。
+    void CheckNaturalNavigationFrame(Bitmap picture, string output, string page)
+    {
+        Point origin = navigationStrip.PointToScreen(Point.Empty);
+        var area = new Rectangle(PointToClient(origin), navigationStrip.ClientSize);
+        using var natural = picture.Clone(area, PixelFormat.Format32bppArgb);
+        navigationStrip.Refresh();
+        using var reference = new Bitmap(area.Width, area.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(reference))
+            graphics.CopyFromScreen(origin, Point.Empty, reference.Size);
+        int changed = 0;
+        for (int y = 0; y < area.Height; y++)
+            for (int x = 0; x < area.Width; x++)
+                if (natural.GetPixel(x, y).ToArgb() != reference.GetPixel(x, y).ToArgb()) changed++;
+        if (changed == 0) return;
+        natural.Save(Path.Combine(output, $"navigation-{page}-natural.png"), ImageFormat.Png);
+        reference.Save(Path.Combine(output, $"navigation-{page}-reference.png"), ImageFormat.Png);
+        throw new InvalidOperationException($"{page} 自然切页与重绘后的导航有 {changed} 个像素不同");
     }
 
     void CheckTabPixel(Bitmap picture, NavigationTab tab, bool selected)

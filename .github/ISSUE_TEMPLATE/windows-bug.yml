@@ -1,0 +1,28 @@
+name: Windows 版问题反馈
+description: 反馈托盘、界面或数据问题
+title: "[Windows] "
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: 应用版本和 Windows 版本
+      placeholder: 例如 Alpha 45，Windows 11 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 如何触发，预期看到什么，实际看到了什么？
+      placeholder: 例如从隐藏图标打开托盘，连续点击「账户 → 用量 → 账户」后，原来的紫色高亮仍然可见。
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: 界面问题请补充屏幕缩放、显示器和主题
+      placeholder: 例如主屏 150%，副屏 100%，从副屏任务栏打开，极光主题
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 可选截图或补充说明
+      description: 请先遮盖账号和私人信息。凭据、原始账本和对话内容请保留在本机。
