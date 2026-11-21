@@ -154,6 +154,44 @@ function Save-Navigation($panel,[string]$name) {
     Start-Sleep -Milliseconds 200
     return Save-Region $area $name
 }
+function Test-UsageLayout($panel,$screen,[bool]$enforce) {
+    $bounds = $panel.Current.BoundingRectangle
+    $report.panelPixels = @{ width=$bounds.Width; height=$bounds.Height }
+    $image = [Drawing.Bitmap]::new((Join-Path $OutputDir 'usage.png'))
+    $report.metricBottomPadding = [ordered]@{}
+    try {
+        foreach ($value in @('1.77M','$2.464')) {
+            $matchesByName = $panel.FindAll($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,$value))
+            $label = $matchesByName | Sort-Object { $_.Current.BoundingRectangle.Top } | Select-Object -First 1
+            if (-not $label) { throw "用量首屏缺少演示数值 $value" }
+            $r = $label.Current.BoundingRectangle
+            $left = [int][Math]::Ceiling($r.Left - $bounds.Left)
+            $top = [int][Math]::Ceiling($r.Top - $bounds.Top)
+            $right = [int][Math]::Floor($r.Right - $bounds.Left)
+            $bottom = [int][Math]::Floor($r.Bottom - $bounds.Top)
+            if ($left -lt 0 -or $top -lt 0 -or $right -gt $image.Width -or $bottom -gt $image.Height) { throw "数值 $value 超出可见弹层" }
+            # 演示主题使用白色大数字。检查最后一个可见笔画与标签底边之间的实际留白。
+            $lastInk = $null
+            for ($y=$bottom-1; $y -ge $top -and $null -eq $lastInk; $y--) {
+                for ($x=$left; $x -lt $right; $x++) {
+                    $pixel = $image.GetPixel($x,$y)
+                    if ($pixel.R -gt 190 -and $pixel.G -gt 190 -and $pixel.B -gt 190) { $lastInk=$y; break }
+                }
+            }
+            if ($null -eq $lastInk) { throw "未在截图中找到数值 $value 的笔画" }
+            $padding = $bottom - 1 - $lastInk
+            $report.metricBottomPadding[$value] = $padding
+            if ($enforce -and $padding -lt 2) { throw "数值 $value 的笔画贴住底边，剩余 $padding 像素" }
+        }
+    } finally { $image.Dispose() }
+    if (-not $enforce) { return }
+    $work = $screen.WorkingArea
+    if ($bounds.Left -lt $work.Left -or $bounds.Top -lt $work.Top -or $bounds.Right -gt $work.Right -or $bounds.Bottom -gt $work.Bottom) { throw '托盘弹层超出工作区' }
+    $dpi = [TrayDesktop]::MonitorDpi([int]($bounds.Left+$bounds.Width/2),[int]($bounds.Top+$bounds.Height/2))
+    $expectedWidth = [Math]::Min(440*$dpi/96,$work.Width-24*$dpi/96)
+    if ([Math]::Abs($bounds.Width-$expectedWidth) -gt 2) { throw "弹层宽度 $($bounds.Width) 与缩放后的 $expectedWidth 不符" }
+    Record '面板适应当前工作区，两项用量大字底部完整'
+}
 $app = $null
 try {
     if ($Scale -ne 'current') {
@@ -201,6 +239,10 @@ try {
     Start-Sleep -Milliseconds 250
     $before = Save-Navigation (Get-Panel) 'usage-before'
     $null = Save-Region (Get-Panel).Current.BoundingRectangle 'usage'
+    $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
+    $report.fileVersion = $version.FileVersion
+    $screen = [Windows.Forms.Screen]::FromPoint([Drawing.Point]::new([int]$panel.Current.BoundingRectangle.Left,[int]$panel.Current.BoundingRectangle.Top))
+    Test-UsageLayout $panel $screen ([version]$version.FileVersion -ge [version]'0.1.0.47')
     [TrayDesktop]::keybd_event(27,0,0,[UIntPtr]::Zero); [TrayDesktop]::keybd_event(27,0,2,[UIntPtr]::Zero)
     $null = Wait-Panel $false '按 Esc 后收起'
     Click-Tray
