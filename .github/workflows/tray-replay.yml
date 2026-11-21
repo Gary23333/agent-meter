@@ -1,0 +1,40 @@
+name: Explorer 托盘实测
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 待测的 Windows 预览版标签
+        required: true
+        default: windows-v0.1.0-alpha.46
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: 获取公开发布包并核对 SHA-256
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:TAG -notmatch '^windows-v[0-9.]+-alpha\.[0-9]+$') { throw '无效版本' }
+          gh release download $env:TAG -p AgentMeter-Windows-x64.zip -p SHA256SUMS.txt -D $env:RUNNER_TEMP
+          if ($LASTEXITCODE) { throw '下载失败' }
+          $zip = Join-Path $env:RUNNER_TEMP 'AgentMeter-Windows-x64.zip'
+          $expected = ((Get-Content "$env:RUNNER_TEMP/SHA256SUMS.txt" -Raw).Trim() -split '\s+')[0]
+          if ((Get-FileHash $zip).Hash -ne $expected) { throw '校验失败' }
+          Expand-Archive $zip "$env:RUNNER_TEMP/test-release"
+      - name: 点击通知区域图标，核对开合与导航
+        shell: powershell
+        run: |
+          ./windows/qa/explorer-tray.ps1 -Executable "$env:RUNNER_TEMP/test-release/AgentMeter/AgentMeter.Windows.exe" -OutputDir "$env:RUNNER_TEMP/tray-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Explorer-tray-replay
+          path: ${{ runner.temp }}/tray-replay
