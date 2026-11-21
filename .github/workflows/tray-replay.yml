@@ -5,7 +5,7 @@ on:
       tag:
         description: Windows 预览版标签，或 source（编译所选分支的演示界面）
         required: true
-        default: windows-v0.1.0-alpha.46
+        default: windows-v0.1.0-alpha.47
       scale:
         description: 隔离桌面的缩放百分比（current 保留默认值）
         type: choice
