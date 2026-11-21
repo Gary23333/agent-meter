@@ -1,6 +1,6 @@
 ﻿# 只在一次性的交互式 Windows 构建机上移动鼠标、按键并启动虚构数据面板。
 param([Parameter(Mandatory)][string]$Executable, [Parameter(Mandatory)][string]$OutputDir,
-      [ValidateSet('current','125','150','200')][string]$Scale='current')
+      [ValidateSet('current','125','150','175','200')][string]$Scale='current')
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '需要 GitHub 托管的隔离桌面' }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Windows.Forms
@@ -158,7 +158,7 @@ $app = $null
 try {
     if ($Scale -ne 'current') {
         # 使用系统设置里的缩放选择器，实际读回 DPI 后才开始测试。
-        if ($Scale -in '150','200') { [TrayDesktop]::UseLargeDisplay($Scale -eq '200'); Start-Sleep -Seconds 2 }
+        if ($Scale -in '150','175','200') { [TrayDesktop]::UseLargeDisplay($Scale -eq '200'); Start-Sleep -Seconds 2 }
         Start-Process 'ms-settings:display'
         $end = [DateTime]::UtcNow.AddSeconds(15)
         do {

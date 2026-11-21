@@ -5,6 +5,8 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- 弹层按逻辑像素排版。让 Windows 同步缩放控件和文字，避免字号增大而卡片仍停留在原尺寸。 -->
+    <ApplicationHighDpiMode>DpiUnawareGdiScaled</ApplicationHighDpiMode>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>..\assets\agent-meter.ico</ApplicationIcon>
     <Version>0.1.0-alpha.46</Version>
