@@ -8,6 +8,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class TrayDesktop {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+    public static IntPtr ShellWindow(string cls) { return FindWindow(cls,null); }
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr handle);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr handle);
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
@@ -25,7 +26,7 @@ $all = [Windows.Automation.Condition]::TrueCondition
 function Record([string]$step) { $report.steps += $step; Write-Host $step }
 function Find-ShellControl([string]$kind) {
     foreach ($class in 'Shell_TrayWnd','NotifyIconOverflowWindow','TopLevelWindowForOverflowXamlIsland') {
-        $hwnd = [TrayDesktop]::FindWindow($class,$null)
+        $hwnd = [TrayDesktop]::ShellWindow($class)
         if ($hwnd -eq [IntPtr]::Zero -or -not [TrayDesktop]::IsWindowVisible($hwnd)) { continue }
         $base = [Windows.Automation.AutomationElement]::FromHandle($hwnd)
         foreach ($item in $base.FindAll($desc,$all)) {
@@ -51,8 +52,11 @@ function Click-Tray([int]$hold=45) {
         $chevron = Find-ShellControl 'overflow'
         if (-not $chevron) { throw 'Explorer 中未找到演示托盘图标或溢出入口' }
         Click-Control $chevron
-        Start-Sleep -Milliseconds 350
-        $icon = Find-ShellControl 'icon'
+        $deadline = [DateTime]::UtcNow.AddSeconds(4)
+        do {
+            Start-Sleep -Milliseconds 200
+            $icon = Find-ShellControl 'icon'
+        } while (-not $icon -and [DateTime]::UtcNow -lt $deadline)
     }
     if (-not $icon) { throw '展开隐藏图标后仍未找到演示托盘图标' }
     Click-Control $icon $hold
@@ -91,7 +95,7 @@ function Save-Navigation($panel,[string]$name) {
 $app = $null
 try {
     foreach ($screen in [Windows.Forms.Screen]::AllScreens) { $report.screens += [ordered]@{bounds=$screen.Bounds.ToString(); work=$screen.WorkingArea.ToString()} }
-    if ([TrayDesktop]::FindWindow('Shell_TrayWnd',$null) -eq [IntPtr]::Zero) { throw '隔离会话未提供 Explorer 任务栏' }
+    if ([TrayDesktop]::ShellWindow('Shell_TrayWnd') -eq [IntPtr]::Zero) { throw '隔离会话未提供 Explorer 任务栏' }
     $app = Start-Process -FilePath $Executable -ArgumentList '--demo','--background' -PassThru
     $processCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,$app.Id)
     Start-Sleep -Seconds 2
@@ -119,6 +123,15 @@ try {
     $report.result = 'passed'
 } catch {
     $report.error = $_.Exception.Message
+    foreach ($element in $root.FindAll([Windows.Automation.TreeScope]::Children,$all)) {
+        $cls = $element.Current.ClassName
+        Write-Host "窗口类型 $cls"
+        if ($cls -match 'TrayWnd|Overflow') {
+            foreach ($child in $element.FindAll($desc,$all)) {
+                Write-Host ($child.Current.ClassName + ' | ' + $child.Current.Name + ' | ' + $child.Current.AutomationId)
+            }
+        }
+    }
     throw
 } finally {
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDir 'result.json') -Encoding UTF8
