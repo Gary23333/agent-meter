@@ -28,6 +28,32 @@ public static class TrayDesktop {
     }
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+    // DEVMODEW 的显示器布局。仅在隔离机上选择驱动程序自己枚举出的模式。
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    struct DisplayMode {
+        [MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)] public string DeviceName;
+        public ushort SpecVersion, DriverVersion, Size, DriverExtra;
+        public uint Fields;
+        public int X,Y;
+        public uint Orientation,FixedOutput;
+        public short Color,Duplex,YResolution,TrueType,Collate;
+        [MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)] public string FormName;
+        public ushort LogPixels;
+        public uint Bpp,Width,Height,Flags,Frequency,IcmMethod,IcmIntent,MediaType,Dither,Reserved1,Reserved2,PanWidth,PanHeight;
+    }
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool EnumDisplaySettings(string device,int number,ref DisplayMode mode);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DisplayMode mode,uint flags);
+    public static void UseFullHD() {
+        var mode = new DisplayMode { Size = (ushort)Marshal.SizeOf(typeof(DisplayMode)) };
+        for (int i=0; EnumDisplaySettings(null,i,ref mode); i++) {
+            if (mode.Width != 1920 || mode.Height != 1080 || mode.Bpp != 32) continue;
+            mode.Fields = 0x180000; // DM_PELSWIDTH | DM_PELSHEIGHT
+            int result = ChangeDisplaySettings(ref mode,0);
+            if (result != 0) throw new InvalidOperationException("显示模式切换失败：" + result);
+            return;
+        }
+        throw new InvalidOperationException("显示驱动未提供 1920 × 1080 模式");
+    }
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
 }
@@ -126,6 +152,7 @@ $app = $null
 try {
     if ($Scale -ne 'current') {
         # 使用系统设置里的缩放选择器，实际读回 DPI 后才开始测试。
+        if ($Scale -eq '150') { [TrayDesktop]::UseFullHD(); Start-Sleep -Seconds 2 }
         Start-Process 'ms-settings:display'
         $end = [DateTime]::UtcNow.AddSeconds(15)
         do {
@@ -136,24 +163,6 @@ try {
             $chooser = $combos | Where-Object { $_.Current.Name -match 'scale|size of text' -or $_.Current.AutomationId -match 'scal|DPI' } | Select-Object -First 1
         } while (-not $chooser -and [DateTime]::UtcNow -lt $end)
         if (-not $chooser) { throw ('找不到系统缩放选择器，可见下拉框为 ' + (($combos | ForEach-Object { $_.Current.Name + '/' + $_.Current.AutomationId }) -join ', ')) }
-        if ($Scale -eq '150') {
-            $res = $combos | Where-Object { $_.Current.Name -match 'display resolution' -or $_.Current.AutomationId -match 'Resolution' } | Select-Object -First 1
-            if ($res) {
-                Click-Control $res
-                Start-Sleep -Milliseconds 250
-                $sizes = @($settings.FindAll($desc,$all) | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::ListItem -and -not $_.Current.IsOffscreen -and $_.Current.Name -match '^\d+\s*[×x]\s*\d+' })
-                $report.resolutions = @($sizes | ForEach-Object { $_.Current.Name })
-                $larger = $sizes | Where-Object { $_.Current.Name -match '^(1920\s*[×x]\s*1080|1600\s*[×x]\s*900|1280\s*[×x]\s*1024)' } | Sort-Object { [int]([regex]::Match($_.Current.Name,'^\d+').Value) } -Descending | Select-Object -First 1
-                if ($larger) {
-                    Click-Control $larger
-                    Start-Sleep -Seconds 2
-                    $keep = $settings.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Keep changes'))
-                    if ($keep) { Click-Control $keep }
-                } else {
-                    [TrayDesktop]::keybd_event(27,0,0,[UIntPtr]::Zero); [TrayDesktop]::keybd_event(27,0,2,[UIntPtr]::Zero)
-                }
-            }
-        }
         Click-Control $chooser
         Start-Sleep -Milliseconds 250
         $choices = @($settings.FindAll($desc,$all) | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::ListItem })
