@@ -1,5 +1,6 @@
 ﻿# 只在一次性的交互式 Windows 构建机上移动鼠标、按键并启动虚构数据面板。
-param([Parameter(Mandatory)][string]$Executable, [Parameter(Mandatory)][string]$OutputDir)
+param([Parameter(Mandatory)][string]$Executable, [Parameter(Mandatory)][string]$OutputDir,
+      [ValidateSet('current','125','150')][string]$Scale='current')
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '需要 GitHub 托管的隔离桌面' }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Windows.Forms
@@ -121,10 +122,32 @@ function Save-Navigation($panel,[string]$name) {
 }
 $app = $null
 try {
+    if ($Scale -ne 'current') {
+        # 使用系统设置里的缩放选择器，实际读回 DPI 后才开始测试。
+        Start-Process 'ms-settings:display'
+        $end = [DateTime]::UtcNow.AddSeconds(15)
+        do {
+            Start-Sleep -Milliseconds 400
+            $settings = $root.FindFirst([Windows.Automation.TreeScope]::Children,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Settings'))
+            if (-not $settings) { continue }
+            $combos = @($settings.FindAll($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::ComboBox)))
+            $chooser = $combos | Where-Object { $_.Current.Name -match 'scale|size of text' -or $_.Current.AutomationId -match 'scal|DPI' } | Select-Object -First 1
+        } while (-not $chooser -and [DateTime]::UtcNow -lt $end)
+        if (-not $chooser) { throw ('找不到系统缩放选择器，可见下拉框为 ' + (($combos | ForEach-Object { $_.Current.Name + '/' + $_.Current.AutomationId }) -join ', ')) }
+        Click-Control $chooser
+        Start-Sleep -Milliseconds 250
+        $choices = @($settings.FindAll($desc,$all) | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::ListItem })
+        $choice = $choices | Where-Object { $_.Current.Name -like "$Scale%*" } | Select-Object -First 1
+        if (-not $choice) { throw ('该显示模式可选的缩放为 ' + (($choices | ForEach-Object { $_.Current.Name }) -join ', ')) }
+        Click-Control $choice
+        Start-Sleep -Seconds 2
+        $settings.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+    }
     foreach ($screen in [Windows.Forms.Screen]::AllScreens) {
         $dpi = [TrayDesktop]::MonitorDpi($screen.Bounds.Left + [int]($screen.Bounds.Width/2),$screen.Bounds.Top + [int]($screen.Bounds.Height/2))
         $report.screens += [ordered]@{bounds=$screen.Bounds.ToString(); work=$screen.WorkingArea.ToString(); dpi=$dpi; scalePercent=100*$dpi/96}
     }
+    if ($Scale -ne 'current' -and $report.screens.scalePercent -notcontains [int]$Scale) { throw '系统未实际应用指定的屏幕缩放' }
     if ([TrayDesktop]::ShellWindow('Shell_TrayWnd') -eq [IntPtr]::Zero) { throw '隔离会话未提供 Explorer 任务栏' }
     $app = Start-Process -FilePath $Executable -ArgumentList '--demo','--background' -PassThru
     $processCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,$app.Id)

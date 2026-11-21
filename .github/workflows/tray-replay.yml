@@ -6,6 +6,11 @@ on:
         description: 待测的 Windows 预览版标签
         required: true
         default: windows-v0.1.0-alpha.46
+      scale:
+        description: 隔离桌面的缩放百分比（current 保留默认值）
+        type: choice
+        options: [current, '125', '150']
+        default: current
 permissions:
   contents: read
 jobs:
@@ -31,8 +36,10 @@ jobs:
           Expand-Archive $zip "$env:RUNNER_TEMP/test-release"
       - name: 点击通知区域图标，核对开合与导航
         shell: powershell
+        env:
+          TEST_SCALE: ${{ inputs.scale }}
         run: |
-          ./windows/qa/explorer-tray.ps1 -Executable "$env:RUNNER_TEMP/test-release/AgentMeter/AgentMeter.Windows.exe" -OutputDir "$env:RUNNER_TEMP/tray-replay"
+          ./windows/qa/explorer-tray.ps1 -Executable "$env:RUNNER_TEMP/test-release/AgentMeter/AgentMeter.Windows.exe" -OutputDir "$env:RUNNER_TEMP/tray-replay" -Scale $env:TEST_SCALE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
