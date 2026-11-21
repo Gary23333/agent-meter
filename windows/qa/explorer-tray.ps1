@@ -11,6 +11,20 @@ public static class TrayDesktop {
     public static IntPtr ShellWindow(string cls) { return FindWindow(cls,null); }
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr handle);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr handle);
+    [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr handle);
+    [DllImport("user32.dll")] static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
+    public static int Awareness(IntPtr handle) { return GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(handle)); }
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr CreateWindowEx(int ex, string cls, string title, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+    [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
+    public static uint MonitorDpi(int x, int y) {
+        IntPtr old = SetThreadDpiAwarenessContext(new IntPtr(-4));
+        if (old == IntPtr.Zero) throw new InvalidOperationException("隔离桌面不支持逐屏 DPI 探测");
+        try {
+            IntPtr probe = CreateWindowEx(0,"STATIC","",0x80000000,x,y,2,2,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+            if (probe == IntPtr.Zero) throw new InvalidOperationException("无法读取隔离屏幕 DPI");
+            try { return GetDpiForWindow(probe); } finally { DestroyWindow(probe); }
+        } finally { SetThreadDpiAwarenessContext(old); }
+    }
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
@@ -24,8 +38,8 @@ $desc = [Windows.Automation.TreeScope]::Descendants
 $root = [Windows.Automation.AutomationElement]::RootElement
 $all = [Windows.Automation.Condition]::TrueCondition
 function Record([string]$step) { $report.steps += $step; Write-Host $step }
-function Find-ShellControl([string]$kind) {
-    foreach ($class in 'Shell_TrayWnd','NotifyIconOverflowWindow','TopLevelWindowForOverflowXamlIsland') {
+function Find-ShellControl([string]$kind,[string[]]$classes=@('Shell_TrayWnd','NotifyIconOverflowWindow','TopLevelWindowForOverflowXamlIsland')) {
+    foreach ($class in $classes) {
         $hwnd = [TrayDesktop]::ShellWindow($class)
         if ($hwnd -eq [IntPtr]::Zero -or -not [TrayDesktop]::IsWindowVisible($hwnd)) { continue }
         $base = [Windows.Automation.AutomationElement]::FromHandle($hwnd)
@@ -61,6 +75,19 @@ function Click-Tray([int]$hold=45) {
     if (-not $icon) { throw '展开隐藏图标后仍未找到演示托盘图标' }
     Click-Control $icon $hold
 }
+function Pin-TestIcon {
+    if (Find-ShellControl 'icon' @('Shell_TrayWnd')) { return }
+    # 使用 Explorer 自己的「在任务栏显示」设置，只更改此临时用户中新启动的演示程序。
+    $items = @(Get-ChildItem 'HKCU:\Control Panel\NotifyIconSettings' | Get-ItemProperty | Where-Object { $_.ExecutablePath -like '*\AgentMeter.Windows.exe' })
+    if ($items.Count -ne 1) { throw '无法唯一定位演示程序的托盘偏好' }
+    New-ItemProperty -LiteralPath $items[0].PSPath -Name IsPromoted -Value 1 -PropertyType DWord -Force | Out-Null
+    $until = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        Start-Sleep -Milliseconds 180
+        if (Find-ShellControl 'icon' @('Shell_TrayWnd')) { Record '演示图标已在主任务栏中显示'; return }
+    } while ([DateTime]::UtcNow -lt $until)
+    throw 'Explorer 尚未在主任务栏显示演示图标'
+}
 function Get-Panel {
     foreach ($item in $root.FindAll([Windows.Automation.TreeScope]::Children,$processCondition)) {
         if ($item.Current.Name -eq 'Agent Meter' -and [TrayDesktop]::IsWindowVisible([IntPtr]$item.Current.NativeWindowHandle)) { return $item }
@@ -94,7 +121,10 @@ function Save-Navigation($panel,[string]$name) {
 }
 $app = $null
 try {
-    foreach ($screen in [Windows.Forms.Screen]::AllScreens) { $report.screens += [ordered]@{bounds=$screen.Bounds.ToString(); work=$screen.WorkingArea.ToString()} }
+    foreach ($screen in [Windows.Forms.Screen]::AllScreens) {
+        $dpi = [TrayDesktop]::MonitorDpi($screen.Bounds.Left + [int]($screen.Bounds.Width/2),$screen.Bounds.Top + [int]($screen.Bounds.Height/2))
+        $report.screens += [ordered]@{bounds=$screen.Bounds.ToString(); work=$screen.WorkingArea.ToString(); dpi=$dpi; scalePercent=100*$dpi/96}
+    }
     if ([TrayDesktop]::ShellWindow('Shell_TrayWnd') -eq [IntPtr]::Zero) { throw '隔离会话未提供 Explorer 任务栏' }
     $app = Start-Process -FilePath $Executable -ArgumentList '--demo','--background' -PassThru
     $processCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,$app.Id)
@@ -103,6 +133,7 @@ try {
     Click-Tray
     $panel = Wait-Panel $true '点击 Explorer 图标后弹出'
     $report.windowDpi = [TrayDesktop]::GetDpiForWindow([IntPtr]$panel.Current.NativeWindowHandle)
+    $report.windowAwareness = [TrayDesktop]::Awareness([IntPtr]$panel.Current.NativeWindowHandle)
     $usage = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'用量'))
     if (-not $usage) { throw '面板缺少用量导航入口' }
     Click-Control $usage
@@ -114,7 +145,12 @@ try {
     $panel = Wait-Panel $true '再次点击 Explorer 图标后弹出'
     if ((Save-Navigation $panel 'usage-reopened') -ne $before) { throw '重新打开后导航像素发生变化' }
     Record '重新打开后七个导航标签像素一致'
-    Click-Tray 550
+    [TrayDesktop]::keybd_event(27,0,0,[UIntPtr]::Zero); [TrayDesktop]::keybd_event(27,0,2,[UIntPtr]::Zero)
+    $null = Wait-Panel $false '从隐藏图标打开的用量页可再次收起'
+    Pin-TestIcon
+    Click-Control (Find-ShellControl 'icon' @('Shell_TrayWnd'))
+    $panel = Wait-Panel $true '从常驻图标打开面板'
+    Click-Control (Find-ShellControl 'icon' @('Shell_TrayWnd')) 550
     $null = Wait-Panel $false '长按图标并松开后保持收起'
     Start-Sleep -Milliseconds 250
     if (Get-Panel) { throw '同次点击松开后意外重开' }
