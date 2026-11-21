@@ -277,7 +277,9 @@ jobs:
         if: always()
         with:
           name: AgentMeter-navigation-paint
-          path: ${{ runner.temp }}/agentmeter-navigation-paint/*.png
+          path: |
+            ${{ runner.temp }}/agentmeter-navigation-paint/*.png
+            ${{ runner.temp }}/agentmeter-navigation-paint/account-demo.json
           if-no-files-found: warn
       - name: Render isolated demo previews
         shell: pwsh

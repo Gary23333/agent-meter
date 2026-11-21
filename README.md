@@ -10,11 +10,11 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.45) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.46) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 45**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。当前为 **Alpha 46**：已有可运行的便携包，功能、材质和动效仍在向 macOS 原版靠拢。
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 45 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.45) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
+1. 从 [Alpha 46 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.46) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；3D 桌宠以及 WorkBuddy、小米 MiMo、Qoder 和 TRAE 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -35,7 +35,7 @@
 
 - **真正的托盘弹层**：默认约 440 × 680，无系统标题栏，不占任务栏窗口按钮。点击外部或按 Esc 收起，图钉可临时固定；普通窗口模式也保留。
 - **托盘直接看余量**：图标显示剩余百分比，可选固定来源或自动最低余量。悬停查看来源与周期；过期、关闭和未知数据不冒充零。切换显示来源不会开启账户查询。
-- **账户信息集中展示**：双周期额度环、倒计时、套餐、钱包、积分和 Codex 重置卡明细放在对应账户卡片里；Qoder 本机积分单独标注为消耗，不当作账户余额。重置卡按到期时间排序，支持展开；服务报告的总数不会由程序擅自扣减。
+- **账户信息集中展示**：双周期额度环、倒计时、套餐、钱包、积分和 Codex 重置卡明细放在对应账户卡片里；Qoder 本机积分单独标注为消耗，不当作账户余额。账户首屏优先展示两个周期的余量、重置时间、今日用量与可用的 30 日趋势。重置卡默认显示总数和已知最早到期时间，明细支持键盘展开；服务报告的总数不会由程序擅自扣减。
 - **可选登录启动**：在托盘菜单登记当前用户的登录启动项，启动时面板保持收起；默认关闭。系统的启动应用开关仍可能阻止程序启动。
 - **七种界面风格**：极简、原生、瓷白、极光、钛影、霓虹、棱镜。导航、卡片、菜单与分享图使用一致配色。
 

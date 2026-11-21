@@ -238,6 +238,18 @@ internal sealed partial class MeterWindow
 
     async Task CheckAccountFirstScreenAsync(string output)
     {
+        // 此入口仅运行已固定的演示数据；为 macOS 对照保留相同的显示字段。
+        var demoFrame = System.Text.Json.Nodes.JsonNode.Parse(lastSnapshot!)!;
+        var comparison = new System.Text.Json.Nodes.JsonObject { ["clock"] = ForecastDemoNow.ToUnixTimeSeconds() };
+        foreach (var (id, name) in new[] { ("codex", "Codex"), ("kimi", "Kimi Code"), ("claude", "Claude Code"), ("minimax", "MiniMax Code") })
+        {
+            var account = id == "codex" ? demoFrame["account"] : demoFrame["other_accounts"]?[name];
+            comparison[id] = new System.Text.Json.Nodes.JsonObject {
+                ["quota"] = account?["quota"]?["value"]?.DeepClone(), ["plan"] = account?["subscription"]?["plan"]?.DeepClone(),
+                ["credits"] = account?["credits"]?["value"]?.DeepClone(), ["cards"] = account?["reset_cards"]?["value"]?.DeepClone(),
+                ["history"] = demoFrame["history"]?[name]?["value"]?.DeepClone() };
+        }
+        File.WriteAllText(Path.Combine(output, "account-demo.json"), comparison.ToJsonString());
         foreach (var (style, width) in new[] { ("aurora", 440), ("porcelain", 380) })
         {
             SetTheme(VisualThemes.Find(style)); Size = new Size(width, 680);
