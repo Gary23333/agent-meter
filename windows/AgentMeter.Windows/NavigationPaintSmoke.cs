@@ -135,6 +135,7 @@ internal sealed partial class MeterWindow
                 }
             }
         }
+        await CheckAccountFirstScreenAsync(output);
         // 真实键盘事件检查自绘控件的可操作性，再逐个核对七种主题的高亮。
         if (!reportTab.Focus()) throw new InvalidOperationException("无法聚焦导航按钮");
         keybd_event(0x20, 0, 0, UIntPtr.Zero);
@@ -233,6 +234,45 @@ internal sealed partial class MeterWindow
                 !((Label)broken.Controls.Find("budget-message", true).Single()).Text.Contains("无法读取") || File.ReadAllText(testConfig) != "invalid")
                 throw new InvalidOperationException("损坏预算设置应保留原文件并阻止覆盖");
         }
+    }
+
+    async Task CheckAccountFirstScreenAsync(string output)
+    {
+        foreach (var (style, width) in new[] { ("aurora", 440), ("porcelain", 380) })
+        {
+            SetTheme(VisualThemes.Find(style)); Size = new Size(width, 680);
+            content.AutoScrollPosition = Point.Empty;
+            await Task.Delay(100);
+            var card = content.Controls.Find("account-CODEX", false).Single();
+            var today = (Label)card.Controls.Find("account-local-today", false).Single();
+            var trend = card.Controls.Find("account-local-trend", false).Single();
+            var viewport = contentClip.RectangleToScreen(contentClip.ClientRectangle);
+            if (ClientSize.Width != width || today.Text != "1.43M" ||
+                !viewport.Contains(today.RectangleToScreen(today.ClientRectangle)) ||
+                !viewport.Contains(trend.RectangleToScreen(trend.ClientRectangle)))
+                throw new InvalidOperationException($"账户首屏未完整显示今日用量与趋势：宽 {ClientSize.Width}，DPI {DeviceDpi}");
+            using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(picture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+            picture.Save(Path.Combine(output, $"accounts-{style}-{width}.png"), ImageFormat.Png);
+        }
+        // 检查按空格展开和收起之后焦点仍在同一操作入口。
+        var toggle = content.Controls.Find("account-reset-toggle", true).Single();
+        if (!toggle.Focus()) throw new InvalidOperationException("重置卡明细不能获取键盘焦点");
+        foreach (bool expanded in new[] { true, false })
+        {
+            keybd_event(0x20, 0, 0, UIntPtr.Zero); keybd_event(0x20, 0, 0x0002, UIntPtr.Zero);
+            await Task.Delay(150);
+            if (content.Controls.Find("account-reset-tile", true).Length != (expanded ? 3 : 0) ||
+                !content.Controls.Find("account-reset-toggle", true).Single().Focused)
+                throw new InvalidOperationException("重置卡键盘展开或焦点恢复失败");
+        }
+        Size = new Size(440, 680); SetTheme(VisualThemes.Find("aurora"));
+        Hide(); Show(); Activate();
+        using (var snapshot = System.Text.Json.JsonDocument.Parse(lastSnapshot!)) Render(snapshot.RootElement);
+        await Task.Delay(150);
+        using var reopened = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(reopened)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+        CheckNaturalNavigationFrame(reopened, output, "reopened-refresh");
     }
 
     // 先保留用户正常点击后看到的整条导航，再与同位置同步重绘的结果逐像素对照。

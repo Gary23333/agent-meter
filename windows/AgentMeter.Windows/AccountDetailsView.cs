@@ -19,6 +19,44 @@ internal sealed partial class MeterWindow
         sample["other_accounts"]!["Claude Code"]!["subscription"] = new JsonObject { ["plan"] = "Max" };
     }
 
+    int AddLocalUsageSummary(RoundedCard box, int top, AccountLocalUsage usage, Color color)
+    {
+        var divider = new Panel { Left = 16, Top = top, Height = 1, BackColor = theme.Border };
+        var title = new Label { Text = "今日本机 Token", Left = 16, Top = top + 8, Height = 23,
+            AutoEllipsis = true, ForeColor = Primary };
+        var today = new Label { Name = "account-local-today", Text = usage.Today.HasValue ? FormatNumber(usage.Today.Value) : "—",
+            AutoSize = true, Top = top + 6, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary };
+        var totals = new List<string>();
+        if (usage.ThirtyDays.HasValue) totals.Add("近 30 天 " + FormatNumber(usage.ThirtyDays.Value));
+        if (usage.All.HasValue) totals.Add("累计 " + FormatNumber(usage.All.Value));
+        var summary = new Label { Text = string.Join("   ·   ", totals), Left = 16, Top = top + 32, Height = 20,
+            Font = new Font(Font.FontFamily, 9F), ForeColor = Primary, AutoEllipsis = true };
+        var scope = new Label { Text = usage.Incomplete ? "未按账户区分 · 部分记录不完整" : "未按账户区分",
+            Left = 16, Height = 18, Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, AutoEllipsis = true };
+        int height = totals.Count > 0 ? 54 : 32;
+        scope.Top = top + height;
+        TokenSparkline? trend = null;
+        if (usage.Trend is not null)
+        {
+            scope.Text = "近 30 个自然日 · " + scope.Text;
+            trend = new TokenSparkline(usage.Trend, color) { Name = "account-local-trend", Left = 16, Top = scope.Bottom + 2, Height = 40 };
+            popupTips.SetToolTip(trend, "按北京时间统计的本机 Token");
+            box.Controls.Add(trend);
+        }
+        box.Controls.AddRange([divider, title, today, scope]);
+        if (totals.Count > 0) box.Controls.Add(summary); else summary.Dispose();
+        popupTips.SetToolTip(today, usage.Today.HasValue ? usage.Today.Value.ToString("N0") + " Token" : "今日用量未提供");
+        box.Resize += (_, _) => {
+            int width = Math.Max(0, box.ClientSize.Width - 32);
+            divider.Width = scope.Width = width;
+            if (totals.Count > 0) summary.Width = width;
+            today.Left = Math.Max(16, box.ClientSize.Width - 16 - today.Width);
+            title.Width = Math.Max(0, today.Left - title.Left - 6);
+            if (trend is not null) trend.Width = width;
+        };
+        return (trend?.Bottom ?? scope.Bottom) - top + 8;
+    }
+
     int AddAccountDetails(RoundedCard box, int top, AccountDetails details)
     {
         int start = top;
@@ -53,11 +91,33 @@ internal sealed partial class MeterWindow
                 Font = new Font(Font.FontFamily, 10, FontStyle.Bold), AutoSize = true };
             box.Controls.AddRange([title, total]);
             box.Resize += (_, _) => total.Left = Math.Max(title.Right + 8, box.Width - total.Width - 16);
-            top += 29;
-            var hint = new Label { Text = resets.Incomplete ? "明细不完整 · 不据此推算可用总数" : "到期明细 · 按时间排序",
-                Left = 16, Top = top, Height = 20, ForeColor = Muted, Font = new Font(Font.FontFamily, 8), AutoEllipsis = true };
-            box.Controls.Add(hint); box.Resize += (_, _) => hint.Width = Math.Max(0, box.Width - 32); top += 25;
-            int shown = Math.Min(resets.Cards.Count, expandedResetCredits ? 100 : 3);
+            top += 24;
+            var hint = new Label { Left = 16, Top = top, Height = 20, ForeColor = Muted, Font = new Font(Font.FontFamily, 8), AutoEllipsis = true };
+            var first = resets.Cards.FirstOrDefault(card => card.Status == "available" && card.Expires.HasValue);
+            void UpdateExpiry(DateTimeOffset now)
+            {
+                if (hint.IsDisposed) return;
+                hint.Text = first is null ? (resets.Incomplete ? "到期明细不完整" : "暂无可用卡到期时间")
+                    : $"最早 {first.Expires!.Value.LocalDateTime:MM 月 dd 日} · {first.State(now)}" + (resets.Incomplete ? " · 明细不完整" : "");
+            }
+            UpdateExpiry(ForecastNow);
+            if (first is not null) accountClockUpdates.Add(UpdateExpiry);
+            box.Controls.Add(hint); box.Resize += (_, _) => hint.Width = Math.Max(0, box.Width - 32); top += 23;
+            if (resets.Cards.Count > 0)
+            {
+                var toggle = new RoundedActionButton(theme) { Name = "account-reset-toggle", Text = expandedResetCredits ? "收起到期明细" : $"查看全部 {resets.Cards.Count} 条明细",
+                    Left = 16, Top = top, Height = 28, AccentText = true, Font = new Font(Font.FontFamily, 8.5F) };
+                toggle.FlatAppearance.BorderColor = theme.Border;
+                toggle.Click += (_, _) => {
+                    expandedResetCredits = !expandedResetCredits; var scroll = content.AutoScrollPosition;
+                    using var snapshot = JsonDocument.Parse(lastSnapshot!); Render(snapshot.RootElement);
+                    content.PerformLayout();
+                    content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focus();
+                    content.AutoScrollPosition = new Point(-scroll.X, -scroll.Y);
+                };
+                box.Controls.Add(toggle); box.Resize += (_, _) => toggle.Width = Math.Max(0, box.Width - 32); top += 36;
+            }
+            int shown = expandedResetCredits ? resets.Cards.Count : 0;
             for (int index = 0; index < shown; index++)
             {
                 var credit = resets.Cards[index];
@@ -85,18 +145,7 @@ internal sealed partial class MeterWindow
                 };
             }
             top += (shown + 2) / 3 * 82;
-            if (resets.Cards.Count > 3)
-            {
-                var toggle = new RoundedActionButton(theme) { Name = "account-reset-toggle", Text = expandedResetCredits ? "收起到期明细" : $"查看全部 {resets.Cards.Count} 条明细",
-                    Left = 16, Top = top, Height = 28, AccentText = true, Font = new Font(Font.FontFamily, 8.5F) };
-                toggle.FlatAppearance.BorderColor = theme.Border;
-                toggle.Click += (_, _) => {
-                    expandedResetCredits = !expandedResetCredits; var scroll = content.AutoScrollPosition;
-                    using var snapshot = JsonDocument.Parse(lastSnapshot!); Render(snapshot.RootElement);
-                    content.PerformLayout(); content.AutoScrollPosition = new Point(-scroll.X, -scroll.Y);
-                };
-                box.Controls.Add(toggle); box.Resize += (_, _) => toggle.Width = Math.Max(0, box.Width - 32); top += 36;
-            }
+
         }
         return top - start + (top > start ? 8 : 0);
     }
@@ -115,14 +164,14 @@ internal sealed partial class MeterWindow
         SetView(View.Accounts);
         IEnumerable<Control> Tiles() => content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.Cast<Control>()).Where(child => child.Name == "account-reset-tile");
         Button Toggle() => content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "account-reset-toggle");
-        if (Tiles().Count() != 3) throw new InvalidOperationException("重置卡默认明细数量错误");
+        if (Tiles().Any() || Toggle().Text != "查看全部 6 条明细") throw new InvalidOperationException("重置卡默认应显示摘要和明细入口");
         Toggle().PerformClick(); Application.DoEvents();
         if (Tiles().Count() != 6 || !Tiles().SelectMany(tile => tile.Controls.OfType<Label>()).Any(label => label.Text == "已到期 · 待刷新"))
             throw new InvalidOperationException("重置卡展开或到期状态错误");
         content.AutoScrollPosition = new Point(0, 160); save("aurora-account-reset-expanded");
         SetTheme(VisualThemes.Find("porcelain")); content.AutoScrollPosition = new Point(0, 160); save("porcelain-account-reset-expanded");
         Toggle().PerformClick(); Application.DoEvents();
-        if (Tiles().Count() != 3 || expandedResetCredits) throw new InvalidOperationException("重置卡收起失败");
+        if (Tiles().Any() || expandedResetCredits) throw new InvalidOperationException("重置卡收起失败");
         sample["account"]!["reset_cards"]!["value"]!["cards"] = null;
         sample["account"]!["reset_cards"]!["value"]!["details_state"] = "unknown";
         SetTheme(VisualThemes.Find("aurora"));

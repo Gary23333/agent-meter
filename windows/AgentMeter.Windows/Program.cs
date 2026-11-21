@@ -691,7 +691,7 @@ internal sealed partial class MeterWindow : Form
         Size = new Size(500, 1100);
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Accounts);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())
-            .Any(label => label.Text == "本机 Token · 未按账户区分"))
+            .Any(label => label.Name == "account-local-today"))
             throw new InvalidOperationException("account_local_usage_missing");
         SavePreview("aurora-account-local-detail");
         content.AutoScrollPosition = new Point(0, 230); Application.DoEvents();
@@ -2275,9 +2275,10 @@ internal sealed partial class MeterWindow : Form
         int shown = Math.Min(rows.Count, 40);
         details ??= AccountDetails.Empty;
         if (shown == 0 && !details.HasContent) return;
-        int headingHeight = details.Plan is null ? 62 : 78;
+        int headingHeight = details.Plan is null ? 49 : 63;
+        const int rowHeight = 57;
         var identity = ProviderStyle.For(provider);
-        var box = new RoundedCard(theme, identity.Color) { Height = headingHeight + shown * 70, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme, identity.Color) { Name = "account-" + provider, Height = headingHeight + shown * rowHeight, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         box.Controls.Add(new ProviderMark(identity) { Location = new Point(16, 13), Size = new Size(34, 34) });
         var heading = new Label { Text = identity.DisplayName, AutoEllipsis = true, Height = 25,
             Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = new Point(60, 19) };
@@ -2293,15 +2294,15 @@ internal sealed partial class MeterWindow : Form
         for (int index = 0; index < shown; index++)
         {
             var row = rows[index];
-            int top = headingHeight - 3 + index * 70;
+            int top = headingHeight + index * rowHeight;
             string label = new string(row.Name.Where(c => !char.IsControl(c)).Take(80).ToArray());
             if (label.Length == 0) label = "额度窗口";
             var name = new Label { Text = label, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(16, top) };
             double? remaining = row.Remaining is double number && double.IsFinite(number) && number >= 0 && number <= 100 ? number : null;
             var amount = new Label { Text = remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", AutoSize = true,
                 Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = remaining.HasValue ? MeterBar.ValueColor(theme, remaining.Value) : Muted, Location = new Point(0, top) };
-            var note = new Label { Text = QuotaResetClock.Detail(row.ResetEpoch, ForecastNow), AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 40) };
-            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 27), Height = 7 };
+            var note = new Label { Text = QuotaResetClock.Detail(row.ResetEpoch, ForecastNow), AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 30) };
+            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 21), Height = 5 };
             quotaResetLabels.Add((note, row.ResetEpoch));
             box.Controls.AddRange([name, amount, note, bar]);
             box.Resize += (_, _) =>
@@ -2311,39 +2312,9 @@ internal sealed partial class MeterWindow : Form
                 bar.Width = Math.Max(0, box.ClientSize.Width - 32);
             };
         }
-        box.Height += AddAccountDetails(box, box.Height, details);
         var usage = AccountLocalUsage.Read(localHistory);
-        if (usage is not null)
-        {
-            int top = box.Height;
-            box.Height += usage.Trend is null ? 86 : 166;
-            var divider = new Panel { Location = new Point(16, top), Height = 1, BackColor = theme.Border };
-            var title = new Label { Text = "本机 Token · 未按账户区分", Font = new Font(Font.FontFamily, 9F, FontStyle.Bold),
-                ForeColor = Muted, Location = new Point(16, top + 10), Height = 22, AutoEllipsis = true };
-            var parts = new List<string>();
-            if (usage.Today.HasValue) parts.Add("今日 " + FormatNumber(usage.Today.Value));
-            if (usage.ThirtyDays.HasValue) parts.Add("近 30 天 " + FormatNumber(usage.ThirtyDays.Value));
-            if (usage.All.HasValue) parts.Add("累计 " + FormatNumber(usage.All.Value));
-            var summary = new Label { Text = parts.Count == 0 ? "本机统计汇总未提供" : string.Join("  ·  ", parts), ForeColor = Primary,
-                Location = new Point(16, top + 34), Height = 22, AutoEllipsis = true };
-            var note = new Label { Text = usage.Incomplete ? "部分本机记录不完整" : "与账户额度分别统计",
-                Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, Location = new Point(16, top + 57), Height = 20, AutoEllipsis = true };
-            box.Controls.AddRange([divider, title, summary, note]);
-            TokenSparkline? chart = null;
-            if (usage.Trend is not null)
-            {
-                var label = new Label { Text = "近 30 个自然日 · 北京时间", Font = new Font(Font.FontFamily, 8F),
-                    ForeColor = Muted, Location = new Point(16, top + 82), Height = 20, AutoEllipsis = true };
-                chart = new TokenSparkline(usage.Trend, identity.Color) { Location = new Point(16, top + 104), Height = 52 };
-                box.Controls.AddRange([label, chart]);
-                box.Resize += (_, _) => label.Width = Math.Max(0, box.ClientSize.Width - 32);
-            }
-            box.Resize += (_, _) =>
-            {
-                divider.Width = title.Width = summary.Width = note.Width = Math.Max(0, box.ClientSize.Width - 32);
-                if (chart is not null) chart.Width = Math.Max(0, box.ClientSize.Width - 32);
-            };
-        }
+        if (usage is not null) box.Height += AddLocalUsageSummary(box, box.Height, usage, identity.Color);
+        box.Height += AddAccountDetails(box, box.Height, details);
         StyleCard(box); content.Controls.Add(box);
         if (rows.Count > shown) AddCard(provider, "部分额度未显示", $"仅展示前 {shown} 个窗口", null);
     }
