@@ -1,6 +1,6 @@
 ﻿# 只在一次性的交互式 Windows 构建机上移动鼠标、按键并启动虚构数据面板。
 param([Parameter(Mandatory)][string]$Executable, [Parameter(Mandatory)][string]$OutputDir,
-      [ValidateSet('current','125','150')][string]$Scale='current')
+      [ValidateSet('current','125','150','200')][string]$Scale='current')
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '需要 GitHub 托管的隔离桌面' }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Windows.Forms
@@ -43,16 +43,19 @@ public static class TrayDesktop {
     }
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool EnumDisplaySettings(string device,int number,ref DisplayMode mode);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DisplayMode mode,uint flags);
-    public static void UseFullHD() {
+    public static void UseLargeDisplay(bool largest) {
         var mode = new DisplayMode { Size = (ushort)Marshal.SizeOf(typeof(DisplayMode)) };
+        DisplayMode best = new DisplayMode();
         for (int i=0; EnumDisplaySettings(null,i,ref mode); i++) {
-            if (mode.Width != 1920 || mode.Height != 1080 || mode.Bpp != 32) continue;
-            mode.Fields = 0x180000; // DM_PELSWIDTH | DM_PELSHEIGHT
-            int result = ChangeDisplaySettings(ref mode,0);
-            if (result != 0) throw new InvalidOperationException("显示模式切换失败：" + result);
-            return;
+            if (mode.Width < 1920 || mode.Height < 1080 || mode.Bpp != 32 || mode.Orientation != 0) continue;
+            if (!largest && (mode.Width != 1920 || mode.Height != 1080)) continue;
+            if (mode.Width * mode.Height > best.Width * best.Height) best = mode;
         }
-        throw new InvalidOperationException("显示驱动未提供 1920 × 1080 模式");
+        if (best.Width == 0) throw new InvalidOperationException("显示驱动未提供所需的分辨率");
+        best.Fields = 0x180000; // DM_PELSWIDTH | DM_PELSHEIGHT
+        int result = ChangeDisplaySettings(ref best,0);
+        if (result != 0) throw new InvalidOperationException("显示模式切换失败：" + result);
+        Console.WriteLine("隔离桌面分辨率：" + best.Width + " × " + best.Height);
     }
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
@@ -129,6 +132,16 @@ function Wait-Panel([bool]$visible, [string]$step) {
     } while ([DateTime]::UtcNow -lt $until)
     throw "面板开合状态与预期不同：$step"
 }
+function Save-Region([System.Windows.Rect]$area,[string]$name) {
+    $bitmap = [Drawing.Bitmap]::new([int]$area.Width,[int]$area.Height)
+    try {
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        try { $graphics.CopyFromScreen([int]$area.Left,[int]$area.Top,0,0,$bitmap.Size) } finally { $graphics.Dispose() }
+        $path = Join-Path $OutputDir "$name.png"
+        $bitmap.Save($path,[Drawing.Imaging.ImageFormat]::Png)
+        return (Get-FileHash -LiteralPath $path).Hash
+    } finally { $bitmap.Dispose() }
+}
 function Save-Navigation($panel,[string]$name) {
     # 移出导航，排除鼠标悬停颜色，比较完整七个标签（包括文字）。
     $cost = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'API 等价估算'))
@@ -139,20 +152,13 @@ function Save-Navigation($panel,[string]$name) {
     foreach ($tab in $tabs) { $area.Union($tab.Current.BoundingRectangle) }
     [void][TrayDesktop]::SetCursorPos(1,1)
     Start-Sleep -Milliseconds 200
-    $bitmap = [Drawing.Bitmap]::new([int]$area.Width,[int]$area.Height)
-    try {
-        $graphics = [Drawing.Graphics]::FromImage($bitmap)
-        try { $graphics.CopyFromScreen([int]$area.Left,[int]$area.Top,0,0,$bitmap.Size) } finally { $graphics.Dispose() }
-        $path = Join-Path $OutputDir "$name.png"
-        $bitmap.Save($path,[Drawing.Imaging.ImageFormat]::Png)
-        return (Get-FileHash -LiteralPath $path).Hash
-    } finally { $bitmap.Dispose() }
+    return Save-Region $area $name
 }
 $app = $null
 try {
     if ($Scale -ne 'current') {
         # 使用系统设置里的缩放选择器，实际读回 DPI 后才开始测试。
-        if ($Scale -eq '150') { [TrayDesktop]::UseFullHD(); Start-Sleep -Seconds 2 }
+        if ($Scale -in '150','200') { [TrayDesktop]::UseLargeDisplay($Scale -eq '200'); Start-Sleep -Seconds 2 }
         Start-Process 'ms-settings:display'
         $end = [DateTime]::UtcNow.AddSeconds(15)
         do {
@@ -186,11 +192,15 @@ try {
     $panel = Wait-Panel $true '点击 Explorer 图标后弹出'
     $report.windowDpi = [TrayDesktop]::GetDpiForWindow([IntPtr]$panel.Current.NativeWindowHandle)
     $report.windowAwareness = [TrayDesktop]::Awareness([IntPtr]$panel.Current.NativeWindowHandle)
+    [void][TrayDesktop]::SetCursorPos(1,1)
+    Start-Sleep -Milliseconds 350
+    $null = Save-Region $panel.Current.BoundingRectangle 'accounts'
     $usage = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'用量'))
     if (-not $usage) { throw '面板缺少用量导航入口' }
     Click-Control $usage
     Start-Sleep -Milliseconds 250
     $before = Save-Navigation (Get-Panel) 'usage-before'
+    $null = Save-Region (Get-Panel).Current.BoundingRectangle 'usage'
     [TrayDesktop]::keybd_event(27,0,0,[UIntPtr]::Zero); [TrayDesktop]::keybd_event(27,0,2,[UIntPtr]::Zero)
     $null = Wait-Panel $false '按 Esc 后收起'
     Click-Tray

@@ -9,7 +9,7 @@ on:
       scale:
         description: 隔离桌面的缩放百分比（current 保留默认值）
         type: choice
-        options: [current, '125', '150']
+        options: [current, '125', '150', '200']
         default: current
 permissions:
   contents: read
