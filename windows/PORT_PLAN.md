@@ -10,6 +10,14 @@
 
 下一次面向用户的发版优先交付能在托盘里看到的修复，附复现条件、前后画面和验证范围。验证阶段使用 [中文问题反馈](https://github.com/FoxBai/agent-meter-windows/issues/new/choose) 收集版本、屏幕缩放、触发步骤。稳定版仍需覆盖实体设备上的常用操作。
 
+## Alpha 46 同数据首屏对照
+
+| macOS 原版 | Windows 托盘 |
+| --- | --- |
+| <img src="assets/alpha46-mac-account-420.png" width="360" alt="macOS 原版账户首屏"> | <img src="assets/alpha46-windows-account-420.png" width="360" alt="Windows Alpha 46 账户首屏"> |
+
+两列均为 420 × 680。Windows 是隔离桌面上的真实窗口，macOS 图取自原版离线预览顶端的同尺寸区域。两端读取同一组虚构用量，演示时钟按运行日期平移以保留重置间隔。5 小时余量为 73%，7 天余量为 46%，今日 1,426,000 Token，重置卡共 3 张。原版以中文数量单位显示，Windows 保留 M 与 B。此对照验证账户首页的信息位置，真实任务栏与多屏缩放仍需实机复核。[Windows 检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44927035989) · [原版渲染](https://github.com/FoxBai/agent-meter-windows/actions/runs/44927082918)
+
 ## 与 Mac 版逐项对照
 
 | 功能或界面 | Windows 当前状态 | 后续验收 |
@@ -28,6 +36,8 @@
 | 中文体验与文档 | 中文首页、快速使用、安全和贡献说明正在调整；英文作为辅助 | Windows 新代码的说明与注释以中文为主，保证 README、实际行为及下载版本一致 |
 
 ## 当前证据和限制
+
+- [Alpha 46 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.46) 对应提交 `03aa1a4`。380、420 和 440 像素宽的隔离窗口都能在首屏看到今日用量与趋势。键盘展开和收起、焦点恢复、窗口重新显示和快照刷新后的导航均通过检查。已独立解压核对发布包，SHA-256 为 `9df9a32391441043dff79aca73d8b9db92fa39fa31136f3411f6810a1bf830dd`。
 
 - [Alpha 45 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.45) 对应提交 `66618c6`；Windows 构建和跨平台检查通过，托盘弹层、导航重绘、零用量及价格损坏提示在隔离窗口验证。发布包独立解压，用虚构账本核对零用量、无效价格和预算历史保护；真实账本、系统通知、实体设备及高 DPI 仍待验收。SHA-256：`40c05da358aa71e82b009682add8e595980aa0152f8856a149c470e9551cd4eb`。
 

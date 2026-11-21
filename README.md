@@ -21,7 +21,7 @@
   <img src="windows/assets/screenshot-light.png" width="400" alt="浅色托盘弹层，虚构演示数据">
 </p>
 
-截图由真实 Windows 界面在隔离构建机中使用**虚构数据**生成；系统圆角、阴影和任务栏效果不包含在截图中。
+截图由真实 Windows 界面在隔离构建机中使用**虚构数据**生成；系统圆角、阴影和任务栏效果不包含在截图中。[查看与 macOS 原版的同数据首屏对照](windows/PORT_PLAN.md#alpha-46-同数据首屏对照)。
 
 ## 三步开始
 
