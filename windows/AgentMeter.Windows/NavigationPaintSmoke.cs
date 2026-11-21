@@ -250,7 +250,7 @@ internal sealed partial class MeterWindow
                 ["history"] = demoFrame["history"]?[name]?["value"]?.DeepClone() };
         }
         File.WriteAllText(Path.Combine(output, "account-demo.json"), comparison.ToJsonString());
-        foreach (var (style, width) in new[] { ("aurora", 440), ("porcelain", 380) })
+        foreach (var (style, width) in new[] { ("aurora", 440), ("aurora", 420), ("porcelain", 380) })
         {
             SetTheme(VisualThemes.Find(style)); Size = new Size(width, 680);
             content.AutoScrollPosition = Point.Empty;

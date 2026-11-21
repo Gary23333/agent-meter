@@ -13,7 +13,7 @@ def reference(frame, now):
     rows = []
     for provider in ("codex", "kimi", "claude", "minimax"):
         sample = frame[provider]
-        row = source(provider, "account", now)
+        row = source("minimax_code" if provider == "minimax" else provider, "account", now)
         rows.append(row)
         if sample["plan"]:
             row["subscription"] = {"plan": sample["plan"]}
@@ -34,7 +34,10 @@ def reference(frame, now):
                 for card in cards["cards"]]))
         if sample["history"]:
             history = sample["history"]
-            metrics["tokens"] = metric({"periods": history["periods"],
+            # 原版账户页按模型组上的 app 归集；Windows 投影已经按来源分桶。
+            periods = {key: dict(bucket, groups=[dict(group, app=provider) for group in bucket.get("groups", [])])
+                       for key, bucket in history["periods"].items()}
+            metrics["tokens"] = metric({"periods": periods,
                                         "daily_buckets": (history.get("daily_trend") or {}).get("days", [])})
     return {"schema_version": SCHEMA_VERSION, "collected_at": timestamp(now), "sources": rows}
 
