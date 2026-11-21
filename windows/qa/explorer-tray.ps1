@@ -154,11 +154,11 @@ function Save-Navigation($panel,[string]$name) {
     Start-Sleep -Milliseconds 200
     return Save-Region $area $name
 }
-function Test-UsageLayout($panel,$screen,[bool]$enforce) {
+function Test-UsageLayout($panel,$result,[bool]$enforce,[string]$name='usage') {
     $bounds = $panel.Current.BoundingRectangle
-    $report.panelPixels = @{ width=$bounds.Width; height=$bounds.Height }
-    $image = [Drawing.Bitmap]::new((Join-Path $OutputDir 'usage.png'))
-    $report.metricBottomPadding = [ordered]@{}
+    $result.panelPixels = @{ width=$bounds.Width; height=$bounds.Height }
+    $image = [Drawing.Bitmap]::new((Join-Path $OutputDir "$name.png"))
+    $result.metricBottomPadding = [ordered]@{}
     try {
         foreach ($value in @('1.77M','$2.464')) {
             $matchesByName = $panel.FindAll($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,$value))
@@ -180,41 +180,44 @@ function Test-UsageLayout($panel,$screen,[bool]$enforce) {
             }
             if ($null -eq $lastInk) { throw "未在截图中找到数值 $value 的笔画" }
             $padding = $bottom - 1 - $lastInk
-            $report.metricBottomPadding[$value] = $padding
+            $result.metricBottomPadding[$value] = $padding
             if ($enforce -and $padding -lt 2) { throw "数值 $value 的笔画贴住底边，剩余 $padding 像素" }
         }
     } finally { $image.Dispose() }
     if (-not $enforce) { return }
-    $work = $screen.WorkingArea
+    $work = [Windows.Forms.Screen]::FromPoint([Drawing.Point]::new([int]$bounds.Left,[int]$bounds.Top)).WorkingArea
     if ($bounds.Left -lt $work.Left -or $bounds.Top -lt $work.Top -or $bounds.Right -gt $work.Right -or $bounds.Bottom -gt $work.Bottom) { throw '托盘弹层超出工作区' }
     $dpi = [TrayDesktop]::MonitorDpi([int]($bounds.Left+$bounds.Width/2),[int]($bounds.Top+$bounds.Height/2))
     $expectedWidth = [Math]::Min(440*$dpi/96,$work.Width-24*$dpi/96)
     if ([Math]::Abs($bounds.Width-$expectedWidth) -gt 2) { throw "弹层宽度 $($bounds.Width) 与缩放后的 $expectedWidth 不符" }
     Record '面板适应当前工作区，两项用量大字底部完整'
 }
+function Set-DesktopScale([string]$percent) {
+    Start-Process 'ms-settings:display'
+    $end = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        Start-Sleep -Milliseconds 400
+        $settings = $root.FindFirst([Windows.Automation.TreeScope]::Children,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Settings'))
+        if (-not $settings) { continue }
+        $combos = @($settings.FindAll($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::ComboBox)))
+        $chooser = $combos | Where-Object { $_.Current.Name -match 'scale|size of text' -or $_.Current.AutomationId -match 'scal|DPI' } | Select-Object -First 1
+    } while (-not $chooser -and [DateTime]::UtcNow -lt $end)
+    if (-not $chooser) { throw ('找不到系统缩放选择器，可见下拉框为 ' + (($combos | ForEach-Object { $_.Current.Name + '/' + $_.Current.AutomationId }) -join ', ')) }
+    Click-Control $chooser
+    Start-Sleep -Milliseconds 250
+    $choices = @($settings.FindAll($desc,$all) | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::ListItem })
+    $choice = $choices | Where-Object { $_.Current.Name -like "$percent%*" } | Select-Object -First 1
+    if (-not $choice) { throw ('该显示模式可选的缩放为 ' + (($choices | ForEach-Object { $_.Current.Name }) -join ', ')) }
+    Click-Control $choice
+    Start-Sleep -Seconds 2
+    $settings.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+}
 $app = $null
 try {
     if ($Scale -ne 'current') {
         # 使用系统设置里的缩放选择器，实际读回 DPI 后才开始测试。
         if ($Scale -in '150','175','200') { [TrayDesktop]::UseLargeDisplay($Scale -eq '200'); Start-Sleep -Seconds 2 }
-        Start-Process 'ms-settings:display'
-        $end = [DateTime]::UtcNow.AddSeconds(15)
-        do {
-            Start-Sleep -Milliseconds 400
-            $settings = $root.FindFirst([Windows.Automation.TreeScope]::Children,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Settings'))
-            if (-not $settings) { continue }
-            $combos = @($settings.FindAll($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::ComboBox)))
-            $chooser = $combos | Where-Object { $_.Current.Name -match 'scale|size of text' -or $_.Current.AutomationId -match 'scal|DPI' } | Select-Object -First 1
-        } while (-not $chooser -and [DateTime]::UtcNow -lt $end)
-        if (-not $chooser) { throw ('找不到系统缩放选择器，可见下拉框为 ' + (($combos | ForEach-Object { $_.Current.Name + '/' + $_.Current.AutomationId }) -join ', ')) }
-        Click-Control $chooser
-        Start-Sleep -Milliseconds 250
-        $choices = @($settings.FindAll($desc,$all) | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::ListItem })
-        $choice = $choices | Where-Object { $_.Current.Name -like "$Scale%*" } | Select-Object -First 1
-        if (-not $choice) { throw ('该显示模式可选的缩放为 ' + (($choices | ForEach-Object { $_.Current.Name }) -join ', ')) }
-        Click-Control $choice
-        Start-Sleep -Seconds 2
-        $settings.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+        Set-DesktopScale $Scale
     }
     foreach ($screen in [Windows.Forms.Screen]::AllScreens) {
         $dpi = [TrayDesktop]::MonitorDpi($screen.Bounds.Left + [int]($screen.Bounds.Width/2),$screen.Bounds.Top + [int]($screen.Bounds.Height/2))
@@ -241,8 +244,8 @@ try {
     $null = Save-Region (Get-Panel).Current.BoundingRectangle 'usage'
     $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
     $report.fileVersion = $version.FileVersion
-    $screen = [Windows.Forms.Screen]::FromPoint([Drawing.Point]::new([int]$panel.Current.BoundingRectangle.Left,[int]$panel.Current.BoundingRectangle.Top))
-    Test-UsageLayout $panel $screen ([version]$version.FileVersion -ge [version]'0.1.0.47')
+    $checkSize = [version]$version.FileVersion -ge [version]'0.1.0.47'
+    Test-UsageLayout $panel $report $checkSize
     [TrayDesktop]::keybd_event(27,0,0,[UIntPtr]::Zero); [TrayDesktop]::keybd_event(27,0,2,[UIntPtr]::Zero)
     $null = Wait-Panel $false '按 Esc 后收起'
     Click-Tray
@@ -260,6 +263,20 @@ try {
     if (Get-Panel) { throw '同次点击松开后意外重开' }
     Click-Tray
     $panel = Wait-Panel $true '下一次独立点击正常打开'
+    if ($checkSize -and $Scale -eq '150') {
+        # 同一进程保持运行，改动同一块屏幕的真实缩放，然后从原来的常驻图标再打开。
+        Set-DesktopScale '125'
+        $null = Wait-Panel $false '打开系统设置后面板收起'
+        Click-Tray
+        $panel = Wait-Panel $true '改变缩放后从原图标重新打开'
+        $bounds = $panel.Current.BoundingRectangle
+        $newDpi = [TrayDesktop]::MonitorDpi([int]($bounds.Left+$bounds.Width/2),[int]($bounds.Top+$bounds.Height/2))
+        if ($newDpi -ne 120) { throw "运行中调整后实际 DPI 为 $newDpi，预期 120" }
+        $report.afterScale = [ordered]@{ dpi=$newDpi; scalePercent=125 }
+        $null = Save-Navigation $panel 'navigation-after-scale'
+        $null = Save-Region $bounds 'usage-after-scale'
+        Test-UsageLayout $panel $report.afterScale $true 'usage-after-scale'
+    }
     $report.result = 'passed'
 } catch {
     $report.error = $_.Exception.Message
