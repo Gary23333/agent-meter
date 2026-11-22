@@ -4,11 +4,27 @@
 
 ## 下一轮验收重点
 
-1. **继续追查导航残影。** 从同一显示器的通知区域重复打开已经覆盖到 175%。接下来在 200% 和两块不同缩放的显示器上复核，记录面板在哪块屏上打开、是否恰逢刷新、旧高亮是否仍留在原位。保留出问题时的自然画面，再与重新绘制后的同一区域对照。
+1. **复核其他设备上的导航表现。** 已定位并修复正文切页后页头仍停留在旧选项的一种情形。接下来在 200% 和两块不同缩放的显示器上复核，记录面板在哪块屏上打开、是否恰逢刷新，并保留文字重叠或旧高亮出现时的画面。
 2. **完善账户首屏。** Alpha 46 已完成同一组数据、相同逻辑宽度的首屏对照。接着检查浅色主题、窄屏和多个账户同时出现时的行距、重置时间与键盘焦点，优先保证点开托盘就能读清当前余量。
 3. **走通最常用的数据路径。** 先选 Codex 和另一个已有授权的常用来源，从打开托盘、手动刷新一直核对到用量导出。额度按服务端同一时间窗口核对，本机 Token 按本机账本核对。README 分别标出已实测、仅有虚构数据验证和待适配的来源。
 
 下一次面向用户的发版优先交付能在托盘里看到的修复，附复现条件、前后画面和验证范围。验证阶段使用 [中文问题反馈](https://github.com/FoxBai/agent-meter-windows/issues/new/choose) 收集版本、屏幕缩放、触发步骤。稳定版仍需覆盖实体设备上的常用操作。
+
+## Alpha 48 连续切页实测
+
+Alpha 47 从「账户」切到「用量」时会收起额度环，把整排导航向上移。150% 缩放下，鼠标与原来的目标相距 174 个物理像素。Alpha 48 将导航固定在标题下方，账户页在它下面展示额度环，其余六页直接显示正文。这样保留了短屏上的可用空间，连续点击同一排即可切页。
+
+固定导航后的第一份候选包还暴露出另一个问题。从「账户」切到「应用」时，正文已经出现「应用概览」，标题说明和紫色高亮仍留在账户页。自然画面与强制重绘后的导航相差 3172 个像素。最终实现先把标题和导航一起绘制出来，再重建正文控件。[保留失败画面的构建记录](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986327407)
+
+![同一切页步骤的真实画面。左图正文已是应用，高亮仍在账户。右图正文、说明和高亮都已切到应用。](assets/alpha48-navigation-comparison.png)
+
+这次验收从任务栏的隐藏图标进入，按正序和逆序点击七个页面，对同一页两次进入时的导航截图逐像素比较。随后用左右方向键跨越首尾标签，检查选中项和键盘焦点，再点击刷新，按 Esc 收起并从托盘重新打开。另在「用量」「报告」往返时连续取样高亮，日志保存每次采样的时间和选中项。此检查使用隔离桌面上的演示数据。
+
+从公开下载的 Alpha 48 便携包实测，四档缩放下七页导航的纵向偏移均为 0。对「用量」「报告」的八次切换共截取 138 帧，每帧均只有一项高亮。运行中从 150% 切回 125% 后，用量页也可从原托盘图标重新打开。[100%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083441) · [125%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083457) · [150%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083616) · [175%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083539)
+
+| 账户页 | 用量页 |
+| --- | --- |
+| <img src="assets/screenshot.png" width="325" alt="账户页选中第一个标签，额度环位于导航下方"> | <img src="assets/usage-preview.png" width="325" alt="用量页选中第三个标签，导航保持原位"> |
 
 ## Alpha 47 高缩放实测
 
@@ -57,6 +73,8 @@
 | 中文体验与文档 | 中文首页、快速使用、安全和贡献说明正在调整；英文作为辅助 | Windows 新代码的说明与注释以中文为主，保证 README、实际行为及下载版本一致 |
 
 ## 当前证据和限制
+
+- [Alpha 48 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.48) 对应提交 `347b0c8`。便携包 SHA-256 为 `c59e63b5e4a9a5d7fe3dddc7ad89dda0a3e197ca35b0b94b14909c4b09bf2d43`。独立解压后已检查版本、虚构账本、零用量、错误价格及预算历史保护。[Windows 构建与界面检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986715114) · [跨平台检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986715119)
 
 - [Alpha 47 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.47) 对应提交 `65e80e6`，发布包 SHA-256 为 `4cc46c0c5d21dd7db3c1a5b186cf077ac5ac4fe5ea39d311d284522bc4ece5a6`。[Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/runs/44936713285)与[跨平台检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44936713231)均已通过。
 
