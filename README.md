@@ -10,22 +10,24 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.48) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [移植进度](windows/PORT_PLAN.md) · [English](README.en.md)
+[下载 Windows 版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.49) · [支持哪些工具](#支持的数据来源) · [快速使用](windows/QUICK_START.md) · [更新记录](windows/CHANGELOG.md) · [English](README.en.md)
 
 </div>
 
-基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的独立 Windows 移植版。**Alpha 48** 将七页导航固定在标题下方。从账户切到用量、报告再切回来，标签始终留在鼠标原来那一排。按 Tab 进入导航，也可以用左右方向键切页。[查看托盘切页实测](windows/PORT_PLAN.md#alpha-48-连续切页实测)
+Agent Meter 常驻 Windows 右下角。点开托盘图标就能看到各个 AI 编程账户还剩多少额度、什么时候重置，以及今天在这台电脑上用了多少 Token。项目移植自 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter)。
+
+**Alpha 49** 支持点额度环直接查看对应账户。比如先看 Codex 的 5 小时和 7 天余量，再点 Kimi，面板就会滚到 Kimi 的额度和钱包。使用多个 MiniMax 账户时，可以按自己的别名选择。[查看多账户实测](windows/PORT_PLAN.md#alpha-49-在托盘中定位账户)
 
 <p align="center">
   <img src="windows/assets/screenshot.png" width="400" alt="深色托盘弹层，虚构演示数据">
   <img src="windows/assets/screenshot-light.png" width="400" alt="浅色托盘弹层，虚构演示数据">
 </p>
 
-截图由真实 Windows 界面在隔离构建机中使用**虚构数据**生成；系统圆角、阴影和任务栏效果不包含在截图中。[查看与 macOS 原版的同数据首屏对照](windows/PORT_PLAN.md#alpha-46-同数据首屏对照)。
+深色和浅色截图均使用虚构账户。截图范围为面板本身，图中的额度、重置时间和用量均可在演示模式中复现。[查看与 macOS 原版的同数据首屏对照](windows/PORT_PLAN.md#alpha-46-同数据首屏对照)
 
 ## 三步开始
 
-1. 从 [Alpha 48 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.48) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
+1. 从 [Alpha 49 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.49) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；3D 桌宠以及 WorkBuddy、小米 MiMo、Qoder 和 TRAE 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 
@@ -55,13 +57,23 @@
 | 桌宠 | 查看状态，预览并切换七个内置形象，控制桌面显示；显示时同步动态画面 |
 | 收集 | 本机用量、图片文件和 API 等价估算花费徽章、5 小时和 7 天额度窗口的掉落卡片；更多类别仍在移植 |
 
-还提供默认关闭的低额度通知、独立的 Codex 重置卡到期提醒，以及上游「麻薯」「比特」精灵图和五套 3D 桌宠。在桌宠页或托盘菜单选择形象并显示桌宠，单击可打开面板，拖动可调整位置。账户和本机账本默认每 15 分钟刷新，可在托盘菜单选择 5、15 或 30 分钟，也可手动刷新；应用页可见时每分钟单独检查本机活动。桌宠完整互动、通知效果和高 DPI 仍需实机验收。
+账户和本机账本默认每 15 分钟刷新，可在托盘菜单改为 5 或 30 分钟，也可以点面板右上角手动刷新。打开「应用」页时，每分钟检查一次本机活动。低额度通知和 Codex 重置卡到期提醒可分别开启。
+
+<details>
+<summary>查看费用估算、模型排行与预算提醒</summary>
 
 模型排行按所选周期和应用来源展示 Token 及可计算的美元 API 等价费用；部分费用会标记，未知费用显示为「—」。未匹配内置模型目录的名称会匿名汇总，即使已为其设置自定义价格，排行也会标记不完整。本机账本可能重叠。
 
 在托盘菜单的「预算与异常提醒」中可选设人民币日／周预算，预算和通知默认关闭。进度按北京时间及本机 API 等价估算计算，美元使用固定汇率 1:7.25；它不是实际账单。周统计使用每天最后一次记录，缺失日期会标记为部分；本周期确认没有消耗时费用显示为零，缺失数据不会冒充零；异常速度在数据不足时不判断。启用后仅在本机保存设置和每日汇总，关闭功能不会自动删除已有历史。系统通知是否显示取决于 Windows 设置。
 
 ![预算进度示例，虚构演示数据](windows/assets/budget-preview.png)
+
+</details>
+
+<details>
+<summary>查看桌宠形象与互动</summary>
+
+可在桌宠页或托盘菜单选择上游的「麻薯」「比特」精灵或下列五套 3D 形象。单击桌宠可打开面板，拖动可调整位置。
 
 <p align="center">
   <img src="windows/assets/pets/gauge.png" width="110" alt="量量">
@@ -74,9 +86,6 @@
 五套 3D 形象使用原版离线渲染资源，上图由隔离构建机生成；额度未知时圆环保持未知。3D 形象对单击、拖起、放下和右键刷新提供动作反馈，也可主动开启视线跟随光标。桌宠和视线跟随均默认关闭，更多互动仍在移植。
 
 ![桌宠页面，隐藏桌宠时的静态预览与虚构演示数据](windows/assets/pet-page-preview.png)
-
-<details>
-<summary>查看形象选择与视线跟随设置</summary>
 
 ![七个内置形象和视线跟随设置](windows/assets/pet-follow-preview.png)
 ![桌宠显示时的动态预览，虚构演示数据](windows/assets/pet-live-preview.png)

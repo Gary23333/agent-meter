@@ -5,10 +5,24 @@
 ## 下一轮验收重点
 
 1. **复核其他设备上的导航表现。** 已定位并修复正文切页后页头仍停留在旧选项的一种情形。接下来在 200% 和两块不同缩放的显示器上复核，记录面板在哪块屏上打开、是否恰逢刷新，并保留文字重叠或旧高亮出现时的画面。
-2. **完善账户首屏。** Alpha 46 已完成同一组数据、相同逻辑宽度的首屏对照。接着检查浅色主题、窄屏和多个账户同时出现时的行距、重置时间与键盘焦点，优先保证点开托盘就能读清当前余量。
+2. **复核真实账户的刷新。** 首页已经支持按别名定位账户。接着用已授权的来源检查网络变慢、登录过期和额度窗口刚重置时的显示，特别核对上次结果的提示何时消失。
 3. **走通最常用的数据路径。** 先选 Codex 和另一个已有授权的常用来源，从打开托盘、手动刷新一直核对到用量导出。额度按服务端同一时间窗口核对，本机 Token 按本机账本核对。README 分别标出已实测、仅有虚构数据验证和待适配的来源。
 
 下一次面向用户的发版优先交付能在托盘里看到的修复，附复现条件、前后画面和验证范围。验证阶段使用 [中文问题反馈](https://github.com/FoxBai/agent-meter-windows/issues/new/choose) 收集版本、屏幕缩放、触发步骤。稳定版仍需覆盖实体设备上的常用操作。
+
+## Alpha 49 在托盘中定位账户
+
+Alpha 48 翻到第二组额度环后，正文还在 Codex；想看某个 MiniMax 账户，需要继续向下找。Alpha 49 把每个额度环连到自己的账户卡。下面左图是从任务栏打开后点击 Kimi 的画面，右图是第二组里点「演示3」后的窄面板。两处均为虚构账户。
+
+| 点击 Kimi | 选择同一服务的不同账户 |
+| --- | --- |
+| <img src="assets/alpha49-kimi-details.png" width="315" alt="点击 Kimi 后，第一张卡显示 Kimi Code 的 64% 额度和钱包"> | <img src="assets/alpha49-multiple-accounts.png" width="315" alt="第二组的演示3圆环与明细卡都显示 99.9%"> |
+
+四台隔离桌面分别从发布页下载 ZIP、校验并解压，从 Explorer 托盘图标打开。每档都先用鼠标点 Kimi，再按空格选 Codex，最后用 Tab 移回 Kimi 并按 Enter。每次都检查对应卡片是否出现在额度环正下方。随后在七页之间往返，导航纵向偏移均为 0。「用量」与「报告」的切换共抽取 135 帧，均只显示一项高亮。150% 的桌面在程序运行中改为 125%，也能从原图标重新打开。[100%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671607) · [125%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671679) · [150%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671843) · [175%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671713)
+
+分批刷新另用受控的窗口测试覆盖。在保持明细展开、保持明细收起两种状态下，先发来「正在读取」的快照，再在等待期间用键盘展开和收起，最后送达完整数据。检查覆盖托盘收到的最新状态、明细内容、阅读位置及键盘焦点。[分批刷新与界面检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990319598)
+
+本次另尝试了 200% 缩放。隔离桌面的显示设置只提供 100%、125%、150%、175% 四项，测试在启动程序前结束。200% 和混合缩放双屏均待其他设备验收。[系统提供的缩放选项](https://github.com/FoxBai/agent-meter-windows/actions/runs/44989752453)
 
 ## Alpha 48 连续切页实测
 
@@ -73,6 +87,8 @@ Alpha 47 从「账户」切到「用量」时会收起额度环，把整排导�
 | 中文体验与文档 | 中文首页、快速使用、安全和贡献说明正在调整；英文作为辅助 | Windows 新代码的说明与注释以中文为主，保证 README、实际行为及下载版本一致 |
 
 ## 当前证据和限制
+
+- [Alpha 49 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.49) 对应提交 `c9f7afe`。便携包 SHA-256 为 `2a40c6422616755128d36370c642f76c59b6ec64640fe3ddb1ca65f04e1ff1ee`。已从 ZIP 单独解压核对程序版本、中文说明、第三方许可，并用虚构数据复核账本、零用量和预算历史。界面检查覆盖分批刷新期间的键盘操作及 94 张演示画面。[Windows 构建与界面检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990319598) · [跨平台检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990319591)
 
 - [Alpha 48 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.48) 对应提交 `347b0c8`。便携包 SHA-256 为 `c59e63b5e4a9a5d7fe3dddc7ad89dda0a3e197ca35b0b94b14909c4b09bf2d43`。独立解压后已检查版本、虚构账本、零用量、错误价格及预算历史保护。[Windows 构建与界面检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986715114) · [跨平台检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986715119)
 
