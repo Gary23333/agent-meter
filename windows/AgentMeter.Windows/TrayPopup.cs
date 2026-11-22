@@ -70,6 +70,19 @@ internal sealed partial class MeterWindow
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
         if (popup && keyData == Keys.Escape && !popupMenuVisible) { Hide(); return true; }
+        if (!popupMenuVisible && navigationStrip.ContainsFocus && keyData is Keys.Left or Keys.Right)
+        {
+            var tabs = navigationStrip.Controls.OfType<NavigationTab>().OrderBy(tab => tab.Left).ToArray();
+            int current = Array.FindIndex(tabs, tab => tab.Focused);
+            if (current >= 0)
+            {
+                int direction = keyData == Keys.Right ? 1 : -1;
+                var next = tabs[(current + direction + tabs.Length) % tabs.Length];
+                next.Focus();
+                next.PerformClick();
+                return true;
+            }
+        }
         if (!popupMenuVisible && keyData is Keys.PageDown or Keys.PageUp or Keys.Home or Keys.End)
         {
             int position = -content.AutoScrollPosition.Y;

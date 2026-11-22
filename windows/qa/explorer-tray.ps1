@@ -143,22 +143,30 @@ function Save-Region([System.Windows.Rect]$area,[string]$name) {
     } finally { $bitmap.Dispose() }
 }
 function Get-NavigationTabs($panel) {
-    # 页面正文也可能出现「桌宠」等字样，只取与「用量」标签同一行的七个控件。
-    $items = $panel.FindAll($desc,$all)
-    $usage = $items | Where-Object { $_.Current.Name -eq '用量' } | Select-Object -First 1
-    if (-not $usage) { throw '面板缺少用量导航' }
-    $row = $usage.Current.BoundingRectangle.Top
-    $tabs = @($items | Where-Object { $_.Current.Name -in @('账户','应用','用量','报告','预测','桌宠','收集') -and $_.Current.BoundingRectangle.Top -eq $row } | Sort-Object { $_.Current.BoundingRectangle.Left })
-    if (($tabs | ForEach-Object { $_.Current.Name }) -join ',' -ne '账户,应用,用量,报告,预测,桌宠,收集') { throw '未能定位完整导航' }
-    return $tabs
+    # 正文控件会随切页销毁，只枚举导航容器的直接子项，避免读到刷新前的正文。
+    $until = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+        try {
+            $usage = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'用量'))
+            if ($usage) {
+                $strip = [Windows.Automation.TreeWalker]::RawViewWalker.GetParent($usage)
+                $tabs = @($strip.FindAll([Windows.Automation.TreeScope]::Children,$all) | Sort-Object { $_.Current.BoundingRectangle.Left })
+                if (($tabs | ForEach-Object { $_.Current.Name }) -join ',' -eq '账户,应用,用量,报告,预测,桌宠,收集') { return $tabs }
+            }
+        } catch [System.Management.Automation.MethodInvocationException] {
+            if ($_.Exception.GetBaseException() -isnot [Windows.Automation.ElementNotAvailableException]) { throw }
+        }
+        Start-Sleep -Milliseconds 70
+    } while ([DateTime]::UtcNow -lt $until)
+    throw '未能定位完整导航'
 }
 function Save-Navigation($panel,[string]$name,[string]$selected='用量') {
     # 移出导航，排除鼠标悬停颜色，比较完整七个标签（包括文字）。
+    [void][TrayDesktop]::SetCursorPos(1,1)
+    Start-Sleep -Milliseconds 200
     $tabs = @(Get-NavigationTabs $panel)
     $area = [System.Windows.Rect]::Empty
     foreach ($tab in $tabs) { $area.Union($tab.Current.BoundingRectangle) }
-    [void][TrayDesktop]::SetCursorPos(1,1)
-    Start-Sleep -Milliseconds 200
     $hash = Save-Region $area $name
     $image = [Drawing.Bitmap]::new((Join-Path $OutputDir "$name.png"))
     try {
@@ -192,6 +200,18 @@ function Test-NavigationSequence($panel,[bool]$stableRow) {
         $hashes[$page] = $hash
     }
     $report.navigationOffsets = $offsets
+    if ($stableRow) {
+        # 从第一项向左到末项，再向右绕回。用键盘产生的焦点框与鼠标截图分别检查。
+        Click-Control ((Get-NavigationTabs $panel) | Where-Object { $_.Current.Name -eq '账户' })
+        foreach ($pair in @(@(37,'收集'),@(39,'账户'),@(39,'应用'),@(39,'用量'))) {
+            [TrayDesktop]::keybd_event($pair[0],0,0,[UIntPtr]::Zero)
+            [TrayDesktop]::keybd_event($pair[0],0,2,[UIntPtr]::Zero)
+            $null = Save-Navigation $panel ("key-"+$pair[1]) $pair[1]
+            if ([Windows.Automation.AutomationElement]::FocusedElement.Current.Name -ne $pair[1]) { throw '键盘焦点未跟随选中页' }
+        }
+        Record '左右方向键切页、首尾循环与焦点跟随通过'
+        Click-Control ((Get-NavigationTabs $panel) | Where-Object { $_.Current.Name -eq '用量' })
+    }
     $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新用量'))
     if (-not $refresh) { $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新')) }
     if (-not $refresh) { throw '找不到顶部刷新按钮' }

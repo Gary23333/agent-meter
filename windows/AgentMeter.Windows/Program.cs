@@ -518,7 +518,7 @@ internal sealed partial class MeterWindow : Form
             tab.ForeColor = Primary;
             tab.Font = tabRegular; tab.Size = new Size(86, 36);
         }
-        gauges.Location = new Point(16, 72); gauges.Size = new Size(406, 116);
+        gauges.Location = new Point(16, 114); gauges.Size = new Size(406, 116);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = false; gauges.BackColor = Background;
         gauges.Resize += (_, _) => LayoutGauges();
@@ -1003,6 +1003,7 @@ internal sealed partial class MeterWindow : Form
         foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast), (petTab, View.Pet), (collectionTab, View.Collection) })
         {
             button.SetAppearance(theme, view == tab);
+            button.TabStop = view == tab;
         }
         gauges.Visible = view == View.Accounts;
         header.Height = view == View.Accounts ? 234 : 118;
@@ -1017,7 +1018,8 @@ internal sealed partial class MeterWindow : Form
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
         string[] full = ["账户额度", "应用", "本机消耗", "用量报告", "重置预测", "桌宠", "收集"];
         string[] compact = ["账户", "应用", "用量", "报告", "预测", "桌宠", "收集"];
-        navigationStrip.Bounds = new Rectangle(16, view == View.Accounts ? 192 : 76, Math.Max(1, header.ClientSize.Width - 32), 35);
+        // 七页共用同一排点击位置，账户额度环在导航下方单独展开。
+        navigationStrip.Bounds = new Rectangle(16, 76, Math.Max(1, header.ClientSize.Width - 32), 35);
         int width = Math.Max(1, (navigationStrip.ClientSize.Width - 6) / tabs.Length);
         for (int index = 0; index < tabs.Length; index++)
         {
@@ -2071,7 +2073,8 @@ internal sealed partial class MeterWindow : Form
         gaugePage = Math.Clamp(gaugePage, 0, pages - 1);
         gaugePrevious.Visible = gaugeNext.Visible = view == View.Accounts && pages > 1;
         gaugePrevious.Enabled = gaugePage > 0; gaugeNext.Enabled = gaugePage + 1 < pages;
-        gaugePrevious.Location = new Point(1, 110); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 21), 110);
+        int pageButtonTop = gauges.Top + 38;
+        gaugePrevious.Location = new Point(1, pageButtonTop); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 21), pageButtonTop);
         if (items.Length == 0) return;
         int shown = Math.Min(4, items.Length - gaugePage * 4);
         int width = Math.Clamp(gauges.ClientSize.Width / Math.Max(1, shown) - 7, 70, 95);
