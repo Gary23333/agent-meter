@@ -30,6 +30,7 @@ internal sealed partial class MeterWindow
         appMark = new AgentBrandMark { Location = new Point(18, 18), Size = new Size(36, 36), BackColor = Background };
         header.Controls.Add(appMark);
         pinAction.AccessibleName = "固定弹出面板"; menuAction.AccessibleName = "更多设置";
+        refresh.AccessibleName = "刷新用量";
         pinAction.Click += (_, _) => { popupPinned = !popupPinned; pinAction.Active = popupPinned; pinAction.Invalidate();
             popupTips.SetToolTip(pinAction, popupPinned ? "取消固定 · 点击外部可收起" : "固定面板 · 点击外部不收起"); };
         menuAction.Click += (_, _) => MenuRequested?.Invoke(new Point(menuAction.Left, menuAction.Bottom + 6));

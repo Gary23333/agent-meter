@@ -295,6 +295,15 @@ jobs:
       - name: Package portable build
         shell: pwsh
         run: ./windows/package.ps1
+      - name: 从 Explorer 托盘验证七页导航、方向键和面板开合
+        shell: powershell
+        run: ./windows/qa/explorer-tray.ps1 -Executable (Resolve-Path 'windows/dist/AgentMeter/AgentMeter.Windows.exe') -OutputDir "$env:RUNNER_TEMP/tray-replay"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Explorer-tray-replay
+          path: ${{ runner.temp }}/tray-replay
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: AgentMeter-Windows-x64

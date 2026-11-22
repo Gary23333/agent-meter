@@ -165,6 +165,10 @@ function Save-Navigation($panel,[string]$name,[string]$selected='用量') {
     [void][TrayDesktop]::SetCursorPos(1,1)
     Start-Sleep -Milliseconds 200
     $tabs = @(Get-NavigationTabs $panel)
+    if ($selected -eq '用量') {
+        $cost = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'API 等价估算'))
+        if (-not $cost) { throw '导航选中用量时，正文缺少 API 等价估算卡片' }
+    }
     $area = [System.Windows.Rect]::Empty
     foreach ($tab in $tabs) { $area.Union($tab.Current.BoundingRectangle) }
     $hash = Save-Region $area $name
@@ -172,7 +176,8 @@ function Save-Navigation($panel,[string]$name,[string]$selected='用量') {
     try {
         foreach ($tab in $tabs) {
             $rect = $tab.Current.BoundingRectangle
-            $pixel = $image.GetPixel([int]($rect.Left-$area.Left+$rect.Width*0.2),[int]($rect.Height*0.19))
+            # 内侧纯色区避开文字与键盘焦点虚线。
+            $pixel = $image.GetPixel([int]($rect.Left-$area.Left+$rect.Width*0.16),[int]($rect.Height*0.37))
             $expected = if ($tab.Current.Name -eq $selected) { @(115,76,219) } else { @(26,32,47) }
             $distance = [Math]::Abs($pixel.R-$expected[0])+[Math]::Abs($pixel.G-$expected[1])+[Math]::Abs($pixel.B-$expected[2])
             if ($distance -gt 45) { throw "$name 中「$($tab.Current.Name)」的颜色与预期不符，截图已保留" }
@@ -186,7 +191,7 @@ function Test-NavigationSequence($panel,[bool]$stableRow) {
     $hashes = @{}
     $offsets = [ordered]@{}
     # 分别从容纳额度环的账户页和紧凑页面进入同一页，最后回到用量页。
-    $steps = @('账户','应用','用量','报告','预测','桌宠','收集','账户','用量','应用','账户','报告','用量')
+    $steps = @('账户','应用','用量','报告','预测','桌宠','收集','账户','收集','桌宠','预测','报告','用量','应用','账户','用量')
     for ($i=0; $i -lt $steps.Count; $i++) {
         $page = $steps[$i]
         $tabs = @(Get-NavigationTabs $panel)
@@ -210,14 +215,16 @@ function Test-NavigationSequence($panel,[bool]$stableRow) {
             if ([Windows.Automation.AutomationElement]::FocusedElement.Current.Name -ne $pair[1]) { throw '键盘焦点未跟随选中页' }
         }
         Record '左右方向键切页、首尾循环与焦点跟随通过'
-        Click-Control ((Get-NavigationTabs $panel) | Where-Object { $_.Current.Name -eq '用量' })
     }
-    $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新用量'))
-    if (-not $refresh) { $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新')) }
+    $until = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+        $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新用量'))
+        if (-not $refresh) { $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新')) }
+        if (-not $refresh) { Start-Sleep -Milliseconds 100 }
+    } while (-not $refresh -and [DateTime]::UtcNow -lt $until)
     if (-not $refresh) { throw '找不到顶部刷新按钮' }
     Click-Control $refresh
-    $cost = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'API 等价估算'))
-    if (-not $cost -or (Save-Navigation $panel 'usage-refreshed') -ne $hashes['用量']) { throw '刷新后用量页或导航显示发生变化' }
+    if ((Save-Navigation $panel 'usage-refreshed') -ne $hashes['用量']) { throw '刷新后导航显示发生变化' }
     Record '连续点选七页、往返切页和手动刷新后导航高亮正确'
 }
 function Test-UsageLayout($panel,$result,[bool]$enforce,[string]$name='usage') {
