@@ -1051,6 +1051,8 @@ internal sealed partial class MeterWindow : Form
         bool changed = view != selected;
         if (changed) content.AutoScrollPosition = Point.Empty;
         view = selected; UpdateTabs();
+        // 正文会重建许多子窗口。先将新标题和整排标签画到屏幕上，避免正文先出现、旧高亮仍停留。
+        if (changed && Visible && header.IsHandleCreated) header.Refresh();
         if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
         if (changed) content.AutoScrollPosition = Point.Empty;
         if (selected == View.Applications) _ = RefreshActivityIfNeeded();
