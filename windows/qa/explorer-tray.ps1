@@ -187,24 +187,33 @@ function Save-Navigation($panel,[string]$name,[string]$selected='用量') {
 }
 function Test-AccountGauges($panel) {
     $id = [Windows.Automation.AutomationElement]::AutomationIdProperty
-    foreach ($provider in @('KIMI CODE','CODEX')) {
+    foreach ($step in @(@('KIMI CODE','click','account-KIMI'),@('CODEX','space','account-CODEX'),@('KIMI CODE','tab-enter','account-KIMI-keyboard'))) {
+        $provider, $inputMode, $captureName = $step
         $gauge = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new($id,"gauge-$provider"))
         $card = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new($id,"account-$provider"))
         if (-not $gauge -or -not $card) { throw "首页缺少 $provider 的额度环或明细卡" }
-        if ($provider -eq 'CODEX') {
-            $gauge.SetFocus()
-            [TrayDesktop]::keybd_event(32,0,0,[UIntPtr]::Zero)
-            [TrayDesktop]::keybd_event(32,0,2,[UIntPtr]::Zero)
-        } else { Click-Control $gauge }
+        if ($inputMode -eq 'click') { Click-Control $gauge }
+        else {
+            if ($inputMode -eq 'space') { $gauge.SetFocus(); $key = 32 }
+            else {
+                [TrayDesktop]::keybd_event(9,0,0,[UIntPtr]::Zero)
+                [TrayDesktop]::keybd_event(9,0,2,[UIntPtr]::Zero)
+                Start-Sleep -Milliseconds 160
+                if ([Windows.Automation.AutomationElement]::FocusedElement.Current.AutomationId -ne "gauge-$provider") { throw 'Tab 没有从 Codex 移到 Kimi' }
+                $key = 13
+            }
+            [TrayDesktop]::keybd_event($key,0,0,[UIntPtr]::Zero)
+            [TrayDesktop]::keybd_event($key,0,2,[UIntPtr]::Zero)
+        }
         Start-Sleep -Milliseconds 160
         $bounds = $card.Current.BoundingRectangle
         $bottom = $gauge.Current.BoundingRectangle.Bottom
         # 卡片标题应回到额度环下方；逻辑间距随系统缩放取整。
         if ([Math]::Abs($bounds.Top-$bottom) -gt 16) { throw "$provider 明细未定位到额度环下方，间距为 $($bounds.Top-$bottom)" }
         [void][TrayDesktop]::SetCursorPos(1,1)
-        $null = Save-Region $panel.Current.BoundingRectangle ("account-" + $provider.Split(' ')[0])
+        $null = Save-Region $panel.Current.BoundingRectangle $captureName
     }
-    Record '鼠标点击 Kimi、键盘激活 Codex 额度环，均定位到对应明细'
+    Record '鼠标点击 Kimi、空格激活 Codex、Tab 移到 Kimi 并按 Enter，均定位到对应明细'
 }
 function Test-NavigationSequence($panel,[bool]$stableRow) {
     $initial = @(Get-NavigationTabs $panel)
