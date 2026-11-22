@@ -483,6 +483,7 @@ internal sealed partial class MeterWindow : Form
     string UsagePeriodLabel => usagePeriod switch { "7d" => "近 7 天", "30d" => "近 30 天", "all" => "累计", _ => "今日" };
     readonly HashSet<string> expandedApplications = new(StringComparer.Ordinal);
     string? lastSnapshot;
+    string? displayedAccountSnapshot;
     public string? CurrentSnapshot => lastSnapshot;
     internal WorkBuddyBrowser WorkBuddyBrowser => workBuddyBrowser;
     internal MiMoBrowser MiMoBrowser => mimoBrowser;
@@ -1349,7 +1350,7 @@ internal sealed partial class MeterWindow : Form
                 };
                 if (profilesInvalid) combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
                 ApplyAccountPreferences(combined);
-                using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement);
+                using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement, accountDetailsPending: true);
                 var pending = new List<(string Name, Task<string> Task)> { ("accounts", accountTask), ("history", historyTask) };
                 if (deepseekTask is not null) pending.Add(("DeepSeek API", deepseekTask));
                 if (zcodeTask is not null) pending.Add(("ZCode", zcodeTask));
@@ -1555,10 +1556,22 @@ internal sealed partial class MeterWindow : Form
         if (process.ExitCode != 0) throw new InvalidOperationException("backend_failed");
         return await output;
     }
-    void Render(JsonElement root)
+    void Render(JsonElement root, bool accountDetailsPending = false)
     {
         lastSnapshot = root.GetRawText();
         SnapshotUpdated?.Invoke(lastSnapshot);
+        // 分批采集时，托盘仍接收最新结果。正在阅读明细的人可以继续操作眼前的卡片。
+        if (accountDetailsPending && view == View.Accounts && displayedAccountSnapshot is not null &&
+            (content.AutoScrollPosition.Y != 0 || gauges.ContainsFocus || content.ContainsFocus))
+        {
+            status.Text = "正在刷新 · 当前显示上次账户明细";
+            return;
+        }
+        RenderPage(root, lastSnapshot);
+    }
+    void RenderPage(JsonElement root, string snapshotText)
+    {
+        displayedAccountSnapshot = view == View.Accounts ? snapshotText : null;
         string? focusedGaugeName = gauges.Controls.OfType<QuotaGauge>().FirstOrDefault(gauge => gauge.Focused)?.Name;
         bool resetToggleFocused = view == View.Accounts && content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focused == true;
         int previousTop = -content.AutoScrollPosition.Y;

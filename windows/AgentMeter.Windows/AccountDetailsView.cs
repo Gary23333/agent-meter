@@ -110,7 +110,8 @@ internal sealed partial class MeterWindow
                 toggle.FlatAppearance.BorderColor = theme.Border;
                 toggle.Click += (_, _) => {
                     expandedResetCredits = !expandedResetCredits; var scroll = content.AutoScrollPosition;
-                    using var snapshot = JsonDocument.Parse(lastSnapshot!); Render(snapshot.RootElement);
+                    string shown = displayedAccountSnapshot!;
+                    using var snapshot = JsonDocument.Parse(shown); RenderPage(snapshot.RootElement, shown);
                     content.PerformLayout();
                     content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focus();
                     content.AutoScrollPosition = new Point(-scroll.X, -scroll.Y);

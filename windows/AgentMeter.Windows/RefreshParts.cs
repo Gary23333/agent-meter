@@ -71,7 +71,7 @@ internal sealed partial class MeterWindow
             if (name == "accounts" && startCards is not null) pending.Add(("quota_cards", startCards(snapshot)));
             using (var document = JsonDocument.Parse(snapshot.ToJsonString()))
             {
-                Render(document.RootElement);
+                Render(document.RootElement, accountDetailsPending: pending.Any(part => part.Name is not ("forecast" or "quota_cards")));
                 NotifyLowQuota(document.RootElement);
                 if (name == "history" && !demo && BudgetTriggered is not null)
                 {
@@ -85,7 +85,8 @@ internal sealed partial class MeterWindow
                 }
             }
             finished++;
-            status.Text = pending.Count > 0 ? $"正在刷新 · 已完成 {finished} 项" : partialFailure
+            status.Text = pending.Count > 0 ? $"正在刷新 · 已完成 {finished} 项" +
+                (displayedAccountSnapshot is not null && !ReferenceEquals(displayedAccountSnapshot, lastSnapshot) ? " · 显示上次账户明细" : "") : partialFailure
                 ? "部分数据读取失败 · 请稍后刷新" : $"更新于 {DateTime.Now:HH:mm:ss}  ·  本机历史 ≠ 账户总用量";
         }
     }

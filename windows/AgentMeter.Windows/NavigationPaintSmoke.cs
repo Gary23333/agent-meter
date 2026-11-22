@@ -279,6 +279,18 @@ internal sealed partial class MeterWindow
                 throw new InvalidOperationException("重置卡键盘展开或焦点恢复失败");
             int before = -content.AutoScrollPosition.Y;
             using var refreshed = System.Text.Json.JsonDocument.Parse(lastSnapshot!);
+            using var loading = System.Text.Json.JsonDocument.Parse("""{"account":{"status":"loading"},"history":{}}""");
+            Render(loading.RootElement, accountDetailsPending: true);
+            if (!content.Controls.Find("account-reset-toggle", true).Single().Focused ||
+                lastSnapshot != loading.RootElement.GetRawText() || !status.Text.Contains("上次账户明细"))
+                throw new InvalidOperationException("分批刷新覆盖了正在阅读的卡片，或托盘未收到读取状态");
+            foreach (bool showTiles in new[] { !expanded, expanded })
+            {
+                keybd_event(0x20, 0, 0, UIntPtr.Zero); keybd_event(0x20, 0, 0x0002, UIntPtr.Zero);
+                await Task.Delay(75);
+                if (content.Controls.Find("account-reset-tile", true).Length != (showTiles ? 3 : 0) || lastSnapshot != loading.RootElement.GetRawText())
+                    throw new InvalidOperationException("读取期间操作明细失败或旧额度回写到了托盘");
+            }
             Render(refreshed.RootElement);
             await Task.Delay(100);
             if (!content.Controls.Find("account-reset-toggle", true).Single().Focused ||
