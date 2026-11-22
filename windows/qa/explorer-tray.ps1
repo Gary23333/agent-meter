@@ -142,17 +142,63 @@ function Save-Region([System.Windows.Rect]$area,[string]$name) {
         return (Get-FileHash -LiteralPath $path).Hash
     } finally { $bitmap.Dispose() }
 }
-function Save-Navigation($panel,[string]$name) {
+function Get-NavigationTabs($panel) {
+    # 页面正文也可能出现「桌宠」等字样，只取与「用量」标签同一行的七个控件。
+    $items = $panel.FindAll($desc,$all)
+    $usage = $items | Where-Object { $_.Current.Name -eq '用量' } | Select-Object -First 1
+    if (-not $usage) { throw '面板缺少用量导航' }
+    $row = $usage.Current.BoundingRectangle.Top
+    $tabs = @($items | Where-Object { $_.Current.Name -in @('账户','应用','用量','报告','预测','桌宠','收集') -and $_.Current.BoundingRectangle.Top -eq $row } | Sort-Object { $_.Current.BoundingRectangle.Left })
+    if (($tabs | ForEach-Object { $_.Current.Name }) -join ',' -ne '账户,应用,用量,报告,预测,桌宠,收集') { throw '未能定位完整导航' }
+    return $tabs
+}
+function Save-Navigation($panel,[string]$name,[string]$selected='用量') {
     # 移出导航，排除鼠标悬停颜色，比较完整七个标签（包括文字）。
-    $cost = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'API 等价估算'))
-    if (-not $cost) { throw '重新打开的面板未显示用量页' }
-    $tabs = @($panel.FindAll($desc,$all) | Where-Object { $_.Current.Name -in @('账户','应用','用量','报告','预测','桌宠','收集') })
-    if ($tabs.Count -ne 7) { throw "未能唯一定位七个导航标签：$($tabs.Count)" }
+    $tabs = @(Get-NavigationTabs $panel)
     $area = [System.Windows.Rect]::Empty
     foreach ($tab in $tabs) { $area.Union($tab.Current.BoundingRectangle) }
     [void][TrayDesktop]::SetCursorPos(1,1)
     Start-Sleep -Milliseconds 200
-    return Save-Region $area $name
+    $hash = Save-Region $area $name
+    $image = [Drawing.Bitmap]::new((Join-Path $OutputDir "$name.png"))
+    try {
+        foreach ($tab in $tabs) {
+            $rect = $tab.Current.BoundingRectangle
+            $pixel = $image.GetPixel([int]($rect.Left-$area.Left+$rect.Width*0.2),[int]($rect.Height*0.19))
+            $expected = if ($tab.Current.Name -eq $selected) { @(115,76,219) } else { @(26,32,47) }
+            $distance = [Math]::Abs($pixel.R-$expected[0])+[Math]::Abs($pixel.G-$expected[1])+[Math]::Abs($pixel.B-$expected[2])
+            if ($distance -gt 45) { throw "$name 中「$($tab.Current.Name)」的颜色与预期不符，截图已保留" }
+        }
+    } finally { $image.Dispose() }
+    return $hash
+}
+function Test-NavigationSequence($panel,[bool]$stableRow) {
+    $initial = @(Get-NavigationTabs $panel)
+    $row = $initial[0].Current.BoundingRectangle.Top
+    $hashes = @{}
+    $offsets = [ordered]@{}
+    # 分别从容纳额度环的账户页和紧凑页面进入同一页，最后回到用量页。
+    $steps = @('账户','应用','用量','报告','预测','桌宠','收集','账户','用量','应用','账户','报告','用量')
+    for ($i=0; $i -lt $steps.Count; $i++) {
+        $page = $steps[$i]
+        $tabs = @(Get-NavigationTabs $panel)
+        $target = $tabs | Where-Object { $_.Current.Name -eq $page }
+        Click-Control $target
+        $hash = Save-Navigation $panel "tab-$i" $page
+        $y = (@(Get-NavigationTabs $panel))[0].Current.BoundingRectangle.Top
+        $offsets[$page] = $y-$row
+        if ($stableRow -and $y -ne $row) { throw "切到$page 后导航偏移了 $($y-$row) 个物理像素" }
+        if ($hashes.ContainsKey($page) -and $hashes[$page] -ne $hash) { throw "再次进入$page 时导航像素有差异" }
+        $hashes[$page] = $hash
+    }
+    $report.navigationOffsets = $offsets
+    $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新用量'))
+    if (-not $refresh) { $refresh = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'刷新')) }
+    if (-not $refresh) { throw '找不到顶部刷新按钮' }
+    Click-Control $refresh
+    $cost = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'API 等价估算'))
+    if (-not $cost -or (Save-Navigation $panel 'usage-refreshed') -ne $hashes['用量']) { throw '刷新后用量页或导航显示发生变化' }
+    Record '连续点选七页、往返切页和手动刷新后导航高亮正确'
 }
 function Test-UsageLayout($panel,$result,[bool]$enforce,[string]$name='usage') {
     $bounds = $panel.Current.BoundingRectangle
@@ -236,13 +282,14 @@ try {
     [void][TrayDesktop]::SetCursorPos(1,1)
     Start-Sleep -Milliseconds 350
     $null = Save-Region $panel.Current.BoundingRectangle 'accounts'
-    $usage = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'用量'))
-    if (-not $usage) { throw '面板缺少用量导航入口' }
-    Click-Control $usage
-    Start-Sleep -Milliseconds 250
+    $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
+    if ([version]$version.FileVersion -ge [version]'0.1.0.47') {
+        Test-NavigationSequence $panel ([version]$version.FileVersion -ge [version]'0.1.0.48')
+    } else {
+        Click-Control (@(Get-NavigationTabs $panel) | Where-Object { $_.Current.Name -eq '用量' })
+    }
     $before = Save-Navigation (Get-Panel) 'usage-before'
     $null = Save-Region (Get-Panel).Current.BoundingRectangle 'usage'
-    $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
     $report.fileVersion = $version.FileVersion
     $checkSize = [version]$version.FileVersion -ge [version]'0.1.0.47'
     Test-UsageLayout $panel $report $checkSize
