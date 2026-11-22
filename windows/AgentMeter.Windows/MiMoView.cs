@@ -18,7 +18,7 @@ internal sealed partial class MeterWindow
             var details = AccountDetails.Read("MiMo", account);
             if (rows.Count > 0 || details.HasContent)
             {
-                AddQuotaGroup("MIMO 平台", rows, details: details);
+                AddQuotaGroup("MIMO 平台", rows, details: details, gaugeAccount: account);
                 if (state == "partial") AddCard("Token Plan", "部分数据暂不可用", "余额已读取，套餐额度请稍后刷新", null);
                 return;
             }

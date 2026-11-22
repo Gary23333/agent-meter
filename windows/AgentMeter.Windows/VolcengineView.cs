@@ -21,7 +21,7 @@ internal sealed partial class MeterWindow
                     rows.Add(new QuotaRow(label, GetNumber(item, "remaining_percent"), QuotaResetClock.Read(item)));
                 }
             var details = AccountDetails.Read("Volcengine", account);
-            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("火山方舟", rows, details: details); return; }
+            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("火山方舟", rows, details: details, gaugeAccount: account); return; }
         }
         string note = GetString(account, "reason", "") switch {
             "volcengine_credential_not_connected" => "请在托盘菜单设置 AccessKey 对",

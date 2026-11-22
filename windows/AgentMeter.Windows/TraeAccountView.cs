@@ -27,7 +27,7 @@ internal sealed partial class MeterWindow
             amounts.Add(new AccountAmount("账户剩余", n.ToString("0.########", CultureInfo.InvariantCulture) + " 积分", note));
         }
         if (rows.Count > 0 || amounts.Count > 0)
-            AddQuotaGroup("TRAE CN · 账户额度", rows, details: new AccountDetails(null, amounts, null));
+            AddQuotaGroup("TRAE CN · 账户额度", rows, details: new AccountDetails(null, amounts, null), gaugeAccount: account);
         else AddCard("TRAE CN · 账户额度", "暂无额度数据", status == "partial" ? "部分额度未提供使用情况" : "服务未提供可用的账户额度", null);
     }
 }

@@ -917,6 +917,13 @@ internal sealed partial class MeterWindow : Form
         if (gaugePage != 1 || !gaugePrevious.Enabled || gauges.Controls.OfType<QuotaGauge>().Count(item => item.Visible) > 4)
             throw new InvalidOperationException("下一组账户额度未正确切换");
         SavePreview("aurora-many-accounts-next");
+        var thirdAccount = gauges.Controls.Find("gauge-MINIMAX CODE · 演示3", false).OfType<QuotaGauge>().Single();
+        var thirdCard = content.Controls.Find("account-MINIMAX CODE · 演示3", false).Single();
+        if (!thirdAccount.Visible) throw new InvalidOperationException("第二组缺少指定的 MiniMax 账户");
+        thirdAccount.PerformClick(); Application.DoEvents();
+        var heading = thirdCard.Controls.OfType<Label>().First();
+        if (-content.AutoScrollPosition.Y <= 0 || !contentClip.RectangleToScreen(contentClip.ClientRectangle).Contains(heading.RectangleToScreen(heading.ClientRectangle)))
+            throw new InvalidOperationException("点击第二组额度环没有定位到对应别名的卡片");
         gaugePrevious.PerformClick();
         if (gaugePage != 0) throw new InvalidOperationException("上一组账户额度未正确切换");
         // 仅在隔离演示预览中显示虚构余额，不读取或保存凭据。
@@ -1550,7 +1557,14 @@ internal sealed partial class MeterWindow : Form
     {
         lastSnapshot = root.GetRawText();
         SnapshotUpdated?.Invoke(lastSnapshot);
-        if (view == View.Accounts) UpdateGauges(root);
+        string? focusedGaugeName = gauges.Controls.OfType<QuotaGauge>().FirstOrDefault(gauge => gauge.Focused)?.Name;
+        bool resetToggleFocused = view == View.Accounts && content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focused == true;
+        int previousTop = -content.AutoScrollPosition.Y;
+        if (view == View.Accounts)
+        {
+            gauges.SuspendLayout();
+            while (gauges.Controls.Count > 0) gauges.Controls[0].Dispose();
+        }
         content.SuspendLayout();
         forecastClocks.Clear(); quotaResetLabels.Clear(); accountClockUpdates.Clear();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();
@@ -1571,7 +1585,7 @@ internal sealed partial class MeterWindow : Form
                 string prefix = bucket.Equals("codex", StringComparison.OrdinalIgnoreCase) ? "" : bucket.ToUpperInvariant() + " · ";
                 rows.Add(new QuotaRow(prefix + period, remaining, QuotaResetClock.Read(q)));
             }
-            AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"), codexDetails);
+            AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"), codexDetails, account);
         }
         else if (codexDetails.HasContent) AddQuotaGroup("CODEX", [], GetValue(localHistories, "Codex"), codexDetails);
         else if (GetString(account, "status", "") == "disabled") AddCard("CODEX", "账户查询已关闭", "可在托盘菜单重新开启", null);
@@ -1597,7 +1611,7 @@ internal sealed partial class MeterWindow : Form
                     double? remaining = GetNumber(q, "remaining_percent");
                     rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
                 }
-                AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount));
+                AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount), kimiAccount);
             }
             else if (AccountDetails.Read("Kimi Code", kimiAccount).HasContent) AddQuotaGroup("KIMI CODE", [], GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount));
             else if (kimiStatus == "disabled") AddCard("KIMI CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
@@ -1617,7 +1631,7 @@ internal sealed partial class MeterWindow : Form
                 double? remaining = GetNumber(q, "remaining_percent");
                 rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
             }
-            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"), AccountDetails.Read("Claude Code", claudeAccount));
+            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"), AccountDetails.Read("Claude Code", claudeAccount), claudeAccount);
         }
         else if (GetString(claudeAccount, "status", "") == "disabled") AddCard("CLAUDE CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else if (GetString(claudeAccount, "status", "") == "loading") AddCard("CLAUDE CODE", "正在读取额度", "正在查询账户", null);
@@ -1639,6 +1653,10 @@ internal sealed partial class MeterWindow : Form
         AddQoderAccount(GetValue(otherAccounts, "Qoder CN"));
         AddTraeAccount(GetValue(otherAccounts, "TRAE CN"));
         AddQoderLocalCredits(GetValue(root, "local_credits"));
+        FinishAccountGauges(root);
+        gauges.ResumeLayout();
+        if (focusedGaugeName is not null)
+            gauges.Controls.OfType<QuotaGauge>().FirstOrDefault(gauge => gauge.Visible && gauge.Name == focusedGaugeName)?.Focus();
         }
         else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)
@@ -1719,6 +1737,11 @@ internal sealed partial class MeterWindow : Form
         else if (view == View.Pet) AddPetPage(root);
         else AddCollection(GetValue(root, "local_medals"), GetValue(root, "quota_cards"));
         content.ResumeLayout(); ResizeCards();
+        if (resetToggleFocused && content.Controls.Find("account-reset-toggle", true).FirstOrDefault() is { } toggle)
+        {
+            toggle.Focus();
+            content.AutoScrollPosition = new Point(0, previousTop);
+        }
     }
     void AddCollection(JsonElement collection, JsonElement quotaCards)
     {
@@ -1892,7 +1915,7 @@ internal sealed partial class MeterWindow : Form
                 double? remaining = GetNumber(quota, "remaining_percent");
                 rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(quota)));
             }
-            AddQuotaGroup(prefix, rows);
+            AddQuotaGroup(prefix, rows, gaugeAccount: account);
         }
         else if (GetString(account, "status", "") == "loading")
             AddCard(prefix, "正在读取额度", "正在查询账户", null);
@@ -1929,7 +1952,7 @@ internal sealed partial class MeterWindow : Form
             if (quota.ValueKind == JsonValueKind.Array)
                 foreach (var item in quota.EnumerateArray())
                     rows.Add(new QuotaRow("积分额度", GetNumber(item, "remaining_percent"), QuotaResetClock.Read(item)));
-            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("WORKBUDDY", rows, localHistory, details); return; }
+            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("WORKBUDDY", rows, localHistory, details, account); return; }
 
         }
         string note = GetString(account, "reason", "") switch
@@ -2041,24 +2064,8 @@ internal sealed partial class MeterWindow : Form
                 "导出未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
-    void UpdateGauges(JsonElement root)
+    void FinishAccountGauges(JsonElement root)
     {
-        while (gauges.Controls.Count > 0) gauges.Controls[0].Dispose();
-        AddGauge("Codex", GetValue(root, "account"));
-        AddGauge("Kimi", GetValue(GetValue(root, "other_accounts"), "Kimi Code"));
-        AddGauge("Claude", GetValue(GetValue(root, "other_accounts"), "Claude Code"));
-        AddGauge("WorkBuddy", GetValue(GetValue(root, "other_accounts"), "WorkBuddy"));
-        AddGauge("ZCode", GetValue(GetValue(root, "other_accounts"), "ZCode"));
-        AddGauge("火山方舟", GetValue(GetValue(root, "other_accounts"), "Volcengine"));
-        AddGauge("小米 MiMo", GetValue(GetValue(root, "other_accounts"), "MiMo"));
-        AddGauge("Qoder CN", GetValue(GetValue(root, "other_accounts"), "Qoder CN"));
-        AddGauge("TRAE CN", GetValue(GetValue(root, "other_accounts"), "TRAE CN"));
-        var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
-        if (minimax.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var account in minimax.EnumerateArray()) AddGauge("MiniMax · " + GetString(account, "label", "账户"), account);
-        }
-        else AddGauge("MiniMax", minimax);
         if (gauges.Controls.Count == 0)
         {
             var others = GetValue(root, "other_accounts");
@@ -2084,16 +2091,6 @@ internal sealed partial class MeterWindow : Form
         {
             items[index].Visible = index / 4 == gaugePage;
             items[index].Width = width;
-        }
-    }
-    void AddGauge(string provider, JsonElement account)
-    {
-        var windows = QuotaWindows.Select(account);
-        if (windows is not null)
-        {
-            var gauge = new QuotaGauge(provider, windows, theme, demo ? ForecastDemoNow : null);
-            popupTips.SetToolTip(gauge, provider);
-            gauges.Controls.Add(gauge);
         }
     }
     static string FormatNumber(double n) => n >= 1_000_000_000 ? $"{n / 1_000_000_000:0.##}B" : n >= 1_000_000 ? $"{n / 1_000_000:0.##}M" : n >= 1_000 ? $"{n / 1_000:0.##}K" : $"{n:0}";
@@ -2275,7 +2272,7 @@ internal sealed partial class MeterWindow : Form
         StyleCard(box); content.Controls.Add(box);
     }
 
-    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default, AccountDetails? details = null)
+    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default, AccountDetails? details = null, JsonElement gaugeAccount = default)
     {
         int shown = Math.Min(rows.Count, 40);
         details ??= AccountDetails.Empty;
@@ -2321,6 +2318,19 @@ internal sealed partial class MeterWindow : Form
         if (usage is not null) box.Height += AddLocalUsageSummary(box, box.Height, usage, identity.Color);
         box.Height += AddAccountDetails(box, box.Height, details);
         StyleCard(box); content.Controls.Add(box);
+        if (QuotaWindows.Select(gaugeAccount) is { } windows)
+        {
+            // 圆环直接关联本次渲染的卡片，同名账户也不会按文字误跳到第一张。
+            var gauge = new QuotaGauge(identity.DisplayName, windows, theme, demo ? ForecastDemoNow : null)
+                { Name = "gauge-" + provider };
+            gauge.Click += (_, _) => {
+                int top = box.Top - content.AutoScrollPosition.Y;
+                content.AutoScrollPosition = new Point(0, Math.Max(0, top - content.Padding.Top));
+                scrollRail?.Invalidate();
+            };
+            popupTips.SetToolTip(gauge, gauge.AccessibleName + "\n查看账户明细");
+            gauges.Controls.Add(gauge);
+        }
         if (rows.Count > shown) AddCard(provider, "部分额度未显示", $"仅展示前 {shown} 个窗口", null);
     }
 
@@ -2469,7 +2479,7 @@ internal sealed class GaugePageButton(bool forward) : Button
     }
 }
 
-internal sealed class QuotaGauge : Control
+internal sealed class QuotaGauge : Button
 {
     readonly string provider;
     readonly QuotaWindowPair windows;
@@ -2479,14 +2489,17 @@ internal sealed class QuotaGauge : Control
     {
         this.provider = provider; this.windows = windows; this.theme = theme; this.referenceNow = referenceNow;
         Size = new Size(95, 116); Margin = new Padding(0, 0, 7, 0);
-        AccessibleRole = AccessibleRole.Graphic;
+        FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
+        UseVisualStyleBackColor = false; BackColor = theme.Background; Cursor = Cursors.Hand;
+        AccessibleDescription = "查看此账户的额度明细";
         AccessibleName = $"{provider} {windows.Primary.Label}，剩余 {windows.Primary.Remaining:0.#}%" +
             (windows.Secondary is null ? "" : $"；{windows.Secondary.Label}，剩余 {windows.Secondary.Remaining:0.#}%");
         DoubleBuffered = true;
     }
     protected override void OnPaint(PaintEventArgs e)
     {
-        base.OnPaint(e); e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.Clear(BackColor);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         void Ring(Rectangle rect, double remaining, Color normal)
         {
             using var track = new Pen(theme.Border, 5);
@@ -2512,19 +2525,28 @@ internal sealed class QuotaGauge : Control
         if (windows.Secondary is not null)
             Ring(new Rectangle(left + 8, 12, 44, 44), windows.Secondary.Remaining,
                 theme.Light ? Color.FromArgb(103, 75, 159) : Color.FromArgb(178, 145, 255));
-        using var valueFont = new Font(Font.FontFamily, 9F, FontStyle.Bold);
+        string valueText = $"{windows.Primary.Remaining:0.#}%";
+        using var valueFont = new Font(Font.FontFamily, valueText.Length > 4 ? 8F : 9F, FontStyle.Bold);
         using var small = new Font(Font.FontFamily, 7.5F);
         using var accountNameFont = new Font(Font.FontFamily, 8F);
-        TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(left + 12, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        const string accountPrefix = "MiniMax · ";
-        bool namedAccount = provider.StartsWith(accountPrefix, StringComparison.Ordinal);
-        string displayName = namedAccount ? provider[accountPrefix.Length..] + " · MiniMax" : provider;
-        TextRenderer.DrawText(e.Graphics, displayName, namedAccount ? accountNameFont : Font,
-            new Rectangle(0, 66, Width, 19), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        string shortName = windows.Primary.Label == "5 小时" ? "5h" : windows.Primary.Label == "7 天" ? "7d" : windows.Primary.Label;
-        string periods = $"{shortName} {windows.Primary.Remaining:0.#}" + (windows.Secondary is null ? "%" : $" / 7d {windows.Secondary.Remaining:0.#}");
-        TextRenderer.DrawText(e.Graphics, periods, small, new Rectangle(0, 84, Width, 16), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        TextRenderer.DrawText(e.Graphics, QuotaResetClock.Short(windows.Primary.ResetAt, referenceNow ?? DateTimeOffset.UtcNow), small, new Rectangle(0, 100, Width, 16), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        const TextFormatFlags centered = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+        var secondary = windows.Secondary;
+        TextRenderer.DrawText(e.Graphics, valueText, valueFont, new Rectangle(left + 8, secondary is null ? 18 : 15, 44, secondary is null ? 32 : 23), theme.Primary, centered);
+        if (secondary is not null)
+            TextRenderer.DrawText(e.Graphics, windows.Primary.Label, small, new Rectangle(left + 8, 36, 44, 15), theme.Secondary, centered);
+        const string aliasPrefix = "MiniMax Code · ";
+        string displayName = provider.StartsWith(aliasPrefix, StringComparison.Ordinal) ? provider[aliasPrefix.Length..] :
+            provider switch { "MiniMax Code" => "MiniMax", "Kimi Code" => "Kimi", "Claude Code" => "Claude",
+                "Qoder CN · 账户额度" => "Qoder CN", "TRAE CN · 账户额度" => "TRAE CN", _ => provider };
+        TextRenderer.DrawText(e.Graphics, displayName, displayName.Length > 9 ? accountNameFont : Font,
+            new Rectangle(0, 66, Width, 19), theme.Primary, centered | TextFormatFlags.EndEllipsis);
+        string period = secondary is null ? windows.Primary.Label : $"{secondary.Label} · {secondary.Remaining:0.#}%";
+        TextRenderer.DrawText(e.Graphics, period, small, new Rectangle(0, 84, Width, 16), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(e.Graphics, QuotaResetClock.Short(windows.Primary.ResetAt, referenceNow ?? DateTimeOffset.UtcNow),
+            small, new Rectangle(0, 100, Width, 16), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
+        if (Focused && ShowFocusCues)
+            ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -2, -2), theme.Primary, BackColor);
     }
 }
 internal sealed class DailyChart : Control

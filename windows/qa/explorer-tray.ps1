@@ -185,6 +185,27 @@ function Save-Navigation($panel,[string]$name,[string]$selected='用量') {
     } finally { $image.Dispose() }
     return $hash
 }
+function Test-AccountGauges($panel) {
+    $id = [Windows.Automation.AutomationElement]::AutomationIdProperty
+    foreach ($provider in @('KIMI CODE','CODEX')) {
+        $gauge = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new($id,"gauge-$provider"))
+        $card = $panel.FindFirst($desc,[Windows.Automation.PropertyCondition]::new($id,"account-$provider"))
+        if (-not $gauge -or -not $card) { throw "首页缺少 $provider 的额度环或明细卡" }
+        if ($provider -eq 'CODEX') {
+            $gauge.SetFocus()
+            [TrayDesktop]::keybd_event(32,0,0,[UIntPtr]::Zero)
+            [TrayDesktop]::keybd_event(32,0,2,[UIntPtr]::Zero)
+        } else { Click-Control $gauge }
+        Start-Sleep -Milliseconds 160
+        $bounds = $card.Current.BoundingRectangle
+        $bottom = $gauge.Current.BoundingRectangle.Bottom
+        # 卡片标题应回到额度环下方；逻辑间距随系统缩放取整。
+        if ([Math]::Abs($bounds.Top-$bottom) -gt 16) { throw "$provider 明细未定位到额度环下方，间距为 $($bounds.Top-$bottom)" }
+        [void][TrayDesktop]::SetCursorPos(1,1)
+        $null = Save-Region $panel.Current.BoundingRectangle ("account-" + $provider.Split(' ')[0])
+    }
+    Record '鼠标点击 Kimi、键盘激活 Codex 额度环，均定位到对应明细'
+}
 function Test-NavigationSequence($panel,[bool]$stableRow) {
     $initial = @(Get-NavigationTabs $panel)
     $row = $initial[0].Current.BoundingRectangle.Top
@@ -370,6 +391,7 @@ try {
     Start-Sleep -Milliseconds 350
     $null = Save-Region $panel.Current.BoundingRectangle 'accounts'
     $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
+    if ([version]$version.FileVersion -ge [version]'0.1.0.49') { Test-AccountGauges $panel }
     if ([version]$version.FileVersion -ge [version]'0.1.0.47') {
         Test-NavigationSequence $panel ([version]$version.FileVersion -ge [version]'0.1.0.48')
     } else {

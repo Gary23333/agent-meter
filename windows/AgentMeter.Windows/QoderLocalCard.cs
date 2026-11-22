@@ -31,7 +31,7 @@ internal sealed partial class MeterWindow
                 amounts.Add(new AccountAmount(label, n.ToString("0.########", CultureInfo.InvariantCulture) + " 积分"));
             }
         if (rows.Count > 0 || amounts.Count > 0)
-            AddQuotaGroup("Qoder CN · 账户额度", rows, details: new AccountDetails(null, amounts, null));
+            AddQuotaGroup("Qoder CN · 账户额度", rows, details: new AccountDetails(null, amounts, null), gaugeAccount: account);
         else AddCard("Qoder CN · 账户额度", "暂无额度数据", "服务未提供可用的账户额度", null);
     }
 

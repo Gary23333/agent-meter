@@ -277,6 +277,13 @@ internal sealed partial class MeterWindow
             if (content.Controls.Find("account-reset-tile", true).Length != (expanded ? 3 : 0) ||
                 !content.Controls.Find("account-reset-toggle", true).Single().Focused)
                 throw new InvalidOperationException("重置卡键盘展开或焦点恢复失败");
+            int before = -content.AutoScrollPosition.Y;
+            using var refreshed = System.Text.Json.JsonDocument.Parse(lastSnapshot!);
+            Render(refreshed.RootElement);
+            await Task.Delay(100);
+            if (!content.Controls.Find("account-reset-toggle", true).Single().Focused ||
+                content.Controls.Find("account-reset-tile", true).Length != (expanded ? 3 : 0) || Math.Abs(-content.AutoScrollPosition.Y - before) > 2)
+                throw new InvalidOperationException("刷新后重置卡明细、焦点或阅读位置发生变化");
         }
         Size = new Size(440, 680); SetTheme(VisualThemes.Find("aurora"));
         Hide(); Show(); Activate();

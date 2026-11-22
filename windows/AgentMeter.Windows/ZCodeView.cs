@@ -25,7 +25,7 @@ internal sealed partial class MeterWindow
                     rows.Add(new QuotaRow(label, GetNumber(item, "remaining_percent"), QuotaResetClock.Read(item)));
                 }
             var details = AccountDetails.Read("ZCode", account);
-            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("ZCODE", rows, localHistory, details); return; }
+            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("ZCODE", rows, localHistory, details, account); return; }
         }
         string note = GetString(account, "reason", "") switch {
             "zcode_credential_not_connected" => "请在托盘菜单设置 Coding Plan 密钥",
