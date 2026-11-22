@@ -899,9 +899,11 @@ internal sealed partial class MeterWindow : Form
         // 多账户分页；避免系统滚动条挤压额度环。
         var many = JsonNode.Parse(lastSnapshot!)!.AsObject();
         var accounts = new JsonArray();
-        for (int index = 1; index <= 5; index++)
+        double[] remaining = [0, 12.5, 99.9, 100, 55];
+        for (int index = 1; index <= remaining.Length; index++)
             accounts.Add(new JsonObject { ["label"] = "演示" + index, ["status"] = "available",
-                ["quota"] = JsonNode.Parse("""{"value":[{"bucket":"5h","remaining_percent":55}]}""") });
+                ["quota"] = new JsonObject { ["value"] = new JsonArray(new JsonObject {
+                    ["bucket"] = "5h", ["remaining_percent"] = remaining[index - 1] }) } });
         many["other_accounts"]!["MiniMax Code"] = accounts;
         using (var snapshot = JsonDocument.Parse(many.ToJsonString())) Render(snapshot.RootElement);
         SetView(View.Accounts); SavePreview("aurora-many-accounts-narrow");
@@ -916,7 +918,6 @@ internal sealed partial class MeterWindow : Form
         gaugeNext.PerformClick(); Application.DoEvents();
         if (gaugePage != 1 || !gaugePrevious.Enabled || gauges.Controls.OfType<QuotaGauge>().Count(item => item.Visible) > 4)
             throw new InvalidOperationException("下一组账户额度未正确切换");
-        SavePreview("aurora-many-accounts-next");
         var thirdAccount = gauges.Controls.Find("gauge-MINIMAX CODE · 演示3", false).OfType<QuotaGauge>().Single();
         var thirdCard = content.Controls.Find("account-MINIMAX CODE · 演示3", false).Single();
         if (!thirdAccount.Visible) throw new InvalidOperationException("第二组缺少指定的 MiniMax 账户");
@@ -924,6 +925,7 @@ internal sealed partial class MeterWindow : Form
         var heading = thirdCard.Controls.OfType<Label>().First();
         if (-content.AutoScrollPosition.Y <= 0 || !contentClip.RectangleToScreen(contentClip.ClientRectangle).Contains(heading.RectangleToScreen(heading.ClientRectangle)))
             throw new InvalidOperationException("点击第二组额度环没有定位到对应别名的卡片");
+        SavePreview("aurora-many-accounts-next");
         gaugePrevious.PerformClick();
         if (gaugePage != 0) throw new InvalidOperationException("上一组账户额度未正确切换");
         // 仅在隔离演示预览中显示虚构余额，不读取或保存凭据。
@@ -1737,9 +1739,9 @@ internal sealed partial class MeterWindow : Form
         else if (view == View.Pet) AddPetPage(root);
         else AddCollection(GetValue(root, "local_medals"), GetValue(root, "quota_cards"));
         content.ResumeLayout(); ResizeCards();
-        if (resetToggleFocused && content.Controls.Find("account-reset-toggle", true).FirstOrDefault() is { } toggle)
+        if (view == View.Accounts)
         {
-            toggle.Focus();
+            if (resetToggleFocused) content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focus();
             content.AutoScrollPosition = new Point(0, previousTop);
         }
     }
