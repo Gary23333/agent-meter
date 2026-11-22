@@ -226,6 +226,66 @@ function Test-NavigationSequence($panel,[bool]$stableRow) {
     Click-Control $refresh
     if ((Save-Navigation $panel 'usage-refreshed') -ne $hashes['用量']) { throw '刷新后导航显示发生变化' }
     Record '连续点选七页、往返切页和手动刷新后导航高亮正确'
+    if ($stableRow) {
+        $report.transitions = @(
+            Watch-TabTransition $panel '用量' '报告'
+            Watch-TabTransition $panel '报告' '用量'
+        )
+        Record '逐帧抽查相邻标签往返切换，未见双重高亮'
+    }
+}
+function Watch-TabTransition($panel,[string]$from,[string]$to) {
+    # 点击前先读屏，再在同一窗口上采样半秒。每帧保存七个标签的选中色命中情况。
+    $tabs = @(Get-NavigationTabs $panel)
+    $area = [System.Windows.Rect]::Empty
+    foreach ($tab in $tabs) { $area.Union($tab.Current.BoundingRectangle) }
+    $points = foreach ($tab in $tabs) {
+        $r = $tab.Current.BoundingRectangle
+        [Drawing.Point]::new([int]($r.Left-$area.Left+$r.Width*0.16),[int]($r.Height*0.37))
+    }
+    $target = ($tabs | Where-Object { $_.Current.Name -eq $to }).Current.BoundingRectangle
+    [void][TrayDesktop]::SetCursorPos([int]($target.X+$target.Width/2),[int]($target.Y+$target.Height/2))
+    $names = @($tabs | ForEach-Object { $_.Current.Name })
+    $samples = [Collections.Generic.List[object]]::new()
+    $bitmap = [Drawing.Bitmap]::new([int]$area.Width,[int]$area.Height)
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $pressed = $false
+    $released = $false
+    $bad = 0
+    try {
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        try {
+            do {
+                $graphics.CopyFromScreen([int]$area.Left,[int]$area.Top,0,0,$bitmap.Size)
+                $ms = $clock.ElapsedMilliseconds
+                $lit = @(for ($i=0; $i -lt $points.Count; $i++) {
+                    $p = $bitmap.GetPixel($points[$i].X,$points[$i].Y)
+                    if (([Math]::Abs($p.R-115)+[Math]::Abs($p.G-76)+[Math]::Abs($p.B-219)) -le 45) { $names[$i] }
+                })
+                $samples.Add([ordered]@{ms=$ms; selected=($lit -join ',')})
+                if ($lit.Count -gt 1 -or ($lit.Count -eq 1 -and $lit[0] -notin $from,$to)) {
+                    if ($bad -eq 0) { $bitmap.Save((Join-Path $OutputDir "transition-$from-$to-$ms.png"),[Drawing.Imaging.ImageFormat]::Png) }
+                    $bad++
+                }
+                if (-not $pressed) {
+                    [TrayDesktop]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+                    $pressed=$true
+                } elseif (-not $released -and $ms -ge 45) {
+                    [TrayDesktop]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+                    $released=$true
+                }
+                Start-Sleep -Milliseconds 8
+            } while ($clock.ElapsedMilliseconds -lt 550)
+        } finally { $graphics.Dispose() }
+    } finally {
+        if ($pressed -and -not $released) { [TrayDesktop]::mouse_event(4,0,0,0,[UIntPtr]::Zero) }
+        $bitmap.Dispose()
+    }
+    $samples | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $OutputDir "transition-$from-$to.json")
+    if ($bad -or $samples.Count -lt 5 -or $samples[0].selected -ne $from -or $samples[$samples.Count-1].selected -ne $to) {
+        throw "$from → $to 切页取样异常，已保留逐帧记录"
+    }
+    return [ordered]@{from=$from; to=$to; frames=$samples.Count; durationMs=$samples[$samples.Count-1].ms; multiple=$bad}
 }
 function Test-UsageLayout($panel,$result,[bool]$enforce,[string]$name='usage') {
     $bounds = $panel.Current.BoundingRectangle
