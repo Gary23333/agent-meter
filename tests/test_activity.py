@@ -459,6 +459,7 @@ def service_config(tmp):
         "claude_projects_dir": str(Path(tmp) / "none-claude"),
         "gemini_dir": str(Path(tmp) / "none-gemini"),
         "opencode_db": str(Path(tmp) / "none-opencode.db"),
+        "doubao_work_sessions_dir": str(Path(tmp) / "none-doubao"),
         "kimi_home": str(tmp),
     })
     return cfg

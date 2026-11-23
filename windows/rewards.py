@@ -92,13 +92,13 @@ def ledger_summary(runtime, now):
             seen.add(slot)
             account = ledger["accounts"][slot]
             checked = bool(account.get("checked_at"))
-            summary = summarize(slot, provider, account, now, False, None,
+            summary = summarize(slot, provider, account, now, None,
                                 "available" if checked else "not_connected",
                                 None if checked else "not_checked_yet")
             summaries.append(_manual(summary))
     for provider in SUPPORTED:
         if provider not in seen:
-            summary = summarize(provider, provider, {}, now, False, None,
+            summary = summarize(provider, provider, {}, now, None,
                                 "not_connected", "not_checked_yet")
             summaries.append(_manual(summary))
     summaries.sort(key=lambda row: (SUPPORTED.index(row["provider"]), row["id"]))
@@ -110,7 +110,7 @@ def claim(runtime, data, now, adapters=None):
     """读取状态并领取；规则与 macOS 共用 RewardsService。"""
     adapters = adapters or {provider: ADAPTERS[provider] for provider in SUPPORTED}
     service = RewardsService(runtime, adapters=adapters)
-    result = service.tick(data["sessions"], now, auto_claim=frozenset(), disabled=frozenset(),
+    result = service.tick(data["sessions"], now, disabled=frozenset(),
                           timeout=15, only=data["only"], claim_all=data["claim_all"])
     for row in result.get("accounts", []):
         _manual(row)

@@ -39,7 +39,8 @@ private final class FakeBackend: SyncBackend {
     var importedLocalDevice: String?
     var askedFor: [String] = []
 
-    func syncPayload(localDevice: String, settings: SyncSettings) async throws -> Data {
+    func syncPayload(localDevice: String, name: String, appVersion: String,
+                     settings: SyncSettings) async throws -> Data {
         askedFor.append(localDevice)
         return payload
     }
