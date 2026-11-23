@@ -2,7 +2,7 @@ import Foundation
 
 /// Schema-tolerant JSON tree. The backend adds fields between schema versions,
 /// so the UI reads what it understands and ignores the rest.
-enum JSON: Decodable, Equatable {
+enum JSON: Decodable, Encodable, Equatable {
     case null
     case bool(Bool)
     case number(Double)
@@ -18,6 +18,19 @@ enum JSON: Decodable, Equatable {
         else if let s = try? c.decode(String.self) { self = .string(s) }
         else if let a = try? c.decode([JSON].self) { self = .array(a) }
         else { self = .object(try c.decode([String: JSON].self)) }
+    }
+
+    /// Encodable so a tree can be kept as a whole (the sync preference state).
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let b): try c.encode(b)
+        case .number(let n): try c.encode(n)
+        case .string(let s): try c.encode(s)
+        case .array(let a): try c.encode(a)
+        case .object(let o): try c.encode(o)
+        }
     }
 
     subscript(key: String) -> JSON {

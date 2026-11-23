@@ -18,11 +18,12 @@ class AccountCheckTests(unittest.TestCase):
             src("mimo", "not_connected", "mimo_not_authenticated"),
             src("stepfun", "not_connected", "stepfun_credential_not_connected"),
             src("volcengine", "not_connected", "volcengine_credential_not_connected"),
+            src("doubao", "not_connected", "doubao_credential_not_connected"),
             src("qoder#2", "not_connected", "not_authenticated"),   # secondary accounts ignored
         ]
         report = account_connection_report(sources)
         self.assertEqual(report["connected"], ["qoder"])
-        self.assertEqual(report["missing"], ["workbuddy", "mimo", "stepfun", "volcengine"])
+        self.assertEqual(report["missing"], ["workbuddy", "mimo", "stepfun", "volcengine", "doubao"])
         qoder = next(r for r in report["targets"] if r["source"] == "qoder")
         self.assertTrue(qoder["has_quota"])
 
@@ -32,8 +33,8 @@ class AccountCheckTests(unittest.TestCase):
 
     def test_absent_source_reported(self):
         report = account_connection_report([])
-        self.assertEqual(len(report["targets"]), 5)
-        self.assertEqual(set(report["missing"]), {"qoder", "workbuddy", "mimo", "stepfun", "volcengine"})
+        self.assertEqual(len(report["targets"]), 6)
+        self.assertEqual(set(report["missing"]), {"qoder", "workbuddy", "mimo", "stepfun", "volcengine", "doubao"})
 
 
 if __name__ == "__main__":

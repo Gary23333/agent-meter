@@ -141,39 +141,44 @@ class ServiceTests(unittest.TestCase):
         return RewardsService(self.tmp.name, {"trae_cn": (self.trae.status, self.trae.claim),
                                               "workbuddy": (self.wb.status, self.wb.claim)})
 
-    def test_status_without_auto_never_claims(self):
+    def test_a_plain_read_never_claims(self):
         svc = self.service(trae=Fake([trae_open()]))
         out = svc.tick({"trae_cn": {"token": "T"}}, NOW)
         self.assertEqual(self.trae.calls, [("status", "T")])
         account = out["accounts"][0]
-        self.assertEqual((account["id"], account["status"], account["auto_claim"]), ("trae_cn", "available", False))
+        self.assertEqual((account["id"], account["status"]), ("trae_cn", "available"))
+        # No switch and no schedule travel with the summary any more.
+        for gone in ("auto_claim", "claim_time", "next_claim_at"):
+            self.assertNotIn(gone, account)
         self.assertEqual(account["today"]["claimable"][0]["item"], "daily_checkin")
 
-    def test_auto_claim_once_then_rechecks(self):
+    def test_no_hour_of_the_day_claims_on_its_own(self):
+        # The daily claim time is gone: around the clock a read stays a read.
+        tasks = lambda: rewards.normalize_workbuddy_status(WB_STREAK, wb_tasks(("skill_1", "completed")))
+        trae, wb = Fake([trae_open()]), Fake([tasks()])
+        svc = RewardsService(self.tmp.name, {"trae_cn": (trae.status, trae.claim),
+                                             "workbuddy": (wb.status, wb.claim)})
+        sessions = {"trae_cn": {"token": "T"}, "workbuddy": {"cookie": "C"}}
+        for offset in (0, 10, DAY - 300, DAY - 290, DAY + 300, DAY + 7 * 3600 + 50 * 60):
+            svc.tick(sessions, NOW + offset)
+        self.assertEqual([c for c in trae.calls + wb.calls if c[0] == "claim"], [])
+        self.assertEqual(svc.ledger["accounts"]["trae_cn"]["days"][day_of(NOW + DAY)].get("claims"), [])
+
+    def test_claim_now_claims_once_then_rechecks(self):
         svc = self.service(trae=Fake([trae_open(), trae_signed()]))
-        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, auto_claim={"trae_cn"})
+        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, only="trae_cn")
         self.assertEqual([c[0] for c in self.trae.calls], ["status", "claim", "status"])
         account = out["accounts"][0]
         self.assertEqual(account["claimed_credits_today"], 300)
         self.assertTrue(account["today"]["signed_in"])
         self.assertEqual(account["streak_days"], 1)
-        # Throttled within the status interval, then a new read without a second claim.
-        svc.tick({"trae_cn": {"token": "T"}}, NOW + 60, auto_claim={"trae_cn"})
-        self.assertEqual(len(self.trae.calls), 3)
-        svc.tick({"trae_cn": {"token": "T"}}, NOW + rewards.STATUS_EVERY, auto_claim={"trae_cn"})
+        # The settled item is not claimed again, and later reads stay throttled.
+        svc.tick({"trae_cn": {"token": "T"}}, NOW + 10, only="trae_cn")
         self.assertEqual([c[0] for c in self.trae.calls[3:]], ["status"])
-
-    def test_claim_waits_for_daily_time(self):
-        # NOW is 16:00 Asia/Shanghai; claim at 17:00.
-        svc = self.service(trae=Fake([trae_open()]))
-        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, auto_claim={"trae_cn"}, claim_time="17:00")
-        self.assertEqual([c[0] for c in self.trae.calls], ["status"])
-        self.assertEqual(out["accounts"][0]["next_claim_at"]["epoch_seconds"], NOW + 3600)
-        self.assertEqual(out["accounts"][0]["claim_time"], "17:00")
-        # Ten minutes after 17:00: read again at once (not throttled) and claim.
-        self.trae.statuses = [trae_open(), trae_signed()]
-        svc.tick({"trae_cn": {"token": "T"}}, NOW + 3600 + 600, auto_claim={"trae_cn"}, claim_time="17:00")
-        self.assertEqual([c[0] for c in self.trae.calls[1:]], ["status", "claim", "status"])
+        svc.tick({"trae_cn": {"token": "T"}}, NOW + 60)
+        self.assertEqual(len(self.trae.calls), 4)
+        svc.tick({"trae_cn": {"token": "T"}}, NOW + 10 + rewards.STATUS_EVERY)
+        self.assertEqual([c[0] for c in self.trae.calls[4:]], ["status"])
 
     def test_desktop_provider_is_one_account_without_a_web_session(self):
         svc = self.service()
@@ -194,7 +199,7 @@ class ServiceTests(unittest.TestCase):
         account = out["accounts"][0]
         self.assertEqual((account["id"], account["status"], account["reason"]), ("qoder", "not_connected", "disabled_by_user"))
 
-    def test_desktop_provider_claims_when_switched_on(self):
+    def test_desktop_provider_claims_on_request(self):
         svc = self.service()
         calls = []
 
@@ -203,7 +208,10 @@ class ServiceTests(unittest.TestCase):
             return {"result": "ok", "credits": 100}
 
         svc.adapters["qoder"] = (lambda session, timeout: QODER_OPEN, claim)
-        out = svc.tick({}, NOW, auto_claim={"qoder"}, desktop={"qoder": "/Applications/Qoder CN.app"})
+        desktop = {"qoder": "/Applications/Qoder CN.app"}
+        svc.tick({}, NOW, desktop=desktop)
+        self.assertEqual(calls, [])   # a plain read leaves the campaign alone
+        out = svc.tick({}, NOW + 5, desktop=desktop, claim_all=True)
         self.assertEqual(calls, ["campaign:act-1"])
         self.assertEqual(out["accounts"][0]["claimed_credits_today"], 100)
 
@@ -220,8 +228,8 @@ class ServiceTests(unittest.TestCase):
             return QODER_OPEN
 
         svc.adapters["qoder"] = (status, lambda session, item, timeout: {"result": "ok", "credits": 100})
-        out = svc.tick({"qoder": {"cookie": "EXPIRED"}}, NOW, auto_claim={"qoder"},
-                       desktop={"qoder": "/Applications/Qoder CN.app"})
+        out = svc.tick({"qoder": {"cookie": "EXPIRED"}}, NOW, desktop={"qoder": "/Applications/Qoder CN.app"},
+                       claim_all=True)
         account = out["accounts"][0]
         self.assertEqual((account["id"], account["status"], account["reason"]), ("qoder", "available", None))
         self.assertEqual(account["claimed_credits_today"], 100)
@@ -252,44 +260,41 @@ class ServiceTests(unittest.TestCase):
 
         svc = RewardsService(self.tmp.name, {"trae_cn": (status, claim)})
         with mock.patch.object(rewards, "trae_device_id", return_value="631551464320604"):
-            svc.tick({"trae_cn": {"token": "T"}}, NOW, auto_claim={"trae_cn"})
+            svc.tick({"trae_cn": {"token": "T"}}, NOW, claim_all=True)
         self.assertEqual([s.get("device_id") for s in seen], ["631551464320604"] * 3)
         seen.clear()
         with mock.patch.object(rewards, "trae_device_id", return_value="631551464320604"):
-            svc.tick({"trae_cn": {"token": "T", "device_id": "123456789012345"}}, NOW + DAY, auto_claim={"trae_cn"})
+            svc.tick({"trae_cn": {"token": "T", "device_id": "123456789012345"}}, NOW + DAY, claim_all=True)
         self.assertEqual({s.get("device_id") for s in seen}, {"123456789012345"})
 
-    def test_claim_moments(self):
-        today, nxt = rewards.claim_moments(NOW, "15:30")
-        self.assertEqual((today, nxt), (NOW - 1800, NOW - 1800 + DAY))
-        self.assertEqual(rewards.claim_moments(NOW, "bad")[0], rewards.claim_moments(NOW, "00:05")[0])
-
-    def test_failed_claims_back_off_and_stop(self):
+    def test_a_failed_claim_is_retried_on_the_next_request(self):
+        # Nothing runs in the background, so an hourly back-off or a daily cap
+        # would only ignore the user's next press. The press is the retry.
         svc = self.service(trae=Fake([trae_open()], [SourceError("connection_failed")] * 5))
-        t = NOW
-        for _ in range(6):
-            svc.tick({"trae_cn": {"token": "T"}}, t, auto_claim={"trae_cn"})
-            t += rewards.STATUS_EVERY
-        claims = [c for c in self.trae.calls if c[0] == "claim"]
-        self.assertEqual(len(claims), rewards.MAX_ATTEMPTS)
+        for offset in (0, 5, 10):
+            svc.tick({"trae_cn": {"token": "T"}}, NOW + offset, only="trae_cn")
+        self.assertEqual([c for c in self.trae.calls if c[0] == "claim"], [("claim", "daily_checkin")] * 3)
         record = svc.ledger["accounts"]["trae_cn"]["days"][day_of(NOW)]
-        self.assertEqual(record["claims"][0]["result"], "error")
+        self.assertEqual([c["result"] for c in record["claims"]], ["error"] * 3)
         self.assertEqual(record["claims"][0]["reason"], "connection_failed")
+        # A later plain read still claims nothing by itself.
+        svc.tick({"trae_cn": {"token": "T"}}, NOW + rewards.STATUS_EVERY)
+        self.assertEqual(len([c for c in self.trae.calls if c[0] == "claim"]), 3)
 
     def test_already_stops_retries_but_is_not_a_signed_day(self):
         svc = self.service(trae=Fake([trae_open()], [{"result": "already", "code": 9004}]))
-        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, auto_claim={"trae_cn"})
-        svc.tick({"trae_cn": {"token": "T"}}, NOW + 2 * rewards.RETRY_AFTER, auto_claim={"trae_cn"})
+        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, claim_all=True)
+        svc.tick({"trae_cn": {"token": "T"}}, NOW + 5, claim_all=True)
         self.assertEqual(len([c for c in self.trae.calls if c[0] == "claim"]), 1)
         self.assertEqual(out["accounts"][0]["streak_days"], 0)
 
     def test_already_but_still_open_is_a_final_refusal(self):
         # TRAE answers 9004 to a web-only claim it refuses; status stays open.
         svc = self.service(trae=Fake([trae_open()], [{"result": "already", "code": 9004}]))
-        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, auto_claim={"trae_cn"})
+        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, claim_all=True)
         claim = out["accounts"][0]["claims_today"][0]
         self.assertEqual((claim["result"], claim["final"], claim["reason"]), ("rejected", True, "claim_refused_from_web"))
-        svc.tick({"trae_cn": {"token": "T"}}, NOW + 2 * rewards.RETRY_AFTER, auto_claim={"trae_cn"})
+        svc.tick({"trae_cn": {"token": "T"}}, NOW + 5, claim_all=True)
         self.assertEqual(len([c for c in self.trae.calls if c[0] == "claim"]), 1)
 
     def test_streak_counts_consecutive_days(self):
@@ -306,14 +311,14 @@ class ServiceTests(unittest.TestCase):
                    rewards.normalize_workbuddy_status(WB_STREAK, wb_tasks(("skill_1", "claimed")))],
                   [{"result": "ok", "credits": 100, "badge": "尝鲜达人"}])
         svc = self.service(workbuddy=wb)
-        out = svc.tick({"workbuddy": [{"cookie": "C1"}]}, NOW, auto_claim={"workbuddy"})
+        out = svc.tick({"workbuddy": [{"cookie": "C1"}]}, NOW, claim_all=True)
         self.assertEqual([c for c in wb.calls if c[0] == "claim"], [("claim", "task:skill_1")])
         account = out["accounts"][0]
         self.assertEqual(account["claims_today"][0]["badge"], "尝鲜达人")
         self.assertEqual(account["claimed_credits_total"], 100)
         self.assertIsNone(account["streak_days"])
 
-    def test_claim_now_overrides_switch_and_throttle_for_one_slot(self):
+    def test_claim_now_reads_and_claims_one_slot_only(self):
         svc = self.service(trae=Fake([trae_open(), trae_open(), trae_open(), trae_signed()]))
         sessions = {"trae_cn": [{"token": "A"}, {"token": "B", "label": "小号"}]}
         svc.tick(sessions, NOW)
@@ -321,16 +326,19 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.trae.calls[-3:], [("status", "B"), ("claim", "daily_checkin"), ("status", "B")])
         self.assertEqual([a["id"] for a in out["accounts"]], ["trae_cn", "trae_cn#2"])
         self.assertEqual(out["accounts"][1]["account_label"], "小号")
+        # The other account was neither re-read nor claimed.
+        self.assertEqual(out["accounts"][0]["claims_today"], [])
+        self.assertEqual(self.trae.calls[2:], [("status", "B"), ("claim", "daily_checkin"), ("status", "B")])
 
-    def test_claim_all_overrides_switch_and_throttle_for_every_account(self):
+    def test_claim_all_reads_and_claims_every_account(self):
         svc = self.service(trae=Fake([trae_open(), trae_open(), trae_signed()]),
                            workbuddy=Fake([rewards.normalize_workbuddy_status(WB_STREAK, wb_tasks(("skill_1", "completed")))],
                                           [{"result": "ok", "credits": 100}]))
         sessions = {"trae_cn": {"token": "T"}, "workbuddy": {"cookie": "C"}}
-        # Auto-claim off and before the daily moment: a plain read claims nothing.
-        svc.tick(sessions, NOW, claim_time="17:00")
+        # A plain read claims nothing; the request then claims every account.
+        svc.tick(sessions, NOW)
         self.assertEqual([c[0] for c in self.trae.calls], ["status"])
-        out = svc.tick(sessions, NOW + 10, claim_time="17:00", claim_all=True)
+        out = svc.tick(sessions, NOW + 10, claim_all=True)
         self.assertEqual([c[0] for c in self.trae.calls[1:]], ["status", "claim", "status"])
         self.assertEqual([c[0] for c in self.wb.calls], ["status", "status", "claim", "status"])
         self.assertEqual([a["claimed_credits_today"] for a in out["accounts"]], [300, 100])
@@ -353,10 +361,11 @@ class ServiceTests(unittest.TestCase):
 
     def test_ledger_is_private_and_holds_no_credentials(self):
         svc = self.service(trae=Fake([trae_open(), trae_signed()]))
-        svc.tick({"trae_cn": {"token": "SECRET_TOKEN"}}, NOW, auto_claim={"trae_cn"})
+        svc.tick({"trae_cn": {"token": "SECRET_TOKEN"}}, NOW, claim_all=True)
         path = Path(self.tmp.name) / "rewards.json"
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertNotIn("SECRET_TOKEN", path.read_text())
+        self.assertNotIn("auto_claim", path.read_text())
         reloaded = RewardsService(self.tmp.name, {"trae_cn": (self.trae.status, self.trae.claim)})
         self.assertIn(day_of(NOW), reloaded.ledger["accounts"]["trae_cn"]["days"])
 
@@ -407,7 +416,7 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(ctx.exception.code, 404)
 
     def test_claim_all_endpoint(self):
-        # No slot and no auto-claim preference: the button still claims now.
+        # No slot: the panel's button claims every account, and nothing else does.
         with self.open("/v1/rewards/claim", "POST") as r:
             data = json.load(r)
         self.assertEqual(data["accounts"][0]["claimed_credits_today"], 300)

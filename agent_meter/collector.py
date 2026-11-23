@@ -14,6 +14,7 @@ from .agy_tokens import collect_antigravity_sessions
 from .agy_quota import collect_antigravity_quota
 from .claude_code import collect_claude, collect_claude_web
 from .claude_desktop import collect_claude_desktop
+from .doubao import collect_doubao
 from .cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
 from .codex import collect_codex
 from .codex_images import codex_image_metric
@@ -89,6 +90,8 @@ def default_config():
             "codex_binary":shutil.which("codex"),"kimi_binary":shutil.which("kimi"),
             # Kimi.app's Agent runtime keeps its own ledger with the same schema.
             "kimi_desktop_sessions_dir":str(home/"Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions"),
+            # 豆包工作本机会话轨迹：只有活动，没有 token/点数账本。
+            "doubao_work_sessions_dir":str(home/"Library/Application Support/Doubao/Default/.doubao/agent_mode/workspace/.sessions"),
             # Pre-migration Kimi CLI ledger; writes stopped 2026-06-17.
             "kimi_legacy_sessions_dir":str(home/".kimi/sessions"),
             "qoder_app":"/Applications/Qoder CN.app","node_binary":shutil.which("node"),
@@ -137,6 +140,7 @@ def safe_collect(source_id,scope,now,fn):
                       "zcode_credential_not_connected","volcengine_credential_not_connected","mimo_not_authenticated",
                       "zcode_desktop_not_installed","zcode_desktop_credentials_unreadable","zcode_desktop_node_missing",
                       "stepfun_credential_not_connected","stepfun_not_authenticated",
+                      "doubao_credential_not_connected","doubao_not_authenticated","doubao_no_active_subscription",
                       "volcengine_not_authenticated","volcengine_ark_key_not_supported",
                       "dreamina_cli_not_available","dreamina_not_authenticated","design_gateway_not_ready",
                       "design_billing_scope_unavailable","design_personal_scope_required",
@@ -291,6 +295,7 @@ def collect(config=None,now=None):
       "mimo":("api_account",lambda:collect_mimo(web.get("mimo"),now,timeout) if "mimo" in web
               else _raise(SourceError("web_session_missing"))),
       "stepfun":("account",lambda:collect_stepfun(web.get("stepfun"),now,timeout)),
+      "doubao":("account",lambda:collect_doubao(web.get("doubao"),now,timeout)),
       "volcengine":("account",lambda:collect_volcengine(web.get("volcengine"),now,timeout)),
       # Local token history; ZCode's own local usage db attaches to its
       # account source below (kimi pattern).
@@ -313,7 +318,7 @@ def collect(config=None,now=None):
     }
     web_collectors={"claude":collect_claude_web,"qoder":collect_qoder_web,"workbuddy":collect_workbuddy,"trae_cn":collect_trae,
                     "mimo":collect_mimo,"zcode":collect_zcode,"volcengine":collect_volcengine,
-                    "stepfun":collect_stepfun}
+                    "stepfun":collect_stepfun,"doubao":collect_doubao}
     def labelled(key,label,fn):
         def run():
             out=fn()
@@ -507,7 +512,7 @@ class SnapshotService:
         self._activity_generation=-1
         # Desktop pet: interprets data this service already holds, never collects.
         self.pet=PetMind(clock)
-        # Daily free-credit rewards (status always, claiming opt-in).
+        # Daily free-credit rewards (status always, claiming on request).
         self.rewards=None
         # Card binder and medals built from the snapshot (no network).
         self.collection=None
@@ -570,17 +575,16 @@ class SnapshotService:
         return self.pet.set_preferences(values)
 
     def _rewards_tick(self,config,now,only=None,claim_all=False):
-        """Reward status and opt-in claims; a failure never breaks the snapshot."""
+        """Reward status, plus claims when the user asked; a failure never breaks the snapshot."""
         from .rewards import RewardsService
         try:
             if self.rewards is None:
                 self.rewards=RewardsService(config["runtime_dir"])
             preferences=config.get("preferences") or {}
             disabled=set(config.get("disabled_sources") or [])|set(preferences.get("disabled_sources") or [])
-            return self.rewards.tick(config.get("web_sessions"),now,auto_claim=set(preferences.get("auto_claim") or []),
+            return self.rewards.tick(config.get("web_sessions"),now,
                                      disabled=disabled,timeout=config["timeout_seconds"],only=only,
                                      local_only=config["local_only"],
-                                     claim_time=preferences.get("claim_time") or "00:05",
                                      desktop={"qoder":config.get("qoder_app")},claim_all=claim_all)
         except Exception:
             return {"schema_version":1,"timezone":"Asia/Shanghai","accounts":[],"error":"rewards_failed"}
@@ -590,12 +594,30 @@ class SnapshotService:
         try:
             if self.collection is None:
                 self.collection=CollectionService(config["runtime_dir"])
-            return self.collection.update(snapshot,self.rewards.ledger if self.rewards else None,now)
+            # Check-in cards also count the days other devices reported; the
+            # quota and reset-card drops stay this device's own observations.
+            from .sync_store import load_store, reward_history, store_path
+            runtime=config["runtime_dir"]
+            remote=reward_history(load_store(runtime)) if store_path(runtime).exists() else []
+            return self.collection.update(snapshot,self.rewards.ledger if self.rewards else None,now,remote)
         except Exception:
             return {"schema_version":1,"error":"collection_failed"}
 
+    def _record_quota_history(self,config,snapshot,now):
+        """Fold this collection's quota into the device's sync journal.
+
+        A no-op until the device has paired: the journal is opened by its first
+        sync payload, so a device that never syncs writes no extra file.
+        """
+        try:
+            from .sync_payload import quota_rows
+            from .sync_quota import record
+            record(config["runtime_dir"],quota_rows(snapshot,now),now)
+        except Exception:
+            pass
+
     def claim_now(self,slot=None):
-        """The user's "claim now": one account, or every account when slot is None."""
+        """The user's "领取": one account, or every account when slot is None."""
         with self.collect_lock:
             with self.lock:
                 config,now=self.config.copy(),self.clock()
@@ -717,6 +739,7 @@ class SnapshotService:
             refresh_forecast_countdowns(refresh_countdowns(fresh,now),now)
             fresh["rewards"]=self._rewards_tick(config,now)
             fresh["collection"]=self._collection(config,fresh,now)
+            self._record_quota_history(config,fresh,now)
             fresh["served_from_cache"]=False
             with self.lock:
                 self.snapshot_accounts=accounts

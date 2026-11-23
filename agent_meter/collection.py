@@ -413,35 +413,89 @@ def daily_images(sources):
 
 # --- derived drops --------------------------------------------------------
 
-def checkin_drops(rewards_ledger):
+def _signed(record):
+    status = record.get("status") or {}
+    claims = record.get("claims") or []
+    return status.get("signed_in") is True or any(c.get("result") == "ok" and c.get("item") == "daily_checkin"
+                                                  for c in claims)
+
+
+def merged_reward_days(rewards_ledger, remote_rewards=None):
+    """Every check-in account's days, with the other devices' days folded in.
+
+    A check-in belongs to an account, but nothing in a login identifies the
+    same account on two devices. So a remote row (which names a provider, never
+    an account slot) is only matched where it cannot be mistaken: when the
+    reporting device holds exactly one account of that provider, and so does
+    this device. A provider with several accounts here is never mixed with
+    remote days, and a provider this device is not logged into keeps its own
+    streak as "remote:<provider>".
+
+    Returns {account key: {"days": {day: record}, "checked_at": epoch}}.
+    """
+    merged, holders = {}, {}
+    for slot, account in (((rewards_ledger or {}).get("accounts") or {}).items()):
+        if not isinstance(slot, str) or not isinstance(account, dict):
+            continue
+        provider = slot.split("#", 1)[0]
+        holders[provider] = holders.get(provider, 0) + 1
+        merged[slot] = {"days": {day: record for day, record in (account.get("days") or {}).items()
+                                 if isinstance(day, str) and isinstance(record, dict)},
+                        "checked_at": _epoch(account.get("checked_at"))}
+    for row in remote_rewards or []:
+        if not isinstance(row, dict) or row.get("single") is not True:
+            continue
+        provider, day = row.get("provider"), row.get("day")
+        if not isinstance(provider, str) or not provider or not isinstance(day, str) or holders.get(provider, 0) > 1:
+            continue
+        account = merged.setdefault(provider if holders.get(provider) else "remote:" + provider,
+                                    {"days": {}, "checked_at": None})
+        claims = [dict(claim, result="ok") for claim in row.get("claims") or []
+                  if isinstance(claim, dict) and claim.get("item")]
+        record = account["days"].get(day)
+        if record is None:
+            account["days"][day] = {"status": {"signed_in": row.get("signed_in") is True}, "claims": claims}
+        else:
+            # One claim per item: a day both devices saw is not two check-ins.
+            taken = {claim.get("item") for claim in record.get("claims") or []}
+            record["claims"] = list(record.get("claims") or []) + [c for c in claims if c["item"] not in taken]
+            if row.get("signed_in") is True:
+                record["status"] = dict(record.get("status") or {}, signed_in=True)
+        checked = _epoch(row.get("observed_at"))
+        if checked is not None and (account["checked_at"] is None or checked > account["checked_at"]):
+            account["checked_at"] = checked
+    return merged
+
+
+def checkin_drops(rewards_ledger, remote_rewards=None):
     drops = []
-    for slot, account in ((rewards_ledger or {}).get("accounts") or {}).items():
-        days = account.get("days") or {}
+    for slot, account in merged_reward_days(rewards_ledger, remote_rewards).items():
+        days = account["days"]
+        # A remote-only streak is shown under the provider it belongs to.
+        source = slot[len("remote:"):] if slot.startswith("remote:") else slot
         streak, previous = 0, None
         for date in sorted(days):
             record = days[date]
-            status = record.get("status") or {}
             claims = record.get("claims") or []
             for claim in claims:
                 if claim.get("result") != "ok":
                     continue
                 at = _epoch(claim.get("at")) or _day_epoch(date)
                 if str(claim.get("item", "")).startswith("task:"):
-                    drops.append({"card": "ck_task", "at": at, "source": slot, "detail": claim.get("title")})
+                    drops.append({"card": "ck_task", "at": at, "source": source, "detail": claim.get("title")})
                     if claim.get("badge"):
-                        drops.append({"card": "ck_badge", "at": at, "source": slot, "detail": claim.get("badge")})
-            signed = status.get("signed_in") is True or any(c.get("result") == "ok" and c.get("item") == "daily_checkin"
-                                                            for c in claims)
+                        drops.append({"card": "ck_badge", "at": at, "source": source, "detail": claim.get("badge")})
+            signed = _signed(record)
             if not signed:
                 continue
             day = datetime.strptime(date, "%Y-%m-%d")
             streak = streak + 1 if previous and (day - previous).days == 1 else 1
             previous = day
-            at = _day_epoch(date) if date != max(days) else min(_day_epoch(date), account.get("checked_at") or _day_epoch(date))
-            drops.append({"card": "ck_daily", "at": at, "source": slot, "detail": "连续第 %d 天" % streak})
+            at = _day_epoch(date) if date != max(days) else min(_day_epoch(date), account["checked_at"] or _day_epoch(date))
+            drops.append({"card": "ck_daily", "at": at, "source": source, "detail": "连续第 %d 天" % streak})
             for size, card in ((7, "ck_7"), (30, "ck_30"), (100, "ck_100")):
                 if streak % size == 0:
-                    drops.append({"card": card, "at": at, "source": slot, "detail": "连续 %d 天" % streak})
+                    drops.append({"card": card, "at": at, "source": source, "detail": "连续 %d 天" % streak})
     return drops
 
 
@@ -647,7 +701,7 @@ class CollectionService:
         self.ledger = load_ledger(self.path)
         self.fresh = not self.ledger["drops"] and not self.ledger["windows"] and not self.ledger["inventory"]
 
-    def update(self, snapshot, rewards_ledger, now):
+    def update(self, snapshot, rewards_ledger, now, remote_rewards=None):
         sources = snapshot.get("sources") or []
         changed = False
         if self.fresh:
@@ -661,12 +715,13 @@ class CollectionService:
                 save_ledger(self.path, self.ledger)
             except OSError:
                 pass
-        return build(self.ledger, sources, rewards_ledger, snapshot.get("rewards"), now, rate_from(snapshot))
+        return build(self.ledger, sources, rewards_ledger, snapshot.get("rewards"), now, rate_from(snapshot),
+                     remote_rewards)
 
 
-def build(ledger, sources, rewards_ledger, rewards_summary, now, fx_rate=FX_FALLBACK):
+def build(ledger, sources, rewards_ledger, rewards_summary, now, fx_rate=FX_FALLBACK, remote_rewards=None):
     ledger_drops = [d for d in ledger["drops"] if d.get("card") in CARD_IDS]
-    checkin = [d for d in checkin_drops(rewards_ledger) if d.get("card") in CARD_IDS]
+    checkin = [d for d in checkin_drops(rewards_ledger, remote_rewards) if d.get("card") in CARD_IDS]
     drops = sorted(ledger_drops + checkin, key=lambda d: d["at"])
     # Copy counts come from the ledger tally, which the trimmed drop log never
     # touches; check-in cards are derived and counted on top.

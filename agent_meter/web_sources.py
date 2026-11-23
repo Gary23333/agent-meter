@@ -25,6 +25,7 @@ SESSION_FIELDS = {
     "mimo": {"cookie", "user_agent"},
     "stepfun": {"cookie", "api_key", "user_agent"},
     "claude": {"cookie", "user_agent"},
+    "doubao": {"cookie", "user_agent"},
     "qoder": {"cookie", "user_agent"},
     "workbuddy": {"cookie", "user_agent"},
     "trae_cn": {"token", "device_id", "user_agent"},

@@ -579,7 +579,7 @@ final class PetController: NSObject, WKNavigationDelegate {
         menu.addItem(ClosureMenuItem("立即刷新") { [weak self] in self?.store.refresh() })
 
         let panelMenu = NSMenu()
-        for (title, tab) in [("账户额度", "accounts"), ("应用与会话", "apps"), ("重置预测", "forecast"), ("本机消耗", "usage"), ("桌宠", "pet")] {
+        for (title, tab) in [("账户额度", "accounts"), ("应用与会话", "apps"), ("重置预测", "forecast"), ("消耗", "usage"), ("桌宠", "pet")] {
             panelMenu.addItem(ClosureMenuItem(title) { [weak self] in self?.openPanel(tab: tab) })
         }
         let panelItem = NSMenuItem(title: "打开面板", action: nil, keyEquivalent: "")

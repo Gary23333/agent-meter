@@ -108,24 +108,6 @@ final class UsageStore {
             Task { await pushPreferences(); await fetch(force: true) }
         }
     }
-    /// Opt-in: the backend claims TRAE check-in and finished WorkBuddy tasks.
-    /// This is the app's only write to a provider account, so it starts off.
-    var autoClaimEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(autoClaimEnabled, forKey: "autoClaimEnabled")
-            Task { await pushPreferences(); await fetch(force: true) }
-            scheduleClaim()
-        }
-    }
-    /// Daily moment ("HH:MM", Beijing time) when auto-claim runs.
-    var claimTime: String {
-        didSet {
-            UserDefaults.standard.set(claimTime, forKey: "claimTime")
-            Task { await pushPreferences(); await fetch(force: true) }
-            scheduleClaim()
-        }
-    }
-    @ObservationIgnored private var claimTask: Task<Void, Never>?
     /// Accounts with a "claim now" request in flight.
     var claimingSlots: Set<String> = []
     /// A "claim every account now" request is in flight.
@@ -153,6 +135,16 @@ final class UsageStore {
     /// Local + remote projection from GET /v1/sync/history. The account view
     /// uses its quota rows to show observations that came from another Mac.
     var syncHistory: JSON?
+    /// Device-local: whether the shared preferences (theme, alert threshold,
+    /// card order, menu bar, budget) follow the other devices.
+    var syncPreferencesEnabled: Bool {
+        didSet { UserDefaults.standard.set(syncPreferencesEnabled, forKey: SyncPreferenceSync.enabledKey) }
+    }
+    /// What this Mac is called in the sync space: its computer name until the
+    /// user renames it in the sync window.
+    var syncDeviceName: String {
+        didSet { syncDeviceName = SyncConfigurationStore.setDeviceName(syncDeviceName) }
+    }
 
     @ObservationIgnored private let backend = BackendProcess()
     /// Read-only accessor for windows that talk to the backend directly.
@@ -161,6 +153,7 @@ final class UsageStore {
     @ObservationIgnored private var loops: [Task<Void, Never>] = []
     @ObservationIgnored private var syncTask: Task<Void, Never>?
     @ObservationIgnored private var fetchTask: Task<Void, Never>?
+    @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     /// Ticker change arrows: last distinct value and its change, per item.
     @ObservationIgnored private var tickerBaseline: [String: Double] = [:]
     var tickerDelta: [String: Double] = [:]
@@ -178,12 +171,17 @@ final class UsageStore {
         notificationsEnabled = d.object(forKey: "notificationsEnabled") as? Bool ?? true
         claudeEnabled = d.object(forKey: "claudeEnabled") as? Bool ?? true
         forecastEnabled = d.object(forKey: "forecastEnabled") as? Bool ?? true
-        autoClaimEnabled = d.object(forKey: "autoClaimEnabled") as? Bool ?? false
-        claimTime = d.string(forKey: "claimTime") ?? "08:00"
+        // Claiming stopped being a setting: the old switch and daily time are
+        // forgotten rather than left behind in preferences.
+        for stale in ["autoClaimEnabled", "claimTime"] where d.object(forKey: stale) != nil {
+            d.removeObject(forKey: stale)
+        }
         lowQuotaThreshold = d.object(forKey: "lowQuotaThreshold") as? Double ?? 20
         lowResourceMode = d.object(forKey: "lowResourceMode") as? Bool ?? false
         skipLedgersLowResource = d.stringArray(forKey: "skipLedgersLowResource") ?? []
         syncInterval = SyncInterval.stored(in: d)
+        syncPreferencesEnabled = SyncPreferenceSync.enabled(in: d)
+        syncDeviceName = SyncConfigurationStore.deviceName(in: d)
     }
 
     var projectDirectory: URL? { client?.project }
@@ -212,6 +210,9 @@ final class UsageStore {
         await fetch(force: false)
         await loadSyncHistory()
         startLoops()
+        // A paired device catches up first thing; the interval only decides
+        // what happens afterwards.
+        Task { await syncOnTimer() }
         // 会话活动 uses its own lightweight endpoint and cadence.
         ActivityTracker.shared.start()
         loops.append(Task { [weak self] in
@@ -266,44 +267,13 @@ final class UsageStore {
         }
     }
 
-    /// Choices for the claim time: just after midnight, then every half hour.
-    static let claimTimeOptions: [String] = ["00:05"] + (6...23).flatMap { h in [String(format: "%02d:00", h), String(format: "%02d:30", h)] }
-
-    /// Next claim moment in Beijing time after `date`.
-    static func nextClaim(after date: Date, time: String) -> Date {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        let parts = time.split(separator: ":").compactMap { Int($0) }
-        let hour = parts.first ?? 8, minute = parts.count > 1 ? parts[1] : 0
-        let today = cal.date(bySettingHour: hour, minute: minute, second: 0, of: date) ?? date
-        return today > date ? today : cal.date(byAdding: .day, value: 1, to: today) ?? today
-    }
-
-    var nextClaimDate: Date? { autoClaimEnabled ? Self.nextClaim(after: Date(), time: claimTime) : nil }
-
-    /// Wakes up at the claim moment and refreshes, so claiming does not wait
-    /// for the regular poll. The backend decides what to claim.
-    private func scheduleClaim() {
-        claimTask?.cancel()
-        guard autoClaimEnabled else { return }
-        claimTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                let target = Self.nextClaim(after: Date(), time: self.claimTime).addingTimeInterval(15)
-                try? await Task.sleep(for: .seconds(max(1, target.timeIntervalSinceNow)))
-                if Task.isCancelled { return }
-                await self.fetch(force: true)
-                // A second look a minute later catches the re-read after a claim.
-                try? await Task.sleep(for: .seconds(70))
-                if Task.isCancelled { return }
-                await self.fetch(force: true)
-            }
-        }
-    }
-
     private func startLoops() {
-        scheduleClaim()
         startSyncLoop()
+        // A laptop that just woke up slept through its interval: catch up now.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wakeSync() }
+        }
         loops.append(Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(20))
@@ -320,6 +290,18 @@ final class UsageStore {
 
     // MARK: - Cloud sync
 
+    /// A background round: at launch, after wake, and on the interval. It only
+    /// runs for a paired device whose automatic sync is on; "关闭自动同步"
+    /// means nothing happens until the user presses the button.
+    private func syncOnTimer() async {
+        guard !isPreview, syncInterval.seconds != nil, SyncConfigurationStore.load() != nil else { return }
+        await syncNow(automatic: true)
+    }
+
+    private func wakeSync() {
+        Task { await syncOnTimer() }
+    }
+
     /// One manual or automatic sync round. Manual and timer callers share the
     /// same guard, so an auto round never overlaps a button press.
     @discardableResult
@@ -330,6 +312,20 @@ final class UsageStore {
             return nil
         }
         guard let client else {
+            if !automatic { syncMessage = "本机后端尚未就绪，请稍后再试。" }
+            return nil
+        }
+        // A click can land in the second before the bundled backend binds
+        // 127.0.0.1:8769 (launch, or any restart). Wait for that bootstrap
+        // instead of surfacing "无法连接本机后端" from a healthy app.
+        if phase == .starting {
+            if !automatic { syncMessage = "本机后端启动中，正在等待…" }
+            for _ in 0..<60 {
+                if phase != .starting { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+        guard await client.healthy() else {
             if !automatic { syncMessage = "本机后端尚未就绪，请稍后再试。" }
             return nil
         }
@@ -346,12 +342,28 @@ final class UsageStore {
             let transport = try SyncService(baseURL: url)
             let keys = try SyncKeys(masterKey: config.masterKey, spaceID: config.spaceID)
             let runner = SyncRunner(transport: transport, keys: keys, deviceID: config.deviceID)
-            var settings = SyncSettings()
-            settings.theme = theme.rawValue
-            settings.lowQuotaThreshold = lowQuotaThreshold
-            settings.alertsEnabled = notificationsEnabled
-            let coordinator = SyncCoordinator(backend: client, runner: runner, settings: settings)
+            // Whatever changed here since the last round gets this round's
+            // stamp; the other devices compare stamps before they adopt it.
+            var settings = sharedSettings()
+            var state = SyncPreferenceSync.load()
+            let adopt = !state.started && UserDefaults.standard.bool(forKey: SyncPreferenceSync.adoptKey)
+            settings.changedAt = SyncPreferenceSync.noting(settings.values, at: Date().timeIntervalSince1970,
+                                                           state: &state)
+            let coordinator = SyncCoordinator(backend: client, runner: runner, settings: settings,
+                                              deviceName: syncDeviceName, appVersion: Self.appVersion)
             let report = try await coordinator.run()
+            if syncPreferencesEnabled {
+                for carried in report.remoteSettings {
+                    if let patch = SyncPreferenceSync.accepted(carried.settings, local: sharedSettings(),
+                                                               state: state, adopt: adopt) {
+                        await applySynced(patch)
+                        SyncPreferenceSync.applied(patch, to: &state)
+                    }
+                }
+            }
+            // What the other devices changed is this device's value now.
+            state.local = sharedSettings().values
+            SyncPreferenceSync.save(state)
             lastSyncAt = Date()
             syncMessage = Self.summary(for: report)
             await loadSyncHistory()
@@ -361,6 +373,113 @@ final class UsageStore {
             NSLog("AgentMeterBar sync: %@", String(describing: error))
             return nil
         }
+    }
+
+    /// The preferences this device shares with the space, as they are now.
+    private func sharedSettings() -> SyncSettings {
+        var settings = SyncSettings()
+        settings.theme = theme.rawValue
+        settings.lowQuotaThreshold = lowQuotaThreshold
+        settings.alertsEnabled = notificationsEnabled
+        settings.menuBarMode = menuBarMode.rawValue
+        settings.sourceOrder = UserDefaults.standard.stringArray(forKey: "sourceOrder") ?? []
+        settings.budget = sharedBudget
+        return settings
+    }
+
+    /// The budget amounts that are set, in CNY. Empty means no budget, and
+    /// travels too: clearing a budget on one device clears it everywhere.
+    private var sharedBudget: [String: Double] {
+        let config = budget?.json["config"] ?? .null
+        var out: [String: Double] = [:]
+        for key in ["daily_cny", "weekly_cny", "anomaly_multiplier"] {
+            if let value = config[key].double, value > 0 { out[key] = value }
+        }
+        return out
+    }
+
+    /// Writes a newer value from another device through this store's own
+    /// setters, exactly as if the user had picked it here.
+    private func applySynced(_ patch: SyncSettings) async {
+        if let name = patch.theme, let value = PanelTheme(rawValue: name) { theme = value }
+        if let threshold = patch.lowQuotaThreshold, (0...100).contains(threshold) { lowQuotaThreshold = threshold }
+        if let alerts = patch.alertsEnabled { notificationsEnabled = alerts }
+        if let name = patch.menuBarMode, let value = MenuBarMode(rawValue: name) { menuBarMode = value }
+        if let order = patch.sourceOrder { setSourceOrder(order.isEmpty ? nil : order) }
+        if let amounts = patch.budget, let client {
+            let multiplier = amounts["anomaly_multiplier"].map { String($0) }
+                ?? budget?.configMultiplier ?? "2.0"
+            _ = try? await client.putBudget(daily: amounts["daily_cny"].map { String($0) },
+                                            weekly: amounts["weekly_cny"].map { String($0) },
+                                            multiplier: multiplier)
+            await refreshBudget()
+        }
+    }
+
+    /// Called by the pairing window when this device joined a space, or
+    /// another device joined its space. The first round runs right away, so
+    /// the merge shows up without a button press or a wait for the interval.
+    func pairingFinished() {
+        startSyncLoop()
+        Task { await syncNow() }
+    }
+
+    /// Leaves the sync space completely: this device's blob is removed from
+    /// the service, every other device is forgotten here, and the key is
+    /// dropped. What cannot be removed is said out loud, never assumed.
+    func unpair() async {
+        syncTask?.cancel()
+        syncTask = nil
+        var note = "已退出同步空间：本机上传的数据已从服务端删除，其他设备的数据已从本机清除。"
+        if let client { try? await client.resetSync() }
+        if let config = SyncConfigurationStore.load() {
+            var left = false
+            if let url = URL(string: config.baseURL) {
+                do {
+                    let transport = try SyncService(baseURL: url)
+                    let keys = try SyncKeys(masterKey: config.masterKey, spaceID: config.spaceID)
+                    try await SyncRunner(transport: transport, keys: keys, deviceID: config.deviceID).leave()
+                    left = true
+                } catch {
+                    NSLog("AgentMeterBar sync leave: %@", String(describing: error))
+                }
+            }
+            if !left {
+                note = "已退出同步空间，其他设备的数据已从本机清除；但连不上同步服务，服务端上本机的数据没有删除。重新配对后可以在设备列表里移除它。"
+            }
+        }
+        SyncConfigurationStore.clear()
+        SyncPreferenceSync.reset()
+        syncHistory = nil
+        lastSyncAt = nil
+        syncMessage = note
+    }
+
+    /// Takes another device out of the space: its blob is deleted from the
+    /// service and what it sent is forgotten here.
+    func forgetSyncDevice(_ device: String) async {
+        guard let config = SyncConfigurationStore.load(), device != config.deviceID else { return }
+        let name = syncHistory?["devices"].array.first { $0["device"].string == device }?["name"].string ?? ""
+        let shown = SyncConfigurationStore.label(name: name, device: device)
+        guard let url = URL(string: config.baseURL) else {
+            syncMessage = "同步服务地址无效。"
+            return
+        }
+        do {
+            let transport = try SyncService(baseURL: url)
+            let keys = try SyncKeys(masterKey: config.masterKey, spaceID: config.spaceID)
+            try await SyncRunner(transport: transport, keys: keys, deviceID: config.deviceID).remove(device: device)
+            if let client { try await client.forgetSyncDevice(device) }
+            await loadSyncHistory()
+            syncMessage = "已移除「\(shown)」：它上传的数据已从服务端和本机删除。"
+        } catch {
+            syncMessage = "移除设备失败：" + Self.message(for: error)
+            NSLog("AgentMeterBar sync forget %@: %@", device, String(describing: error))
+        }
+    }
+
+    static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     }
 
     /// Restarts the sleep loop whenever the interval changes. Only one timer
@@ -397,10 +516,14 @@ final class UsageStore {
         text += "，空间内共 \(report.devices) 台设备"
         if !report.importedDevices.isEmpty {
             text += "，合并了 \(report.importedDevices.count) 台其他设备"
-            if report.remoteQuotaRows > 0 { text += "（\(report.remoteQuotaRows) 条额度）" }
+            var parts: [String] = []
+            if report.remoteQuotaRows > 0 { parts.append("\(report.remoteQuotaRows) 条额度") }
+            if report.remoteAccountRows > 0 { parts.append("\(report.remoteAccountRows) 个账户") }
+            if report.remoteRewardRows > 0 { parts.append("\(report.remoteRewardRows) 天签到记录") }
+            if !parts.isEmpty { text += "（" + parts.joined(separator: "、") + "）" }
         }
         if !report.failedDevices.isEmpty {
-            text += "；\(report.failedDevices.count) 台设备的密文无法读取"
+            text += "；\(report.failedDevices.count) 台设备的密文无法读取（对方版本较旧，或不在同一空间）"
         }
         return text + "。"
     }
@@ -588,10 +711,8 @@ final class UsageStore {
         var off: [String] = []
         if !claudeEnabled { off.append("claude") }
         if !forecastEnabled { off.append("reset_forecast") }
-        let autoClaim = autoClaimEnabled ? ["trae_cn", "workbuddy", "qoder"] : []
         do { try await client.putPreferences(disabled: off, lowResource: lowResourceMode,
-                                             skipLedgers: skipLedgersLowResource,
-                                             autoClaim: autoClaim, claimTime: claimTime) }
+                                             skipLedgers: skipLedgersLowResource) }
         catch { NSLog("AgentMeterBar preferences push: %@", String(describing: error)) }
     }
 
@@ -607,6 +728,8 @@ final class UsageStore {
     }
 
     /// The user's "领取" button: claims one account now, then shows the result.
+    /// Nothing claims on its own — this and `claimAllRewards()` are the only
+    /// two ways a provider account is written to.
     func claimReward(_ slot: String) async {
         guard let client, !claimingSlots.contains(slot) else { return }
         claimingSlots.insert(slot)
@@ -616,8 +739,7 @@ final class UsageStore {
         await fetch(force: false)
     }
 
-    /// The panel's "立即领取" button: every account at once, independent of the
-    /// daily schedule and of the auto-claim switch.
+    /// The settings menu's "领取每日积分" button: every account at once.
     func claimAllRewards() async {
         guard let client, !claimingAll else { return }
         claimingAll = true
@@ -693,6 +815,10 @@ final class UsageStore {
     func shutdown() {
         loops.forEach { $0.cancel() }
         syncTask?.cancel()
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
         backend.stop()
     }
 

@@ -6,14 +6,18 @@ struct AccountsView: View {
     let now: Date
     /// GET /v1/sync/history. Quota rows with a `device` field came from
     /// another Mac; local rows stay authoritative and are not repeated here.
+    /// `accounts` is what other devices read for an account (balances, reset
+    /// cards, renewal); `devices` names the devices.
     var syncHistory: JSON? = nil
+
+    private var devices: [JSON] { syncHistory?["devices"].array ?? [] }
 
     private var remoteQuota: [JSON] {
         // The store keeps one row per account/window/day. The account page
         // only wants the newest observation per window, not every historical
         // day that device ever uploaded.
         var latest: [String: JSON] = [:]
-        for row in syncHistory?["quota"].array ?? [] {
+        for row in syncHistory?["remote_quota"].array ?? [] {
             guard row["device"].string != nil,
                   row["remaining_percent"].double != nil else { continue }
             let key = [row["account"].string ?? "", row["bucket"].string ?? "",
@@ -23,30 +27,66 @@ struct AccountsView: View {
                 latest[key] = row
             }
         }
-        return latest.values.sorted {
+        return latest.values.map(AccountsView.syncedDisplayRow).sorted {
             let a = ($0["account"].string ?? "", $0["bucket"].string ?? "", $0["window"].string ?? "")
             let b = ($1["account"].string ?? "", $1["bucket"].string ?? "", $1["window"].string ?? "")
             return a < b
         }
     }
 
+    /// The account facts other devices reported, newest per account.
+    private var remoteAccounts: [JSON] { syncHistory?["accounts"].array ?? [] }
+
+    /// Device id → the name it announced to the space.
+    private var deviceNames: [String: String] {
+        var out: [String: String] = [:]
+        for device in devices {
+            if let id = device["device"].string { out[id] = device["name"].string ?? "" }
+        }
+        return out
+    }
+
+    private var syncSummary: String? {
+        guard !devices.isEmpty else { return nil }
+        let quotaCount = (syncHistory?["remote_quota"].array ?? []).count
+        let names = devices.compactMap { $0["device"].string }
+            .map { SyncConfigurationStore.label(name: deviceNames[$0] ?? "", device: $0) }
+            .joined(separator: "、")
+        var text = "已同步 \(devices.count) 台设备 · \(quotaCount) 条额度"
+        if !remoteAccounts.isEmpty { text += " · \(remoteAccounts.count) 个账户" }
+        return text + " · " + names
+    }
+
     var body: some View {
+        let matched = Set(snapshot.accountSources.map(\.syncAccountKey))
+        let unmatchedQuota = remoteQuota.filter { !matched.contains($0["account"].string ?? "") }
+        let unmatchedAccounts = remoteAccounts.filter { !matched.contains($0["account"].string ?? "") }
         VStack(alignment: .leading, spacing: 10) {
-            if snapshot.accountSources.isEmpty {
+            if let syncSummary {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text(syncSummary)
+                    Spacer(minLength: 4)
+                    Text("本机更新时优先本机")
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.system(size: 10.5))
+                .themeForeground(.secondary)
+            }
+            if snapshot.accountSources.isEmpty && unmatchedQuota.isEmpty && unmatchedAccounts.isEmpty {
                 Card {
                     Text("暂时没有可显示的账户额度。").font(.system(size: 12)).themeForeground(.secondary)
                 }
             }
-            ForEach(snapshot.accountSources) {
-                AccountCard(source: $0, snapshot: snapshot, now: now,
-                            remoteQuota: remoteQuota(for: $0))
+            ForEach(snapshot.accountSources) { source in
+                AccountCard(source: source, snapshot: snapshot, now: now,
+                            remoteQuota: remoteQuota(for: source),
+                            remoteAccount: remoteAccounts.first { $0["account"].string == source.syncAccountKey },
+                            deviceNames: deviceNames)
             }
-            let unmatched = remoteQuota.filter { row in
-                guard let account = row["account"].string else { return true }
-                return !snapshot.accountSources.contains { $0.accountKey == account }
-            }
-            if !unmatched.isEmpty {
-                RemoteQuotaSection(rows: unmatched, snapshot: snapshot, now: now)
+            if !unmatchedQuota.isEmpty || !unmatchedAccounts.isEmpty {
+                RemoteQuotaSection(rows: unmatchedQuota, accounts: unmatchedAccounts,
+                                   snapshot: snapshot, now: now, deviceNames: deviceNames)
                     .padding(.top, 4)
             }
             if !snapshot.inactiveSources.isEmpty {
@@ -62,54 +102,190 @@ struct AccountsView: View {
     }
 
     private func remoteQuota(for source: Source) -> [JSON] {
-        guard let account = source.accountKey else { return [] }
+        let account = source.syncAccountKey
         return remoteQuota.filter { $0["account"].string == account }
+    }
+
+    /// Synced rows use a bare epoch for resets_at and carry no model-group
+    /// label. Normalize both so the account card's bars read like local ones
+    /// ("Gemini · 5 小时" instead of five identical "5 小时"/"7 天" rows).
+    static func syncedDisplayRow(_ row: JSON) -> JSON {
+        var object = row.object
+        if let reset = row["resets_at"].double {
+            object["resets_at"] = .object(["epoch_seconds": .number(reset)])
+        }
+        if object["group"]?.string == nil, let bucket = row["bucket"].string {
+            if bucket.hasPrefix("gemini") { object["group"] = .string("Gemini") }
+            else if bucket.hasPrefix("3p") { object["group"] = .string("3P") }
+        }
+        return .object(object)
     }
 }
 
-/// Quota observations that came from another device. Same-account rows were
-/// already collapsed to the latest observation by the backend's
-/// `quota_history`; different accounts remain separate rows.
+/// Credit wallet rows as a card shows them. Used for a local metric and for a
+/// synced one (which `normalizedCreditRow` brings into the same shape).
+private func creditInfoRows(_ c: JSON, sourceID: String?, now: Date) -> [InfoRow] {
+    let unit = c["unit"].string
+    let raw = c["balance"].double ?? c["remaining"].double ?? c["amount"].double ?? c["total"].double
+    if c["unlimited"].bool == true {
+        return [InfoRow(symbol: "infinity", title: "余额", value: "无限额度")]
+    }
+    guard let balance = raw else { return [] }
+    let isMoney = unit == "CNY" || unit == "USD"
+    let value = isMoney ? Fmt.amount(balance, unit: unit) : Fmt.grouped(balance) + " " + Catalog.unitLabel(unit)
+    var title = c["kind"].string == "booster_wallet" ? "加油包余额" : "余额"
+    if let b = c["bucket"].string, let sourceID, b != sourceID, b != "codex" { title = Catalog.bucketLabel(c) }
+    var detail: String?
+    if let granted = c["granted"].double, let topped = c["topped_up"].double {
+        detail = "赠送 \(Fmt.amount(granted, unit: unit)) · 充值 \(Fmt.amount(topped, unit: unit))"
+    }
+    var rows = [InfoRow(symbol: isMoney ? "creditcard" : "circle.hexagongrid.fill", title: title, value: value, detail: detail)]
+    // Credit buckets with their own expiry (e.g. MiniMax Design membership credits).
+    for b in c["buckets"].array {
+        guard let amount = b["balance"].double else { continue }
+        let exp = b["expires_at"].date
+        let bucketTitle = ["vip": "会员积分", "gift": "赠送积分", "purchase": "购买积分"][b["type"].string ?? ""] ?? "积分包"
+        rows.append(InfoRow(symbol: "hourglass", title: bucketTitle,
+                            value: Fmt.grouped(amount),
+                            detail: exp.map { "\(Fmt.day($0, now: now)) 失效 · \(Fmt.countdown(to: $0, now: now))" } ?? "无失效日期",
+                            valueTint: .secondary, nested: true))
+    }
+    return rows
+}
+
+/// One thing another device read for an account, and the part of a card it
+/// belongs to, so a local card takes only what it lacks.
+private struct RemoteAccountFact {
+    let category: String
+    let row: InfoRow
+}
+
+private func remoteDeviceLabel(_ device: String?, names: [String: String]) -> String {
+    guard let device else { return "其他设备" }
+    return SyncConfigurationStore.label(name: names[device] ?? "", device: device)
+}
+
+/// A synced balance row carries plain numbers and bare epochs; put its bucket
+/// expiries back into the timestamp shape the credit rows are written for.
+private func normalizedCreditRow(_ remote: JSON) -> JSON {
+    var object = remote.object
+    if !remote["buckets"].isNull {
+        object["buckets"] = .array(remote["buckets"].array.map { bucket in
+            var entry = bucket.object
+            if let expiry = bucket["expires_at"].double {
+                entry["expires_at"] = .object(["epoch_seconds": .number(expiry)])
+            }
+            return .object(entry)
+        })
+    }
+    return .object(object)
+}
+
+/// What a synced account row offers: balances, reset cards, renewal, credit
+/// refresh and membership end. Each row says which device read it.
+private func remoteAccountFacts(_ remote: JSON, device: String, now: Date) -> [RemoteAccountFact] {
+    var out: [RemoteAccountFact] = []
+    let from = "来自 " + device
+    for credit in remote["credits"].array.prefix(3) {
+        for var row in creditInfoRows(normalizedCreditRow(credit), sourceID: remote["provider"].string, now: now) {
+            row.detail = [row.detail, from].compactMap { $0 }.joined(separator: " · ")
+            out.append(RemoteAccountFact(category: "credits", row: row))
+        }
+    }
+    if remote["reset_cards"]["count"].double != nil {
+        let count = Int(remote["reset_cards"]["count"].double ?? 0)
+        let next = remote["reset_cards"]["expiries"].array.compactMap { $0.double }
+            .map { Date(timeIntervalSince1970: $0) }.min()
+        var detail: [String] = []
+        if let next { detail.append("最早 " + Fmt.moment(next, now: now) + " 到期") }
+        detail.append(from)
+        let urgent = next.map { $0.timeIntervalSince(now) < 7 * 86400 } ?? false
+        out.append(RemoteAccountFact(category: "reset_cards", row: InfoRow(
+            symbol: "ticket", title: "重置卡", value: "\(count) 张",
+            detail: detail.joined(separator: " · "), valueTint: urgent ? .orange : .primary)))
+    }
+    for (category, key, symbol, title) in [("renewal", "renewal_date", "calendar", "续费"),
+                                           ("credit_refresh", "credit_refresh_date", "arrow.triangle.2.circlepath", "积分更新"),
+                                           ("membership", "ends_on", "calendar.badge.clock", "会员到期")] {
+        guard let day = Fmt.parseDay(remote[key].string) else { continue }
+        out.append(RemoteAccountFact(category: category, row: InfoRow(
+            symbol: symbol, title: title, value: Fmt.dayCountdown(day, now: now),
+            detail: Fmt.day(day, now: now) + " · " + from,
+            valueTint: Fmt.daysUntil(day, now: now) <= 3 ? .orange : .primary)))
+    }
+    return out
+}
+
+/// Accounts only other devices are logged into. Same-account quota rows were
+/// already collapsed to the latest observation by the backend; each account
+/// keeps its own card with the windows and the facts the other device read.
 private struct RemoteQuotaSection: View {
     let rows: [JSON]
+    let accounts: [JSON]
     let snapshot: Snapshot
     let now: Date
+    let deviceNames: [String: String]
 
-    private func source(for row: JSON) -> Source? {
-        guard let account = row["account"].string else { return nil }
-        return snapshot.sources.first { $0.accountKey == account }
+    private struct Entry: Identifiable {
+        let id: String
+        var provider: String?
+        var quota: [JSON] = []
+        var account: JSON?
+    }
+
+    /// One entry per account, whether it arrived with quota, facts or both.
+    private var entries: [Entry] {
+        var map: [String: Entry] = [:]
+        for row in rows {
+            let key = row["account"].string ?? ""
+            var entry = map[key] ?? Entry(id: key, provider: nil)
+            entry.quota.append(row)
+            map[key] = entry
+        }
+        for account in accounts {
+            let key = account["account"].string ?? ""
+            var entry = map[key] ?? Entry(id: key, provider: nil)
+            entry.account = account
+            entry.provider = account["provider"].string
+            map[key] = entry
+        }
+        return map.values.sorted { $0.id < $1.id }
+    }
+
+    private func title(_ entry: Entry) -> String {
+        let handle = "账号 " + String(entry.id.prefix(8)) + "…"
+        guard let provider = entry.provider else { return handle }
+        return Catalog.brand(provider).name + " · " + handle
     }
 
     private func displayRow(_ row: JSON) -> JSON {
         // Local quota rows carry resets_at as {epoch_seconds, ...}; synced
         // rows carry a bare epoch. Normalize so QuotaBar can render both.
-        guard let reset = row["resets_at"].double else { return row }
-        var object = row.object
-        object["resets_at"] = .object(["epoch_seconds": .number(reset)])
-        return .object(object)
+        AccountsView.syncedDisplayRow(row)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(text: "其他设备同步的额度")
-            Card {
-                VStack(alignment: .leading, spacing: 9) {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
-                        if i > 0 { Divider().opacity(0.45) }
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 6) {
-                                Text(source(for: row)?.displayName
-                                     ?? "账号 " + String((row["account"].string ?? "未知").prefix(8)) + "…")
-                                    .font(.system(size: 11.5, weight: .medium))
-                                    .themeForeground()
-                                Spacer(minLength: 6)
-                                Text(row["device"].string.map { "设备 \(String($0.prefix(8)))…" } ?? "已同步")
-                                    .font(.system(size: 9.5, design: .monospaced))
-                                    .themeForeground(.tertiary)
-                            }
-                            QuotaBar(quota: displayRow(row), now: now,
-                                     isClaude: source(for: row)?.baseID == "claude")
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(text: "其他设备同步的账户")
+            ForEach(entries) { entry in
+                Card(tint: Catalog.brand(entry.provider ?? "").tint) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack(spacing: 6) {
+                            Text(title(entry))
+                                .font(.system(size: 11.5, weight: .medium))
+                                .themeForeground()
+                            Spacer(minLength: 6)
+                            Text(entry.account.flatMap { $0["device"].string }.map { remoteDeviceLabel($0, names: deviceNames) }
+                                     ?? entry.quota.first?["device"].string.map { remoteDeviceLabel($0, names: deviceNames) }
+                                     ?? "已同步")
+                                .font(.system(size: 9.5))
+                                .themeForeground(.tertiary)
                         }
+                        ForEach(Array(entry.quota.enumerated()), id: \.offset) { _, row in
+                            QuotaBar(quota: displayRow(row), now: now, isClaude: entry.provider == "claude")
+                        }
+                        let facts = entry.account.map { remoteAccountFacts($0, device: remoteDeviceLabel($0["device"].string, names: deviceNames), now: now) } ?? []
+                        ForEach(Array(facts.enumerated()), id: \.offset) { _, fact in fact.row }
                     }
                 }
             }
@@ -154,6 +330,10 @@ struct AccountCard: View {
     /// Latest synced observations for this account. Same-account quota is
     /// merged by observation time; different accounts never reach this card.
     var remoteQuota: [JSON] = []
+    /// What another device last read for this account (balances, reset cards,
+    /// renewal). Only the parts this Mac cannot read itself are shown.
+    var remoteAccount: JSON? = nil
+    var deviceNames: [String: String] = [:]
     @Environment(\.panelTheme) private var theme
 
     private var brand: Catalog.Brand { Catalog.brand(source.id) }
@@ -161,6 +341,33 @@ struct AccountCard: View {
     private var tint: Color { theme.tint(brand.tint) }
     private var quotas: [JSON] { mergedQuotas() }
     private var isClaude: Bool { source.id == "claude" || source.id.hasPrefix("claude#") }
+
+    /// One line under the bars when part of what is shown came from another
+    /// Mac; the card otherwise looks entirely local.
+    private var remoteQuotaNote: String? {
+        guard let device = remoteQuota.first?["device"].string else { return nil }
+        if remoteQuotaUsed {
+            return "含其他设备同步的额度 · 设备 " + String(device.prefix(8)) + "…"
+        }
+        return "其他设备也上报了 \(remoteQuota.count) 条额度 · 本机观测更新，优先本机"
+    }
+
+    /// True when a synced row supplies a value or a window that local data
+    /// does not have. When local observed later, the merged values stay local,
+    /// but the card still needs to say the sync did arrive.
+    private var remoteQuotaUsed: Bool {
+        guard !remoteQuota.isEmpty else { return false }
+        let local = source.metric("quota")?.value.rows
+            .filter { $0["remaining_percent"].double != nil } ?? []
+        let localObserved = source.observedAt?.timeIntervalSince1970 ?? 0
+        for row in local {
+            guard let remote = remoteQuota.first(where: { sameWindow(row, $0) }) else { continue }
+            if (remote["observed_at"].double ?? 0) > localObserved { return true }
+        }
+        return remoteQuota.contains { remote in
+            !local.contains { sameWindow($0, remote) }
+        }
+    }
 
     private func sameWindow(_ lhs: JSON, _ rhs: JSON) -> Bool {
         lhs["bucket"].string == rhs["bucket"].string
@@ -206,7 +413,11 @@ struct AccountCard: View {
                     }
                 }
             }
+            if let note = remoteQuotaNote {
+                Text(note).font(.system(size: 9.5)).themeForeground(.tertiary)
+            }
             details
+            if let remoteAccount { remoteFacts(remoteAccount) }
             if let reward = snapshot.reward(for: source.id) { RewardSection(reward: reward, now: now, tint: tint) }
             webUsage
             deepseekPeak
@@ -552,37 +763,37 @@ struct AccountCard: View {
     }
 
     private func creditRows(_ c: JSON) -> [InfoRow] {
-        let unit = c["unit"].string
-        let raw = c["balance"].double ?? c["remaining"].double ?? c["amount"].double ?? c["total"].double
-        if c["unlimited"].bool == true {
-            return [InfoRow(symbol: "infinity", title: "余额", value: "无限额度")]
+        creditInfoRows(c, sourceID: source.id, now: now)
+    }
+
+    /// Rows another device read for this account, only where the local card
+    /// has nothing of its own: a Mac without the desktop login gets the reset
+    /// cards, one that is not logged into the website gets the balances.
+    @ViewBuilder private func remoteFacts(_ remote: JSON) -> some View {
+        let rows = remoteAccountFacts(remote, device: remoteDeviceLabel(remote["device"].string, names: deviceNames),
+                                      now: now)
+            .filter { fact in
+                switch fact.category {
+                case "reset_cards": return source.metric("reset_cards") == nil
+                case "credits": return source.metric("credits") == nil
+                case "renewal": return source.metric("renewal_time") == nil
+                case "credit_refresh": return source.metric("credit_refresh_time") == nil
+                default: return source.subscription["ends_on"].string == nil
+                }
+            }
+            .map(\.row)
+        if !rows.isEmpty {
+            VStack(spacing: 7) {
+                ForEach(rows.indices, id: \.self) { rows[$0] }
+            }
+            .padding(.top, 2)
         }
-        guard let balance = raw else { return [] }
-        let isMoney = unit == "CNY" || unit == "USD"
-        let value = isMoney ? Fmt.amount(balance, unit: unit) : Fmt.grouped(balance) + " " + Catalog.unitLabel(unit)
-        var title = c["kind"].string == "booster_wallet" ? "加油包余额" : "余额"
-        if let b = c["bucket"].string, b != source.id, b != "codex" { title = Catalog.bucketLabel(c) }
-        var detail: String?
-        if let granted = c["granted"].double, let topped = c["topped_up"].double {
-            detail = "赠送 \(Fmt.amount(granted, unit: unit)) · 充值 \(Fmt.amount(topped, unit: unit))"
-        }
-        var rows = [InfoRow(symbol: isMoney ? "creditcard" : "circle.hexagongrid.fill", title: title, value: value, detail: detail)]
-        // Credit buckets with their own expiry (e.g. MiniMax Design membership credits).
-        for b in c["buckets"].array {
-            guard let amount = b["balance"].double else { continue }
-            let exp = b["expires_at"].date
-            let bucketTitle = ["vip": "会员积分", "gift": "赠送积分", "purchase": "购买积分"][b["type"].string ?? ""] ?? "积分包"
-            rows.append(InfoRow(symbol: "hourglass", title: bucketTitle,
-                                value: Fmt.grouped(amount),
-                                detail: exp.map { "\(Fmt.day($0, now: now)) 失效 · \(Fmt.countdown(to: $0, now: now))" } ?? "无失效日期",
-                                valueTint: .secondary, nested: true))
-        }
-        return rows
     }
 }
 
 /// Daily free credits on the account card: today's state, the streak, and a
-/// claim button while something is waiting and auto-claim is off.
+/// claim button while something is waiting. Every provider gets the same
+/// button, and nothing is claimed until it is pressed.
 private struct RewardSection: View {
     let reward: RewardAccount
     let now: Date
@@ -593,7 +804,7 @@ private struct RewardSection: View {
     var body: some View {
         VStack(spacing: 7) {
             ForEach(rows.indices, id: \.self) { rows[$0] }
-            if !reward.claimable.isEmpty && reward.status == "available" && !reward.autoClaim {
+            if !reward.claimable.isEmpty && reward.status == "available" {
                 HStack {
                     Spacer()
                     Button {
@@ -619,25 +830,22 @@ private struct RewardSection: View {
         }
         let today = reward.today
         var rows: [InfoRow] = []
-        let auto = reward.autoClaim ? "每日 \(reward.claimTime ?? store.claimTime) 自动领取" : nil
         if reward.provider == "trae_cn" {
             let signed = today["signed_in"].bool == true
             let daily = (today["daily_credits"].double ?? 0) + (today["extra_credits"].double ?? 0)
             let value = signed ? "今日已签到" : (today["enabled"].bool == false ? "签到未开放" : "今日未签到")
             var detail = ["每日 \(Fmt.grouped(daily)) 积分"]
             if let streak = reward.streakDays, streak > 0 { detail.append("连续 \(streak) 天") }
-            if let auto { detail.append(auto) }
             rows.append(InfoRow(symbol: "gift", title: "每日签到", value: value, detail: detail.joined(separator: " · "),
                                 valueTint: signed ? .secondary : .orange))
         } else if reward.provider == "qoder" {
-            // Qoder has no button and no streak: it hands out one campaign
-            // credit round per day through the desktop app.
+            // Qoder has no streak: it hands out one campaign credit round per
+            // day through the desktop app.
             let waiting = reward.claimable.count
             let perItem = reward.claimable.first?["credits"].double ?? 0
             var detail: [String] = []
             if waiting > 0, perItem > 0 { detail.append("每份 \(Fmt.grouped(perItem)) 积分") }
             if let refresh = today["daily_refresh"].string { detail.append("每日 \(refresh) 刷新") }
-            if let auto { detail.append(auto) }
             rows.append(InfoRow(symbol: "gift", title: "每日积分活动",
                                 value: waiting > 0 ? "\(waiting) 个待领" : "暂无待领",
                                 detail: detail.isEmpty ? nil : detail.joined(separator: " · "),
@@ -652,10 +860,10 @@ private struct RewardSection: View {
             rows.append(InfoRow(symbol: "flame", title: "连续活跃", value: "\(days) 天",
                                 detail: detail.isEmpty ? nil : detail.joined(separator: " · ")))
             let waiting = reward.claimable.count
+            let open = Int(today["open_tasks"].double ?? 0)
             rows.append(InfoRow(symbol: "gift", title: "任务奖励",
                                 value: waiting > 0 ? "\(waiting) 个待领" : "暂无待领",
-                                detail: [Int(today["open_tasks"].double ?? 0) > 0 ? "进行中 \(Int(today["open_tasks"].double ?? 0)) 个" : nil, auto]
-                                    .compactMap { $0 }.joined(separator: " · ").nilIfEmpty,
+                                detail: open > 0 ? "进行中 \(open) 个" : nil,
                                 valueTint: waiting > 0 ? .orange : .secondary))
         }
         if reward.provider == "trae_cn" {
@@ -663,7 +871,7 @@ private struct RewardSection: View {
                 let state = bonus["state"].string ?? "unknown"
                 rows.append(InfoRow(symbol: "sparkles", title: bonus["title"].string ?? "附加奖励",
                                     value: state == "error" ? "查询失败" : "契约未确认",
-                                    detail: "只读展示 · 不参与自动领取", valueTint: .secondary, nested: true))
+                                    detail: "只读展示 · 不参与领取", valueTint: .secondary, nested: true))
             }
         }
         if reward.claimedToday > 0 {
@@ -672,16 +880,12 @@ private struct RewardSection: View {
                                 detail: badges.isEmpty ? nil : "徽章 " + badges.joined(separator: "、"), valueTint: tint, nested: true))
         } else if let failed = reward.claimsToday.last(where: { ["error", "rejected"].contains($0["result"].string ?? "") }),
                   reward.today["signed_in"].bool != true {
-            rows.append(InfoRow(symbol: "exclamationmark.triangle", title: failed["final"].bool == true ? "未能自动领取" : "领取失败",
-                                value: failed["final"].bool == true ? "请在客户端签到" : (failed["code"].double.map { "代码 \(Int($0))" } ?? "稍后重试"),
+            rows.append(InfoRow(symbol: "exclamationmark.triangle", title: failed["final"].bool == true ? "未能领取" : "领取失败",
+                                value: failed["final"].bool == true ? "请在客户端签到" : (failed["code"].double.map { "代码 \(Int($0))" } ?? "可再点一次重试"),
                                 detail: failed["title"].string, valueTint: .orange, nested: true))
         }
         return rows
     }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 /// DeepSeek's peak / off-peak split inside its API account card: requests in
@@ -888,7 +1092,8 @@ struct QuotaBar: View {
                 Text(Catalog.bucketLabel(quota)).font(theme.font(12, weight: .medium)).themeForeground()
                 if let used = quota["used"].double, let limit = quota["limit"].double {
                     let fmt: (Double) -> String = quota["unit"].string == "tokens" ? Fmt.tokens : Fmt.trim
-                    Text("\(fmt(used))/\(fmt(limit))").font(theme.font(10.5)).themeForeground(.tertiary).monospacedDigit()
+                    let suffix = quota["unit"].string == "doubao_points" ? " 点" : ""
+                    Text("\(fmt(used))/\(fmt(limit))\(suffix)").font(theme.font(10.5)).themeForeground(.tertiary).monospacedDigit()
                 }
                 Spacer(minLength: 8)
                 if isClaude, let used = quota["used_percent"].double {

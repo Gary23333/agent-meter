@@ -20,15 +20,53 @@ struct UsageView: View {
     let now: Date
     /// Optional so previews and reports can render without a backend budget.
     var budget: BudgetStatus? = nil
+    /// `GET /v1/sync/history`'s `usage` projection: other devices only.
+    var remoteUsage: JSON? = nil
+    /// The space's other devices, and this Mac's own name, so the per-device
+    /// card can label each machine.
+    var syncDevices: [JSON] = []
+    var localDeviceName: String = ""
     @AppStorage("usagePeriod") private var periodRaw = Period.today.rawValue
 
     private var period: Period { Period(rawValue: periodRaw) ?? .today }
+
+    private var remoteDevices: Int { Int(remoteUsage?["device_count"].double ?? 0) }
+    private var scopeLabel: String {
+        remoteDevices > 0 ? "全部设备 · 含 \(remoteDevices) 台其他设备" : "仅本机"
+    }
+
+    /// This machine and each synced device, for the selected period. Only the
+    /// other devices come from the sync projection; this machine's share is
+    /// the same local-only sum the tab had before the merge.
+    private var deviceTotals: [DeviceTotal] {
+        guard let remote = remoteUsage, !remote["periods"].isNull else { return [] }
+        let window = remote["periods"][period.rawValue]
+        guard !window.isNull, (window["totals"]["total_tokens"].double ?? 0) > 0 else { return [] }
+        var rows: [DeviceTotal] = []
+        if let local = LocalUsage.merged(snapshot: snapshot, period: period) {
+            rows.append(DeviceTotal(id: "local", name: localDeviceName.isEmpty ? "本机" : localDeviceName, isLocal: true,
+                                    tokens: local["totals"]["total_tokens"].double ?? 0,
+                                    costs: local["local_cost"].object.compactMapValues { $0.double }))
+        }
+        let unit = window["cost"]["unit"].string
+        for entry in window["by_device"].array {
+            guard let id = entry["device"].string, id != "local" else { continue }
+            let name = syncDevices.first { $0["device"].string == id }?["name"].string ?? ""
+            var costs: [String: Double] = [:]
+            if let unit, let amount = entry["amount"].double { costs[unit] = amount }
+            rows.append(DeviceTotal(id: id, name: SyncConfigurationStore.label(name: name, device: id),
+                                    isLocal: false, tokens: entry["total_tokens"].double ?? 0, costs: costs))
+        }
+        return rows.sorted { $0.tokens > $1.tokens }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 PillTabs(items: Period.allCases, title: { $0.label },
                          selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
+                Spacer(minLength: 4)
+                Text(scopeLabel).font(.system(size: 9.5)).foregroundStyle(.secondary)
                 IconButton(symbol: "square.and.arrow.up", help: "生成用量报告与分享图") {
                     ReportWindow.show()
                 }
@@ -38,8 +76,9 @@ struct UsageView: View {
                 BudgetProgressRow(budget: budget)
             }
 
-            if let data = LocalUsage.merged(snapshot: snapshot, period: period) {
-                PeriodSummary(data: data, history: snapshot.history, snapshot: snapshot, period: period, now: now)
+            if let data = LocalUsage.mergedAll(snapshot: snapshot, remote: remoteUsage, period: period) {
+                PeriodSummary(data: data, history: snapshot.history, snapshot: snapshot, period: period, now: now,
+                              devices: deviceTotals, remoteUsage: remoteUsage)
             } else {
                 Card {
                     Label(Catalog.reason(snapshot.history?.reason ?? "database_not_found"), systemImage: "tray")
@@ -59,12 +98,24 @@ private struct Segment: Identifiable {
     let color: Color
 }
 
+/// One machine's share of a period: this one, or a device it is synced with.
+private struct DeviceTotal: Identifiable {
+    let id: String
+    let name: String
+    let isLocal: Bool
+    var tokens: Double
+    var costs: [String: Double]
+}
+
 private struct PeriodSummary: View {
     let data: JSON
     let history: Source?
     let snapshot: Snapshot
     let period: Period
     let now: Date
+    var devices: [DeviceTotal] = []
+    /// The other devices' usage projection; read here for their image counts.
+    var remoteUsage: JSON? = nil
     @Environment(\.panelTheme) private var theme
 
     private var totals: JSON { data["totals"] }
@@ -82,6 +133,7 @@ private struct PeriodSummary: View {
             imageCard
             composition
             byApp
+            byDevice
             topModels
             footnote
         }
@@ -129,21 +181,13 @@ private struct PeriodSummary: View {
         }
     }
 
-    /// Codex built-in image_gen in the current period. Its API-equivalent
-    /// estimate is deliberately separate from the token cost card above.
+    /// Codex built-in image_gen in the current period, on every device. Its
+    /// API-equivalent estimate is deliberately separate from the token cost
+    /// card above.
     @ViewBuilder private var imageCard: some View {
-        if let image = codexImage {
+        if let use = imageUse {
             let tint = theme.tint(Catalog.brand("codex").tint)
-            let images = Int(image.value["images"].double ?? 0)
-            let cost = image.value["estimated_cost"].double
-            let quality = image.metric.value["quality_assumption"].string ?? "high"
-            let points: [(day: Date, images: Double)] = image.metric.value["daily_buckets"].array
-                .compactMap { b in
-                    guard let d = Fmt.parseDay(b["date"].string), let n = b["images"].double, n > 0 else { return nil }
-                    return (d, n)
-                }
-                .sorted { $0.day < $1.day }
-                .suffix(30)
+            let quality = use.quality ?? "high"
             Card(tint: Catalog.brand("codex").tint) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 8) {
@@ -152,25 +196,29 @@ private struct PeriodSummary: View {
                         Text("Codex 内置 image_gen").font(theme.font(9.5)).themeForeground(.tertiary)
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(images) 张").font(theme.number(27)).monospacedDigit()
+                        Text("\(use.images) 张").font(theme.number(27)).monospacedDigit()
                             .themeForeground()
                             .contentTransition(.numericText())
-                        if let cost {
-                            Text("约 " + Fmt.amount(cost, unit: image.metric.value["currency"].string))
+                        if let cost = use.cost {
+                            Text("约 " + Fmt.amount(cost, unit: use.currency))
                                 .font(theme.font(11, weight: .semibold)).foregroundStyle(tint).monospacedDigit()
                         }
                     }
-                    Text("Codex 内置 image_gen · \(quality) 档估算 · 不计入上方 Token 费用")
+                    // Other devices' images are counted, but only this Mac's
+                    // are priced here at an assumed quality.
+                    Text("Codex 内置 image_gen · \(quality) 档估算"
+                         + (use.remote > 0 ? " · 含其他设备 \(use.remote) 张" : "")
+                         + " · 不计入上方 Token 费用")
                         .font(theme.font(10.5)).themeForeground(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if image.metric.status == "partial" {
-                        Text(Catalog.reason(image.metric.reason))
+                    if use.partial {
+                        Text(Catalog.reason(use.reason))
                             .font(.system(size: 10)).foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if points.count >= 2 {
+                    if use.points.count >= 2 {
                         Chart {
-                            ForEach(points, id: \.day) { p in
+                            ForEach(use.points, id: \.day) { p in
                                 BarMark(x: .value("日期", p.day), y: .value("张数", p.images), width: .fixed(8))
                                     .foregroundStyle(tint.gradient)
                                     .cornerRadius(2)
@@ -186,12 +234,57 @@ private struct PeriodSummary: View {
         }
     }
 
-    private var codexImage: (metric: Metric, value: JSON)? {
-        guard let source = snapshot.sources.first(where: { $0.id == "codex" }),
-              let metric = source.metric("image_generation") else { return nil }
-        let value = metric.value["periods"][period.rawValue]
-        guard let images = value["images"].double, images > 0 else { return nil }
-        return (metric, value)
+    private struct ImageUse {
+        var images = 0
+        /// The estimate, in `currency`, for what this Mac generated.
+        var cost: Double?
+        var currency: String?
+        var quality: String?
+        var partial = false
+        var reason: String?
+        var points: [(day: Date, images: Double)] = []
+        /// How many of `images` were made on another device.
+        var remote = 0
+    }
+
+    /// This Mac's own metric first, then the counts the other devices sent
+    /// (the backend already priced those in this table's currency).
+    private var imageUse: ImageUse? {
+        var use = ImageUse()
+        if let source = snapshot.sources.first(where: { $0.id == "codex" }),
+           let metric = source.metric("image_generation") {
+            let value = metric.value["periods"][period.rawValue]
+            if let images = value["images"].double, images > 0 {
+                use.images += Int(images)
+                use.cost = value["estimated_cost"].double
+                use.currency = metric.value["currency"].string
+                use.quality = metric.value["quality_assumption"].string
+                use.partial = metric.status == "partial"
+                use.reason = metric.reason
+                use.points = metric.value["daily_buckets"].array
+                    .compactMap { b in
+                        guard let d = Fmt.parseDay(b["date"].string), let n = b["images"].double, n > 0 else { return nil }
+                        return (d, n)
+                    }
+                    .sorted { $0.day < $1.day }
+                    .suffix(30)
+            }
+        }
+        let remote = remoteUsage?["periods"][period.rawValue]["images"] ?? .null
+        if let count = remote["count"].double, count > 0 {
+            use.remote = Int(count)
+            use.images += Int(count)
+            if let unit = remote["cost"]["unit"].string, let cost = remote["cost"]["amount"].double {
+                if use.currency == unit {
+                    use.cost = (use.cost ?? 0) + cost
+                } else if use.currency == nil {
+                    use.currency = unit
+                    use.cost = cost
+                }
+                // A different currency is left out rather than mixed in.
+            }
+        }
+        return use.images > 0 ? use : nil
     }
 
     /// Convert each source to CNY before adding. Unknown prices stay unknown.
@@ -311,6 +404,42 @@ private struct PeriodSummary: View {
         }
     }
 
+    /// What each machine spent in this period. Only shown once another device
+    /// actually shares the period with this one.
+    @ViewBuilder private var byDevice: some View {
+        if devices.count > 1 {
+            let top = devices.first?.tokens ?? 1
+            let local = Color(red: 0.36, green: 0.52, blue: 1)
+            let other = Color(red: 0.15, green: 0.82, blue: 0.62)
+            Card {
+                SectionTitle(text: "按设备", trailing: "\(devices.count) 台")
+                ForEach(devices) { d in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "display")
+                                .font(.system(size: 11, weight: .medium))
+                                .themeForeground(.secondary)
+                            Text(d.name).font(theme.font(12, weight: .medium)).themeForeground().lineLimit(1)
+                            if d.isLocal {
+                                Text("本机")
+                                    .font(theme.font(9, weight: .semibold))
+                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                            }
+                            Spacer(minLength: 4)
+                            Text(costLabel(d.costs)).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary).monospacedDigit()
+                                .frame(width: 56, alignment: .trailing)
+                            Text(Fmt.tokens(d.tokens))
+                                .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
+                                .monospacedDigit().themeForeground().frame(width: 64, alignment: .trailing)
+                        }
+                        Meter(fraction: d.tokens / max(top, 1), tint: theme.tint(d.isLocal ? local : other), height: 5)
+                    }
+                }
+            }
+        }
+    }
+
     private struct ModelRow: Identifiable {
         let id: String
         var label: String
@@ -374,6 +503,9 @@ private struct PeriodSummary: View {
 
     /// Which local ledgers were summed in, for the footnote.
     private var sourceNote: String {
+        if (data["remote_devices"].double ?? 0) > 0 {
+            return "数据来自本机记录与其他设备同步"
+        }
         let names = data["includes_local"].array.compactMap { $0.string }.map { Catalog.brand($0).name }
         guard !names.isEmpty else { return "数据来自本机记录" }
         return "数据来自 " + names.joined(separator: "、") + " 本机记录"
@@ -381,6 +513,9 @@ private struct PeriodSummary: View {
 
     private var footnote: some View {
         var parts = [sourceNote]
+        if let n = data["remote_devices"].double, n > 0 {
+            parts.append("含 \(Int(n)) 台其他设备，费用按价格表谷时基价估算")
+        }
         if let imported = history?.lastImport { parts.append("最近导入 " + Fmt.ago(imported, now: now)) }
         if data["period_status"].string == "partial" { parts.append("滚动窗口起始日仅有日汇总，该日历史未计入") }
         if let n = totals["unclassified"].double, n > 0 { parts.append(Fmt.tokens(n) + " Token 缺少分项，已计入总量，费用待定") }
@@ -525,6 +660,59 @@ enum LocalUsage {
         mergedCache.value(for: snapshot, period: period) {
             computeMerged(snapshot: snapshot, period: period)
         }
+    }
+
+    /// Local usage plus the remote-only projection the backend returns as
+    /// `syncHistory["usage"]`. Remote costs are already priced by the backend
+    /// with the same local price table, so the headline cost stays one sum.
+    static func mergedAll(snapshot: Snapshot, remote: JSON?, period: Period) -> JSON? {
+        guard let local = merged(snapshot: snapshot, period: period) else { return nil }
+        guard let usage = remote, !usage["periods"].isNull else { return local }
+        let window = usage["periods"][period.rawValue]
+        guard !window.isNull, (window["totals"]["total_tokens"].double ?? 0) > 0 else { return local }
+
+        var out = local.object
+        var totals = out["totals"]?.object ?? [:]
+        for key in ["requests", "reasoning", "unclassified", "fresh_input", "output",
+                    "cache_read", "cache_write", "total_tokens", "peak_tokens", "offpeak_tokens"] {
+            totals[key] = .number((totals[key]?.double ?? 0) + (window["totals"][key].double ?? 0))
+        }
+        let denominator = (totals["fresh_input"]?.double ?? 0)
+            + (totals["cache_read"]?.double ?? 0)
+            + (totals["cache_write"]?.double ?? 0)
+        totals["cache_hit_rate"] = denominator > 0
+            ? .number((totals["cache_read"]?.double ?? 0) / denominator) : .null
+        out["totals"] = .object(totals)
+
+        var groups = out["groups"]?.array ?? []
+        for group in window["groups"].array {
+            var value = group.object
+            value["source"] = .string("sync")
+            groups.append(.object(value))
+        }
+        out["groups"] = .array(groups)
+
+        let cost = window["cost"]
+        if !cost.isNull, let unit = cost["unit"].string,
+           let amount = cost["amount"].double, amount > 0 {
+            var localCost = out["local_cost"]?.object ?? [:]
+            localCost[unit] = .number((localCost[unit]?.double ?? 0) + amount)
+            out["local_cost"] = .object(localCost)
+            var index = out["cost_index"]?.object ?? [:]
+            index["sync"] = .object(["unit": .string(unit),
+                                     "models": cost["models"],
+                                     "app_models": cost["app_models"]])
+            out["cost_index"] = .object(index)
+        }
+
+        var unpriced = out["unpriced_models"]?.array.compactMap(\.string) ?? []
+        for model in cost["unmatched_models"].array.compactMap(\.string) {
+            if !unpriced.contains(model) { unpriced.append(model) }
+        }
+        out["unpriced_models"] = .array(unpriced.prefix(8).map { .string($0) })
+        out["remote_devices"] = .number(window["device_count"].double ?? 0)
+        out["remote_tokens"] = .number(window["totals"]["total_tokens"].double ?? 0)
+        return .object(out)
     }
 
     private static func computeMerged(snapshot: Snapshot, period: Period) -> JSON? {

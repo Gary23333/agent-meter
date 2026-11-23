@@ -38,6 +38,10 @@ struct Source: Identifiable {
     let accountKey: String?
     /// Provider part of the id ("qoder#2" → "qoder").
     var baseID: String { ConnectionManager.provider(ofSlot: id) }
+    /// Account key the backend uses for sync: the explicit hash, or the
+    /// provider id when the source has a single implicit account. Synced
+    /// quota rows carry the same fallback, so they can find their card.
+    var syncAccountKey: String { accountKey ?? baseID }
     /// Brand name plus account label, for cards, ticker and alerts.
     var displayName: String { Catalog.brand(id).name + (accountLabel.map { " · " + $0 } ?? "") }
     var shortName: String { Catalog.shortName(id) + (accountLabel.map { "·" + $0 } ?? "") }
@@ -110,12 +114,13 @@ struct CoverageRow: Identifiable {
 }
 
 /// Daily free-credit rewards for one website login (backend rewards.py).
+/// There is no switch and no schedule here: a claim happens when the user
+/// presses "领取", and the rows below only say what happened.
 struct RewardAccount: Identifiable {
     let id: String
     let provider: String
     let status: String
     let reason: String?
-    let autoClaim: Bool
     let checkedAt: Date?
     /// Provider status as normalized by the backend (signed_in, claimable...).
     let today: JSON
@@ -124,23 +129,18 @@ struct RewardAccount: Identifiable {
     let claimedTotal: Double
     /// Consecutive signed-in days (TRAE); nil where the provider has no button.
     let streakDays: Int?
-    let claimTime: String?
-    let nextClaimAt: Date?
 
     init(_ json: JSON) {
         id = json["id"].string ?? "unknown"
         provider = json["provider"].string ?? ""
         status = json["status"].string ?? "error"
         reason = json["reason"].string
-        autoClaim = json["auto_claim"].bool ?? false
         checkedAt = json["checked_at"].date
         today = json["today"]
         claimsToday = json["claims_today"].array
         claimedToday = json["claimed_credits_today"].double ?? 0
         claimedTotal = json["claimed_credits_total"].double ?? 0
         streakDays = json["streak_days"].double.map { Int($0) }
-        claimTime = json["claim_time"].string
-        nextClaimAt = json["next_claim_at"].date
     }
 
     var claimable: [JSON] { today["claimable"].array }

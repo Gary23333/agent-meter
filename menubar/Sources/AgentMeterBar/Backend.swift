@@ -98,6 +98,22 @@ struct BackendClient {
         guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
     }
 
+    /// 读取豆包 App 的登录 Cookie。返回值只在登录窗口内交给 Keychain，不打印。
+    func importDoubaoCookies() async throws -> String {
+        let r = try request("v1/doubao/import-app-cookies", method: "POST", timeout: 30)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        if http.statusCode == 401 { throw BackendError.unauthorized }
+        if http.statusCode == 200 {
+            guard let json = try? JSONDecoder().decode(JSON.self, from: data),
+                  let cookie = json["cookie"].string else { throw BackendError.invalidResponse }
+            return cookie
+        }
+        let code = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+        throw BackendError.http(http.statusCode, code)
+    }
+
     /// Allowlisted 即梦 page observations (see DreaminaMonitor).
     func putObservations(_ dreamina: [[String: Any]]) async throws {
         var r = try request("v1/observations", method: "PUT", timeout: 10)
@@ -108,19 +124,16 @@ struct BackendClient {
         guard http.statusCode == 200 else { throw BackendError.http(http.statusCode, nil) }
     }
 
-    /// Runtime on/off switches for sources, the low-resource mode and the
-    /// auto-claim settings (kept in backend memory). Every key is sent so the
-    /// backend copy stays complete.
-    func putPreferences(disabled: [String], lowResource: Bool = false, skipLedgers: [String] = [],
-                        autoClaim: [String] = [], claimTime: String = "00:05") async throws {
+    /// Runtime on/off switches for sources and the low-resource mode (kept in
+    /// backend memory). Every key is sent so the backend copy stays complete.
+    /// Claiming has no switch here: the backend claims only when asked to.
+    func putPreferences(disabled: [String], lowResource: Bool = false, skipLedgers: [String] = []) async throws {
         var r = try request("v1/preferences", method: "PUT", timeout: 10)
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try JSONSerialization.data(withJSONObject: [
             "disabled_sources": disabled,
             "low_resource_mode": lowResource,
-            "skip_ledgers_low_resource": skipLedgers,
-            "auto_claim": autoClaim,
-            "claim_time": claimTime])
+            "skip_ledgers_low_resource": skipLedgers])
         let (_, resp) = try await Self.session.data(for: r)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { throw BackendError.invalidResponse }
     }
@@ -142,8 +155,10 @@ struct BackendClient {
         return json
     }
 
-    /// Claims daily rewards now: one account ("trae_cn", "workbuddy#2"...), or
-    /// every account when `slot` is nil. The path component percent-encodes "#".
+    /// Claims daily rewards now when the user asks: one account ("trae_cn",
+    /// "workbuddy#2"...), or every account when `slot` is nil. This is the
+    /// only write to a provider account, and nothing calls it on a schedule.
+    /// The path component percent-encodes "#".
     @discardableResult
     func claimReward(_ slot: String? = nil) async throws -> JSON {
         let path = slot.map { "v1/rewards/claim/" + $0 } ?? "v1/rewards/claim"
@@ -272,13 +287,19 @@ struct BackendClient {
     }
 
     /// The redacted payload this device may upload (POST /v1/sync/payload).
-    /// Raw JSON bytes: the sync client seals them exactly as they are.
-    func syncPayload(localDevice: String, settings: SyncSettings) async throws -> Data {
+    /// Raw JSON bytes: the sync client seals them exactly as they are. The
+    /// settings travel with the moment each one changed here, so another
+    /// device can tell whether its own value is the newer one.
+    func syncPayload(localDevice: String, name: String, appVersion: String,
+                     settings: SyncSettings) async throws -> Data {
         var r = try request("v1/sync/payload", method: "POST", timeout: 30)
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String: Any] = ["device": localDevice]
         let carried = settings.payload
-        if !carried.isEmpty { body["settings"] = carried }
+        if !carried.isEmpty {
+            body["settings"] = carried
+            body["settings_times"] = settings.changedAt
+        }
         r.httpBody = try JSONSerialization.data(withJSONObject: body)
         let data: Data, resp: URLResponse
         do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
@@ -301,6 +322,33 @@ struct BackendClient {
         let data: Data, resp: URLResponse
         do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
         guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+    }
+
+    /// The user left the sync space: the backend forgets every other device's
+    /// rows and the quota history it kept only for sync (POST /v1/sync/reset).
+    func resetSync() async throws {
+        try await syncPost("v1/sync/reset", [:])
+    }
+
+    /// One other device was taken out of the space: the backend drops what it
+    /// had sent (POST /v1/sync/forget). This device's own rows are never
+    /// stored, so there is nothing to forget for it.
+    func forgetSyncDevice(_ device: String) async throws {
+        try await syncPost("v1/sync/forget", ["device": device])
+    }
+
+    private func syncPost(_ path: String, _ body: [String: Any]) async throws {
+        var r = try request(path, method: "POST", timeout: 20)
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        if http.statusCode == 401 { throw BackendError.unauthorized }
         guard http.statusCode == 200 else {
             let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
             throw BackendError.http(http.statusCode, err)

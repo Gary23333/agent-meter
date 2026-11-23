@@ -67,20 +67,33 @@ class PayloadTests(unittest.TestCase):
         self.assertNotIn("abc123", blob)
 
     def test_payload_drops_per_device_settings(self):
-        settings = {"theme": "aurora", "low_quota_threshold": 20, "claim_time": "08:00",
+        settings = {"theme": "aurora", "low_quota_threshold": 20, "menu_bar_mode": "flip",
                     "alerts_enabled": True, "source_order": ["codex", "claude"],
-                    "disabled_sources": ["claude"], "low_resource_mode": True,
+                    "budget": {"daily_cny": 50, "anomaly_multiplier": "2.5"},
+                    "claim_time": "08:00", "disabled_sources": ["claude"], "low_resource_mode": True,
                     "skip_ledgers_low_resource": ["dsh"], "project_aliases": {"a": "b"}}
         clean = clean_settings(settings)
-        self.assertEqual(sorted(clean), ["alerts_enabled", "claim_time", "low_quota_threshold",
+        self.assertEqual(sorted(clean), ["alerts_enabled", "budget", "low_quota_threshold", "menu_bar_mode",
                                          "source_order", "theme"])
         self.assertNotIn("disabled_sources", clean)
         self.assertNotIn("low_resource_mode", clean)
+        self.assertNotIn("claim_time", clean)   # claiming is no longer a setting
 
     def test_settings_out_of_range_are_dropped(self):
         clean = clean_settings({"low_quota_threshold": 400, "claim_time": "25:00",
-                                "source_order": "codex", "theme": ""})
+                                "source_order": "codex", "theme": "", "menu_bar_mode": "hologram",
+                                "alerts_enabled": "yes", "budget": {"daily_cny": "abc"}})
         self.assertEqual(clean, {})
+
+    def test_budget_settings_carry_only_what_is_set(self):
+        # An absent key means "no budget"; a present one must be a positive number.
+        self.assertEqual(clean_settings({"budget": {"daily_cny": 30}}), {"budget": {"daily_cny": 30.0}})
+        self.assertEqual(clean_settings({"budget": {"anomaly_multiplier": 2}}),
+                         {"budget": {"anomaly_multiplier": 2.0}})
+        for bad in [{"weekly_cny": None}, {"anomaly_multiplier": 0}, {"daily_cny": -5}, {"eur": 1}, "x"]:
+            self.assertEqual(clean_settings({"budget": bad}), {})
+        # An empty budget means "none" and travels, so clearing it propagates.
+        self.assertEqual(clean_settings({"budget": {}}), {"budget": {}})
 
     def test_quota_keeps_one_observation_per_source_and_window(self):
         source = {"id": "codex", "scope": "account", "status": "available",
@@ -232,6 +245,19 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(len(quota), 1)
             self.assertEqual(quota[0]["used_percent"], 55.0)
             self.assertEqual(quota[0]["device"], "c" * 32)
+
+    def test_remote_quota_survives_a_newer_local_observation(self):
+        with tempfile.TemporaryDirectory() as home:
+            old = {"account": "acct-1", "bucket": "primary", "window": "primary",
+                   "day": "2026-11-09", "observed_at": 100.0, "used_percent": 40.0}
+            local = dict(old, observed_at=300.0, used_percent=60.0)
+            sync_store.replace_device(home, {"device": "b" * 32, "rows": [], "quota": [old]})
+            store = sync_store.load_store(home)
+            self.assertIsNone(sync_store.quota_history(store, [local])[0].get("device"))
+            remote = sync_store.remote_quota_history(store)
+            self.assertEqual(len(remote), 1)
+            self.assertEqual(remote[0]["used_percent"], 40.0)
+            self.assertEqual(remote[0]["device"], "b" * 32)
 
     def test_the_card_tally_is_the_highest_any_device_reports(self):
         with tempfile.TemporaryDirectory() as home:

@@ -23,7 +23,10 @@ Per-source granularity and what a row can NOT claim:
 - codex_images: the row is one generation thread; call statuses are
   explicit (completed/failed/generating);
 - claude / gemini / opencode: recent_activity rows are recency-only
-  (停止写入不能算成功, 应用退出也不能算失败).
+  (停止写入不能算成功, 应用退出也不能算失败);
+- doubao_work: the row is a work session; its trajectory files carry no
+  usage ledger, so requests/tool_calls are activity only and tokens stay
+  null (不能把 0 当成 Token).
 """
 import json
 import time
@@ -788,6 +791,71 @@ def opencode_activities(db_path, window_start, idle_seconds, now, *, app="openco
 
 
 # ---------------------------------------------------------------------------
+# Doubao work workspace: <session>/agents/<agent>/system/trajectory.jsonl.
+# These files record messages and tool calls only; there is no token/usage
+# ledger, so a row is activity (轮次/工具调用), never a token count.
+
+DOUBAO_NOTE = "activity_only_no_token_ledger"
+
+
+def _parse_doubao_trajectory(path):
+    """(assistant messages, tool calls) for one trajectory; message text is dropped."""
+    assistants, calls, seen = 0, 0, False
+    with open(path, "rb") as handle:
+        for line in handle:
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(o, dict):
+                continue
+            seen = True
+            if o.get("role") == "assistant":
+                assistants += 1
+            tool_calls = o.get("tool_calls")
+            if isinstance(tool_calls, list):
+                calls += len(tool_calls)
+    return (assistants, calls) if seen else None
+
+
+def doubao_work_activities(root, window_start, idle_seconds, now):
+    root = Path(root)
+    if not root.is_dir():
+        raise SourceError("doubao_work_sessions_not_found")
+    sessions = {}
+    for path in sorted(root.glob("*/agents/*/system/trajectory.jsonl")):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_mtime < window_start:
+            continue
+        try:
+            parsed = _parse_doubao_trajectory(path)
+        except OSError:
+            continue
+        if parsed is None:  # 空文件或整文件不可解析
+            continue
+        session_id = path.parents[3].name
+        born = getattr(stat, "st_birthtime", None) or stat.st_mtime
+        state = sessions.setdefault(session_id, {
+            "started": None, "last": None, "requests": 0, "tool_calls": 0})
+        state["started"] = born if state["started"] is None else min(state["started"], born)
+        state["last"] = stat.st_mtime if state["last"] is None else max(state["last"], stat.st_mtime)
+        state["requests"] += parsed[0]
+        state["tool_calls"] += parsed[1]
+    out = []
+    for session_id, state in sorted(sessions.items()):
+        status, basis = _recency_status(state["last"], now, idle_seconds)
+        out.append(_activity(
+            "doubao_work", "recent_activity", status=status, status_basis=basis,
+            session_id=session_id, started_at=state["started"], last_event_at=state["last"],
+            requests=state["requests"], tokens=None, notes=DOUBAO_NOTE,
+            extra={"tool_calls": state["tool_calls"], "counts_scope": "session_lifetime"}))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Old Kimi CLI: pre-migration wire.jsonl ledgers (stopped 2026-06-17). No cwd
 # or model fields exist in this format; sessions are identified by directory.
 
@@ -871,6 +939,10 @@ def collect_activity(config, now=None, table=None):
                                                  "kimi", window_start, idle_seconds, now))
     run("kimi_desktop", lambda: _kimi_session_activities(config["kimi_desktop_sessions_dir"],
                                                          "kimi_desktop", window_start, idle_seconds, now))
+    run("doubao_work", lambda: doubao_work_activities(
+        config.get("doubao_work_sessions_dir")
+        or str(Path(config["home"]) / "Library/Application Support/Doubao/Default/.doubao/agent_mode/workspace/.sessions"),
+        window_start, idle_seconds, now))
     run("deepseek_harness", lambda: dsh_activities(config["dsh_sessions_dir"], config.get("zstd_binary"),
                                                    window_start, idle_seconds, now))
     run("claude", lambda: claude_activities(config["claude_projects_dir"], window_start, idle_seconds, now,
