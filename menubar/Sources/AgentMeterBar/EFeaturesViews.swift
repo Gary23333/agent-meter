@@ -257,11 +257,17 @@ struct PeriodCompareCard: View {
 
     private var report: PeriodReport? { kind == "week" ? store.weekReport : store.monthReport }
 
+    /// This card still reads the backend's local-only period report. Say so
+    /// once a remote device is merged into the usage page above it.
+    private var scopePrefix: String {
+        (store.syncHistory?["usage"]["device_count"].double ?? 0) > 0 ? "本机" : ""
+    }
+
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(kind == "week" ? "本周环比" : "本月环比")
+                    Text(scopePrefix + (kind == "week" ? "本周环比" : "本月环比"))
                         .font(.system(size: 12.5, weight: .medium))
                     Spacer()
                     Picker("", selection: $kind) {

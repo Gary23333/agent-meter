@@ -7,7 +7,7 @@ enum Tab: String, CaseIterable, Identifiable {
         switch self {
         case .accounts: return "账户额度"
         case .forecast: return "重置预测"
-        case .usage:       return "本机消耗"
+        case .usage:       return "消耗"
         case .apps:        return "应用"
         case .processes:   return "进程"
         case .pet:         return "桌宠"
@@ -172,16 +172,13 @@ struct PanelView: View {
             Button("数据状态与省资源…") { DataStatusWindow.show() }
             Toggle("读取 Claude 额度", isOn: Binding(get: { store.claudeEnabled }, set: { store.claudeEnabled = $0 }))
             Toggle("全员重置预测（联网读第三方追踪站）", isOn: Binding(get: { store.forecastEnabled }, set: { store.forecastEnabled = $0 }))
-            Toggle("自动领取每日积分（TRAE 签到 · WorkBuddy 任务奖励 · Qoder 每日积分）",
-                   isOn: Binding(get: { store.autoClaimEnabled }, set: { store.autoClaimEnabled = $0 }))
-            Picker("每日领取时间（北京时间）", selection: Binding(get: { store.claimTime }, set: { store.claimTime = $0 })) {
-                ForEach(UsageStore.claimTimeOptions, id: \.self) { Text($0).tag($0) }
-            }
-            .disabled(!store.autoClaimEnabled)
-            Button(store.claimingAll ? "领取中…" : "立即领取每日积分") {
+            // Daily credits are claimed when the user asks, never on a timer:
+            // there is no switch to turn on and no time to pick.
+            Button(store.claimingAll ? "领取中…" : "领取每日积分") {
                 Task { await store.claimAllRewards() }
             }
             .disabled(store.claimingAll)
+            .help("TRAE 签到、WorkBuddy 任务奖励、Qoder 每日积分；只在你点击时领取")
             Divider()
             Toggle("额度与到期提醒", isOn: Binding(get: { store.notificationsEnabled }, set: { store.notificationsEnabled = $0 }))
             Picker("额度不足阈值", selection: Binding(get: { store.lowQuotaThreshold }, set: { store.lowQuotaThreshold = $0 })) {
@@ -247,7 +244,10 @@ struct PanelView: View {
             switch selectedTab {
             case .accounts: AccountsView(snapshot: snapshot, now: store.now, syncHistory: store.syncHistory)
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
-            case .usage: UsageView(snapshot: snapshot, now: store.now, budget: store.budget)
+            case .usage: UsageView(snapshot: snapshot, now: store.now, budget: store.budget,
+                                   remoteUsage: store.syncHistory?["usage"],
+                                   syncDevices: store.syncHistory?["devices"].array ?? [],
+                                   localDeviceName: store.syncDeviceName)
             case .apps: ActivityView(snapshot: snapshot)
             case .processes: ProcessesView(snapshot: snapshot, now: store.now)
             case .pet: PetTabView()

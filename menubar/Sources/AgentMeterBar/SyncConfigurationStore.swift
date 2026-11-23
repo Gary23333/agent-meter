@@ -1,6 +1,7 @@
 import Foundation
 import LocalAuthentication
 import Security
+import SystemConfiguration
 
 /// What this Mac keeps after pairing. The master key lives in the login
 /// Keychain, never in UserDefaults and never on the service.
@@ -20,25 +21,84 @@ enum SyncConfigurationStore {
     private static let account = "space"
     private static let baseURLKey = "syncBaseURL"
     private static let deviceIDKey = "syncDeviceID"
+    private static let deviceNameKey = "syncDeviceName"
+    /// The service trims a name to this many characters; keep the same limit here.
+    static let deviceNameLimit = 60
+
+    /// The hosted sync service ships with the app. Keeping it here means a
+    /// fresh install has one less field to get wrong; the pairing code alone
+    /// is enough. Existing custom addresses are ignored on purpose.
+    static let builtInBaseURL = "https://sync.joycine.xyz"
 
     /// A stable per-install device id. It is not a secret; it only labels
     /// this device's blob in the space.
+    ///
+    /// The Keychain item keeps a copy too. Preferences can be lost (a clean
+    /// reinstall keeps the Keychain item but not the plist), and the copy then
+    /// keeps this Mac the same device instead of a new one whose rows would
+    /// count next to the old bucket's.
     static func deviceID() -> String {
         if let existing = UserDefaults.standard.string(forKey: deviceIDKey),
            SyncKeys.isIdentifier(existing) {
             return existing
+        }
+        if let paired = load()?.deviceID {
+            UserDefaults.standard.set(paired, forKey: deviceIDKey)
+            return paired
         }
         let fresh = SyncKeys.randomIdentifier()
         UserDefaults.standard.set(fresh, forKey: deviceIDKey)
         return fresh
     }
 
-    static var baseURL: String {
-        UserDefaults.standard.string(forKey: baseURLKey) ?? ""
+    /// The name this Mac goes by in the space: the computer name until the
+    /// user renames it.
+    static func deviceName(in defaults: UserDefaults = .standard) -> String {
+        if let saved = defaults.string(forKey: deviceNameKey), !saved.isEmpty { return saved }
+        return computerName()
     }
 
+    /// Saves a typed name and returns what the device is called from now on.
+    /// An empty name goes back to the computer name.
+    @discardableResult
+    static func setDeviceName(_ raw: String, in defaults: UserDefaults = .standard) -> String {
+        let cleaned = cleanName(raw)
+        if cleaned.isEmpty {
+            defaults.removeObject(forKey: deviceNameKey)
+            return computerName()
+        }
+        defaults.set(cleaned, forKey: deviceNameKey)
+        return cleaned
+    }
+
+    /// One line, no control characters, at most `deviceNameLimit` characters.
+    static func cleanName(_ raw: String) -> String {
+        let line = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        let printable = String.UnicodeScalarView(line.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+        return String(String(printable).prefix(deviceNameLimit))
+    }
+
+    /// How a device is listed: its name, or a short handle when it has none.
+    static func label(name: String, device: String) -> String {
+        if !name.isEmpty { return name }
+        return "设备 " + device.prefix(8) + "…"
+    }
+
+    /// The name the user gave this computer in System Settings.
+    static func computerName() -> String {
+        if let name = SCDynamicStoreCopyComputerName(nil, nil) as? String,
+           !cleanName(name).isEmpty {
+            return cleanName(name)
+        }
+        let host = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        let cleaned = cleanName(host)
+        return cleaned.isEmpty ? "Mac" : cleaned
+    }
+
+    static var baseURL: String { builtInBaseURL }
+
     static func setBaseURL(_ value: String) {
-        UserDefaults.standard.set(value, forKey: baseURLKey)
+        UserDefaults.standard.set(builtInBaseURL, forKey: baseURLKey)
     }
 
     static func load() -> SyncConfiguration? {
@@ -52,7 +112,7 @@ enum SyncConfigurationStore {
         }
         return SyncConfiguration(spaceID: stored.space_id, deviceID: stored.device_id,
                                  masterKey: master,
-                                 baseURL: stored.base_url ?? baseURL)
+                                 baseURL: builtInBaseURL)
     }
 
     @discardableResult

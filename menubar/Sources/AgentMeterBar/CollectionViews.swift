@@ -191,7 +191,7 @@ struct CollectionView: View {
                 ForEach(data.series, id: \.id) { s in
                     BinderSection(data: data, title: s.name, cards: s.cards)
                 }
-                Text("额度用量每越过一档即掉落卡片，重置卡用掉或过期、签到与任务领取时也会掉落；奖章按本机全部历史重算。数据只在本机。")
+                Text("额度用量每越过一档即掉落卡片，重置卡用掉或过期、签到与任务领取时也会掉落；签到与任务卡片合并各设备同步来的记录，奖章按本机全部历史重算。")
                     .font(theme.font(10)).themeForeground(.tertiary)
                     .padding(.horizontal, 2)
             }

@@ -193,11 +193,11 @@ class ServiceTests(unittest.TestCase):
         account = out["accounts"][0]
         self.assertEqual((account["id"], account["status"], account["reason"]),
                          ("minimax_code", "not_connected", "minimax_code_not_authenticated"))
-        self.assertFalse(account["auto_claim"])
+        self.assertNotIn("auto_claim", account)
 
     def test_minimax_with_cookie_is_unsupported_not_available(self):
         svc = self.service(rewards.ADAPTERS)
-        out = svc.tick({"minimax_code": {"cookie": "C"}}, NOW, auto_claim={"minimax_code"})
+        out = svc.tick({"minimax_code": {"cookie": "C"}}, NOW, claim_all=True)
         account = out["accounts"][0]
         self.assertEqual((account["status"], account["reason"]), ("error", "minimax_code_not_supported"))
         self.assertIsNone(account["today"])
@@ -208,7 +208,7 @@ class ServiceTests(unittest.TestCase):
         out = svc.tick({}, NOW)
         self.assertEqual(out["accounts"], [])
 
-    def test_minimax_claim_only_when_switched_on(self):
+    def test_minimax_claim_on_request(self):
         open_status = rewards.normalize_minimax_code_status(MM_OPEN)
         signed_status = rewards.normalize_minimax_code_status(MM_SIGNED)
         fake = Fake([open_status])
@@ -216,8 +216,7 @@ class ServiceTests(unittest.TestCase):
         svc.tick({"minimax_code": {"cookie": "C"}}, NOW)
         self.assertEqual([c[0] for c in fake.calls], ["status"])
         fake.statuses = [open_status, signed_status]
-        out = svc.tick({"minimax_code": {"cookie": "C"}}, NOW + rewards.STATUS_EVERY,
-                       auto_claim={"minimax_code"})
+        out = svc.tick({"minimax_code": {"cookie": "C"}}, NOW + 5, only="minimax_code")
         self.assertEqual([c[0] for c in fake.calls[1:]], ["status", "claim", "status"])
         self.assertEqual(out["accounts"][0]["claimed_credits_today"], 400)
 
@@ -225,7 +224,7 @@ class ServiceTests(unittest.TestCase):
         fake = Fake([rewards.normalize_minimax_code_status(MM_OPEN)],
                     [SourceError("minimax_code_not_supported")])
         svc = self.service({"minimax_code": (fake.status, fake.claim)})
-        out = svc.tick({"minimax_code": {"cookie": "C"}}, NOW, auto_claim={"minimax_code"})
+        out = svc.tick({"minimax_code": {"cookie": "C"}}, NOW, only="minimax_code")
         account = out["accounts"][0]
         self.assertEqual(account["status"], "available")
         self.assertEqual(account["claims_today"][0]["result"], "error")
@@ -233,7 +232,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(account["claimed_credits_today"], 0)
         self.assertTrue(account["today"]["claimable"])
 
-    def test_trae_bonus_never_auto_claimed(self):
+    def test_trae_bonus_is_never_claimed(self):
         status = rewards.normalize_trae_status(TRAE_OPEN)
         status["bonus_items"] = [{"item": "birthday_bonus", "title": "生日奖励", "credits": None,
                                   "state": "unknown", "reason": "trae_birthday_contract_unknown"},
@@ -241,7 +240,7 @@ class ServiceTests(unittest.TestCase):
                                   "state": "unknown", "reason": "trae_lottery_endpoint_unknown"}]
         fake = Fake([status])
         svc = self.service({"trae_cn": (fake.status, fake.claim)})
-        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, auto_claim={"trae_cn"})
+        out = svc.tick({"trae_cn": {"token": "T"}}, NOW, claim_all=True)
         self.assertEqual([c for c in fake.calls if c[0] == "claim"], [("claim", "daily_checkin")])
         self.assertEqual(out["accounts"][0]["today"]["claimable"][0]["item"], "daily_checkin")
         self.assertEqual(len(out["accounts"][0]["today"]["bonus_items"]), 2)

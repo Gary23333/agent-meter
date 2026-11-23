@@ -289,7 +289,12 @@ private struct ActivityRowView: View {
             parts.append("持续 " + Fmt.shortCountdown(to: row.lastEventAt ?? now, now: start, past: "进行中"))
         }
         if let requests = row.requests {
-            parts.append("\(requests) 次请求")
+            let scope = row.countsScope == "session_lifetime" ? "（本会话累计）" : ""
+            parts.append("\(requests) 次请求" + scope)
+        }
+        if let toolCalls = row.toolCalls {
+            let scope = row.countsScope == "session_lifetime" ? "（本会话累计）" : ""
+            parts.append("\(toolCalls) 次工具调用" + scope)
         }
         if let tokens = row.tokens {
             parts.append("输入 \(Fmt.tokens(tokens.freshInput + tokens.cacheRead + tokens.cacheWrite)) / 输出 \(Fmt.tokens(tokens.output))")

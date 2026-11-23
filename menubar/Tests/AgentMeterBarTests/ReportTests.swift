@@ -44,6 +44,24 @@ final class ReportTests: XCTestCase {
         XCTAssertEqual(Catalog.applicationID("kimi_chat"), "kimi_desktop")
     }
 
+    func testRemoteUsageAddsTokensAndCostToLocal() throws {
+        let snap = try snapshot("""
+        [{"id":"codex","scope":"local_session_history","metrics":{
+           "tokens":{"value":{"periods":{"7d":{"totals":{"total_tokens":100,"requests":4},"groups":[{"app":"codex","model":"gpt-5.4","total_tokens":100}]}}}},
+           "cost":{"value":{"basis":"local_price_table","unit":"USD","periods":{"7d":{"amount":2,"models":{"gpt-5.4":2}}}}}}}]
+        """)
+        let remote = try JSONDecoder().decode(JSON.self, from: Data("""
+        {"device_count":1,"periods":{"7d":{"totals":{"total_tokens":50,"requests":1},"groups":[{"app":"zcode","model":"glm-5.3","total_tokens":50,"source":"sync"}],"device_count":1,"cost":{"unit":"USD","amount":"1.5","models":{"glm-5.3":"1.5"},"app_models":{"zcode":{"glm-5.3":"1.5"}},"unmatched_models":[]}}}}
+        """.utf8))
+        let data = try XCTUnwrap(LocalUsage.mergedAll(snapshot: snap, remote: remote, period: .week))
+        XCTAssertEqual(data["totals"]["total_tokens"].double, 150)
+        XCTAssertEqual(data["totals"]["requests"].double, 5)
+        XCTAssertEqual(data["groups"].array.count, 2)
+        XCTAssertEqual(data["local_cost"]["USD"].double, 3.5)
+        XCTAssertEqual(data["remote_devices"].double, 1)
+        XCTAssertEqual(LocalUsage.groupCost(data["groups"].array[1], data: data)["USD"], 1.5)
+    }
+
     func testImageOnlyReportAndUnknownCalls() throws {
         let snap = try snapshot("""
         [{"id":"codex","metrics":{"image_generation":{"status":"partial","value":{"currency":"USD","quality_assumption":"high","call_counts_available":false,"periods":{"7d":{"images":8,"calls":0,"estimated_cost":"0.4"}}}}}}]

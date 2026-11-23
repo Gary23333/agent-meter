@@ -272,17 +272,21 @@ class EndpointTests(unittest.TestCase):
             return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=3)
         with put({"disabled_sources": ["claude"]}) as r:
             self.assertEqual(json.loads(r.read()), {"disabled_sources": ["claude"], "low_resource_mode": False,
-                                                 "skip_ledgers_low_resource": [], "auto_claim": [], "claim_time": "00:05"})
+                                                 "skip_ledgers_low_resource": []})
         self.service.get()
         self.assertEqual(self.service.config["preferences"], {"disabled_sources": ["claude"], "low_resource_mode": False,
-                                                         "skip_ledgers_low_resource": [], "auto_claim": [], "claim_time": "00:05"})
-        with put({"disabled_sources": [], "auto_claim": ["workbuddy", "trae_cn", "trae_cn"], "claim_time": "09:30"}) as r:
-            self.assertEqual(json.loads(r.read()), {"disabled_sources": [], "low_resource_mode": False, "skip_ledgers_low_resource": [],
-                                                 "auto_claim": ["trae_cn", "workbuddy"], "claim_time": "09:30"})
+                                                         "skip_ledgers_low_resource": []})
+        with put({"disabled_sources": ["claude", "claude", "kimi"], "low_resource_mode": True,
+                  "skip_ledgers_low_resource": ["dsh", "dsh", "opencode"]}) as r:
+            self.assertEqual(json.loads(r.read()), {"disabled_sources": ["claude", "kimi"], "low_resource_mode": True,
+                                                 "skip_ledgers_low_resource": ["dsh", "opencode"]})
+        # Claiming is not a preference any more: an older client still sending
+        # the auto-claim switch or the daily claim time is refused, not ignored.
         for bad in [{"disabled_sources": ["unknown_source"]}, {"disabled_sources": "claude"}, {"other": []},
-                    {"disabled_sources": [], "auto_claim": ["claude"]}, {"disabled_sources": [], "auto_claim": "trae_cn"},
-                    {"auto_claim": ["trae_cn"]}, {"disabled_sources": [], "claim_time": "25:00"},
-                    {"disabled_sources": [], "claim_time": 9}]:
+                    {"disabled_sources": [], "auto_claim": ["trae_cn"]}, {"auto_claim": ["trae_cn"]},
+                    {"disabled_sources": [], "claim_time": "08:00"}, {"disabled_sources": [], "claim_time": "25:00"},
+                    {"disabled_sources": [], "claim_time": 9}, {"disabled_sources": [], "low_resource_mode": "yes"},
+                    {"disabled_sources": [], "skip_ledgers_low_resource": "dsh"}, {"low_resource_mode": True}]:
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 put(bad)
             self.assertEqual(ctx.exception.code, 400)

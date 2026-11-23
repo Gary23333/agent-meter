@@ -59,9 +59,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                    body: "额度不足和到期提醒会以这种方式出现。"))
     }
 
-    /// Claim results: one notification per successful claim, and one per item
-    /// that used up its attempts for the day. Keys are remembered so a result
-    /// is never announced twice.
+    /// Claim results: one notification for each claim the user asked for that
+    /// succeeded, was refused for the rest of the day, or failed. Keys are
+    /// remembered so a result is never announced twice.
     func rewardResults(_ snapshot: Snapshot) {
         let key = "notifiedClaims"
         var seen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
@@ -69,10 +69,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         var fresh: [String] = []
         for account in snapshot.rewards {
             let name = Catalog.brand(account.id).name
-            var attempts: [String: Int] = [:]
             for claim in account.claimsToday {
                 let item = claim["item"].string ?? ""
-                attempts[item, default: 0] += 1
                 let at = Int(claim["at"].double ?? 0)
                 let result = claim["result"].string ?? ""
                 let id = "\(account.id)|\(item)|\(at)"
@@ -87,14 +85,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                     if let badge = claim["badge"].string { body += " · 获得徽章「\(badge)」" }
                     post(Alert(key: "claim-" + id, title: "\(name) · \(title)领取成功", body: body))
                 } else if claim["final"].bool == true {
-                    post(Alert(key: "claim-" + id, title: "\(name) · \(title)未能自动领取",
+                    post(Alert(key: "claim-" + id, title: "\(name) · \(title)未能领取",
                                body: "服务拒绝了网页端领取，今天请在客户端里手动签到。"))
-                } else if claim["final"].bool == true {
-                    post(Alert(key: "claim-" + id, title: "\(name) · \(title)未能自动领取",
-                               body: "服务拒绝了网页端领取，今天请在客户端里手动签到。"))
-                } else if ["error", "rejected"].contains(result), attempts[item] == 3 {
+                } else if ["error", "rejected"].contains(result) {
+                    // The press is the retry: nothing runs again on its own.
                     post(Alert(key: "claim-" + id, title: "\(name) · \(title)领取失败",
-                               body: "今天已重试 3 次，请打开网页手动领取，或检查登录是否失效。"))
+                               body: "可以再点一次「领取」，或打开网页手动领取；多次失败请检查登录是否失效。"))
                 }
             }
         }

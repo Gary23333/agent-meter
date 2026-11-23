@@ -1,10 +1,11 @@
-"""Daily free-credit rewards on website logins: status always, claiming opt-in.
+"""Daily free-credit rewards on website logins: status always, claiming on request.
 
 This is the only module that writes to a provider account. Everything else in
-the backend stays read-only. Claiming runs only for providers the user switched
-on (preferences ``auto_claim``) or for one account the user asked to claim now.
-It never buys, redeems streak tiers, spends streak-recovery cards, accepts new
-tasks or draws lotteries.
+the backend stays read-only. Nothing here claims on its own: a claim runs only
+when the user presses "领取" on one account, or "领取每日积分" for every
+account at once. There is no switch to turn on, no daily claim time and no
+background attempt. It never buys, redeems streak tiers, spends streak-recovery
+cards, accepts new tasks or draws lotteries.
 
 Endpoints come from each provider's public web bundle (2026-11-09 research,
 docs/research/checkin-automation-and-collection-2026-11-09.md):
@@ -16,7 +17,7 @@ docs/research/checkin-automation-and-collection-2026-11-09.md):
   name, see ``trae_device_id``. The same SDK exposes
   ``ug/work_lottery/*`` and ``pay/query_birthday_bonus`` (research doc line 25);
   their reward fields are undocumented, so they are surfaced as unknown bonus
-  items and never auto-claimed.
+  items and never offered for claiming.
 - WorkBuddy: growth-center ``/activity/growth/streak``, ``/v2/activity/growth/tasks``
   and ``/activity/growth/tasks/{task_code}/claim`` with the website cookie.
 - Qoder CN: ``/sash/api/v1/me/campaigns`` and ``.../{campaign_id}/claim`` with
@@ -53,12 +54,8 @@ LEDGER_NAME = "rewards.json"
 LEDGER_SCHEMA = 1
 CN = timezone(timedelta(hours=8))
 STATUS_EVERY = 30 * 60      # seconds between status reads per account
-RETRY_AFTER = 60 * 60       # seconds before retrying a failed claim
-MAX_ATTEMPTS = 3            # claim attempts per item per day
 KEEP_DAYS = 400
 HISTORY_DAYS = 35
-DEFAULT_CLAIM_TIME = "00:05"
-CLAIM_TIME = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
 
 TRAE_UG = "https://api.trae.cn/trae/api/v2/ug"
 TRAE_PAY = "https://api.trae.cn/trae/api/v2/pay"
@@ -72,15 +69,6 @@ MINIMAX_CODE_SIGNIN = "https://agent.minimax.cn/minimax-cloud/api/v1/signin"
 
 def day_of(now):
     return datetime.fromtimestamp(now, CN).strftime("%Y-%m-%d")
-
-
-def claim_moments(now, claim_time):
-    """Today's claim moment and the next one (epoch seconds, Asia/Shanghai)."""
-    match = CLAIM_TIME.match(claim_time or "") or CLAIM_TIME.match(DEFAULT_CLAIM_TIME)
-    local = datetime.fromtimestamp(now, CN)
-    today = local.replace(hour=int(match.group(1)), minute=int(match.group(2)), second=0, microsecond=0)
-    nxt = today if today.timestamp() > now else today + timedelta(days=1)
-    return today.timestamp(), nxt.timestamp()
 
 
 def _short(text, limit=60):
@@ -385,12 +373,12 @@ def _claimed_credits(record):
     return sum(c.get("credits") or 0 for c in record.get("claims", []) if c.get("result") == "ok")
 
 
-def summarize(slot, provider, account, now, auto, label=None, state="available", reason=None):
+def summarize(slot, provider, account, now, label=None, state="available", reason=None):
     today = day_of(now)
     days = account.get("days", {})
     record = days.get(today, {})
     status = record.get("status")
-    out = {"id": slot, "provider": provider, "auto_claim": auto, "status": state, "reason": reason,
+    out = {"id": slot, "provider": provider, "status": state, "reason": reason,
            "checked_at": timestamp(account["checked_at"]) if account.get("checked_at") else None,
            "today": status, "claims_today": record.get("claims", []),
            "claimed_credits_today": _claimed_credits(record),
@@ -409,7 +397,7 @@ def summarize(slot, provider, account, now, auto, label=None, state="available",
 
 
 class RewardsService:
-    """Throttled status reads plus opt-in claims; one instance per backend."""
+    """Throttled status reads plus claims the user asked for; one per backend."""
 
     def __init__(self, runtime_dir, adapters=None):
         self.path = Path(runtime_dir) / LEDGER_NAME
@@ -423,19 +411,20 @@ class RewardsService:
         checked = account.get("checked_at")
         return not checked or now - checked >= STATUS_EVERY or day_of(checked) != day_of(now)
 
-    def _claim_items(self, record, status, now):
-        attempts = {}
-        for c in record.get("claims", []):
-            attempts.setdefault(c["item"], []).append(c)
-        for item in status.get("claimable", []):
-            tried = attempts.get(item["item"], [])
-            if any(c["result"] in {"ok", "already"} or c.get("final") for c in tried) or len(tried) >= MAX_ATTEMPTS:
-                continue
-            if tried and now - tried[-1]["at"] < RETRY_AFTER:
-                continue
-            yield item
+    def _claim_items(self, record, status):
+        """What a claim may still take today.
 
-    def _run(self, slot, provider, session, now, timeout, auto, force):
+        Only items the provider still offers, minus the ones today's ledger
+        already settled (claimed, already taken, or a refusal that is final for
+        the day). A failed attempt stays open: the next press is the retry.
+        """
+        settled = {c["item"] for c in record.get("claims", [])
+                   if c["result"] in {"ok", "already"} or c.get("final")}
+        for item in status.get("claimable", []):
+            if item["item"] not in settled:
+                yield item
+
+    def _run(self, slot, provider, session, now, timeout, claim, force):
         status_fn, claim_fn = self.adapters[provider]
         account = self.ledger["accounts"].setdefault(slot, {"provider": provider, "days": {}})
         account["provider"] = provider
@@ -445,8 +434,8 @@ class RewardsService:
         try:
             status = status_fn(session, timeout)
             claimed = False
-            if auto:
-                for item in list(self._claim_items(record, status, now)):
+            if claim:
+                for item in list(self._claim_items(record, status)):
                     try:
                         result = claim_fn(session, item["item"], timeout)
                     except SourceError as e:
@@ -479,15 +468,15 @@ class RewardsService:
             self.errors[slot] = "unexpected_reward_error"
         return True
 
-    def tick(self, web_sessions, now, auto_claim=(), disabled=(), timeout=15, only=None, local_only=False,
-             claim_time=DEFAULT_CLAIM_TIME, desktop=None, claim_all=False):
-        """Reads due statuses, claims what is switched on and returns the summary.
+    def tick(self, web_sessions, now, disabled=(), timeout=15, only=None, local_only=False,
+             desktop=None, claim_all=False):
+        """Reads due statuses, claims what was asked for and returns the summary.
 
-        Automatic claims wait for the daily ``claim_time`` (HH:MM, Asia/Shanghai);
-        the first read after that moment happens right away instead of waiting
-        for the status interval. ``only`` names one slot to read and claim right
-        away (the user's "claim now" button), regardless of time, throttling
-        and the auto switch. ``claim_all`` does the same for every account.
+        A plain read never claims. ``only`` names one slot to read and claim
+        right away (the card's "领取" button) and ``claim_all`` does the same
+        for every account (the panel's "领取每日积分" button). Both read a
+        fresh status first instead of waiting for the status interval, and
+        neither is gated by anything the user has to switch on.
 
         ``desktop`` maps a desktop-backed provider to its app path. Such a
         provider is always one account read through the desktop credential: a
@@ -499,8 +488,6 @@ class RewardsService:
             app = (desktop or {}).get(provider)
             if app:
                 accounts[provider] = [{key: app}]
-        today_at, next_at = claim_moments(now, claim_time)
-        claim_open = now >= today_at
         changed = False
         summaries = []
         for provider in PROVIDERS:
@@ -508,33 +495,25 @@ class RewardsService:
                 continue
             for index, session in enumerate(accounts.get(provider, [])):
                 slot = provider if index == 0 else "%s#%d" % (provider, index + 1)
-                auto = provider in auto_claim
                 label = session.get("label")
                 if provider == "trae_cn" and not session.get("device_id"):
                     device = trae_device_id()
                     if device:
                         session = dict(session, device_id=device)
                 if local_only or provider in disabled:
-                    summaries.append(summarize(slot, provider, self.ledger["accounts"].get(slot, {}), now, auto, label,
+                    summaries.append(summarize(slot, provider, self.ledger["accounts"].get(slot, {}), now, label,
                                                "not_connected", "local_only_mode" if local_only else "disabled_by_user"))
                     continue
-                if only is None or only == slot or claim_all:
-                    checked = self.ledger["accounts"].get(slot, {}).get("checked_at") or 0
-                    # Read again as soon as today's claim moment passes.
-                    first_after_open = auto and claim_open and checked < today_at
-                    claim_now = only == slot or claim_all
-                    changed |= self._run(slot, provider, session, now, timeout,
-                                         (auto and claim_open) or claim_now,
-                                         force=claim_now or first_after_open)
+                claim_now = claim_all or only == slot
+                # A request for one account leaves the others' throttle alone.
+                if claim_now or only is None:
+                    changed |= self._run(slot, provider, session, now, timeout, claim_now, force=claim_now)
                 account = self.ledger["accounts"].get(slot, {})
                 error = self.errors.get(slot)
                 state = "available" if error is None else ("not_connected" if error in {"not_authenticated", "web_session_missing",
                                                                                        "minimax_code_not_authenticated"}
                                                            else "error")
-                summary = summarize(slot, provider, account, now, auto, label, state, error)
-                summary["claim_time"] = claim_time if CLAIM_TIME.match(claim_time or "") else DEFAULT_CLAIM_TIME
-                summary["next_claim_at"] = timestamp(next_at) if auto else None
-                summaries.append(summary)
+                summaries.append(summarize(slot, provider, account, now, label, state, error))
         if changed:
             try:
                 save_ledger(self.path, self.ledger, now)

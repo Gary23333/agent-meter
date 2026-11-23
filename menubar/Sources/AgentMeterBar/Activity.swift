@@ -119,6 +119,9 @@ struct ActivityRow: Identifiable {
     let lastEventAt: Date?
     let lastModel: String?
     let requests: Int?
+    let toolCalls: Int?
+    /// 豆包工作的轨迹没有时间戳：计数是整段会话累计，不是窗口内增量。
+    let countsScope: String?
     let tokens: ActivityTokens?
     let estimatedCostUSD: Double?
     let notes: String?
@@ -144,6 +147,8 @@ struct ActivityRow: Identifiable {
         lastEventAt = json["last_event_at"].date
         lastModel = json["last_model"].string
         requests = json["requests"].double.map(Int.init)
+        toolCalls = json["tool_calls"].double.map(Int.init)
+        countsScope = json["counts_scope"].string
         tokens = json["tokens"].isNull ? nil : ActivityTokens(json["tokens"])
         estimatedCostUSD = json["estimated_cost_usd"].double
         notes = json["notes"].string

@@ -8,7 +8,7 @@ enum SyncWindow {
 
     static func show() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 700),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = "多机同步"
             w.isReleasedWhenClosed = false
@@ -35,6 +35,16 @@ private enum PairMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// One line of the space's device list.
+private struct SyncDeviceRow: Identifiable {
+    let id: String
+    let name: String
+    let isLocal: Bool
+    let appVersion: String
+    let detail: String
+    let updated: Date?
+}
+
 struct SyncPairingView: View {
     @Environment(UsageStore.self) private var store
 
@@ -51,40 +61,55 @@ struct SyncPairingView: View {
     @State private var pollTask: Task<Void, Never>?
     @State private var busy = false
     @State private var message: String?
+    /// The name being typed for this Mac; saved on submit.
+    @State private var deviceName = ""
+    @State private var nameSaved = false
+    /// The other device the user asked to remove, pending confirmation.
+    @State private var removing: SyncDeviceRow?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("多机同步")
-                    .font(.system(size: 19, weight: .semibold, design: .rounded))
-                Text("多台 Mac 用同一个同步空间合并用量与额度。服务器只存密文，主密钥不出本机；配对码 5 分钟有效。")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("多机同步")
+                        .font(.system(size: 19, weight: .semibold, design: .rounded))
+                    Text("多台 Mac 用同一个同步空间合并用量、额度、账户信息与签到记录。服务器只存密文，主密钥不出本机；配对码 5 分钟有效。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            if let config, !showingPairing {
-                pairedView(config)
-            } else {
-                pairingView
-            }
+                if let config, !showingPairing {
+                    pairedView(config)
+                } else {
+                    pairingView
+                }
 
-            if let message {
-                Text(message)
-                    .font(.system(size: 11)).foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let message {
+                    Text(message)
+                        .font(.system(size: 11)).foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-
-            Spacer(minLength: 0)
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(20)
-        .frame(width: 520, height: 620, alignment: .topLeading)
+        .frame(width: 520, height: 700)
         .onAppear {
             config = SyncConfigurationStore.load()
-            if !SyncConfigurationStore.baseURL.isEmpty {
-                baseURL = SyncConfigurationStore.baseURL
-            }
+            baseURL = SyncConfigurationStore.baseURL
+            deviceName = store.syncDeviceName
         }
         .onDisappear { pollTask?.cancel() }
+        .alert("移除「\(removing?.name ?? "")”？", isPresented: Binding(get: { removing != nil },
+                                                                      set: { if !$0 { removing = nil } })) {
+            Button("移除", role: .destructive) {
+                if let device = removing?.id { Task { await store.forgetSyncDevice(device) } }
+                removing = nil
+            }
+            Button("取消", role: .cancel) { removing = nil }
+        } message: {
+            Text("它上传到服务端的数据会被删除，本机也会忘掉它的记录。那台设备自己的数据不受影响，重新配对后会再次上传。")
+        }
     }
 
     // MARK: Paired state
@@ -108,6 +133,19 @@ struct SyncPairingView: View {
                 GridRow {
                     Text("本机设备").foregroundStyle(.secondary)
                     Text(config.shortenedDevice + "…").monospaced()
+                }
+                GridRow {
+                    Text("本机名称").foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        TextField("这台 Mac 的名称", text: $deviceName)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit(saveDeviceName)
+                        Button("保存", action: saveDeviceName)
+                            .disabled(deviceName == store.syncDeviceName)
+                        if nameSaved {
+                            Image(systemName: "checkmark").foregroundStyle(.green).font(.system(size: 10, weight: .semibold))
+                        }
+                    }
                 }
             }
             .font(.system(size: 11.5))
@@ -151,16 +189,108 @@ struct SyncPairingView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("额度会随用量一起同步；同一账号按最新观测合并，不重复累加。")
+
+            Toggle("跟随其他设备的偏好设置", isOn: Binding(get: { store.syncPreferencesEnabled },
+                                                          set: { store.syncPreferencesEnabled = $0 }))
+                .font(.system(size: 11.5))
+                .help("界面风格、额度不足阈值、提醒开关、卡片顺序、菜单栏显示与预算；哪台设备最后修改，就以哪台为准")
+
+            deviceList
+
+            Text("同步：按天 × 应用 × 模型的用量、各额度窗口的当日值与近 35 天峰值、账户余额 / 重置卡 / 续费、签到与领取记录、生图张数、卡册张数。不同步：登录凭据、会话与项目路径、来源开关、价格表、桌宠。")
                 .font(.system(size: 10)).foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
-            if let code {
-                hostCodeView(code)
-            } else if let sas = joinedSAS {
-                joinedSuccessView(sas)
+    private func saveDeviceName() {
+        guard deviceName != store.syncDeviceName else { return }
+        store.syncDeviceName = deviceName
+        deviceName = store.syncDeviceName
+        nameSaved = true
+        // The new name reaches the other devices with the next round.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            nameSaved = false
+        }
+    }
+
+    // MARK: Devices
+
+    /// This device first, then every other device the last round heard from.
+    private var devices: [SyncDeviceRow] {
+        var rows = [SyncDeviceRow(id: config?.deviceID ?? "", name: store.syncDeviceName, isLocal: true,
+                                  appVersion: UsageStore.appVersion, detail: "本机",
+                                  updated: store.lastSyncAt)]
+        let local = config?.deviceID ?? ""
+        for device in store.syncHistory?["devices"].array ?? [] {
+            guard let id = device["device"].string, id != local else { continue }
+            let name = device["name"].string ?? ""
+            var parts: [String] = []
+            if let days = device["days"].double, days > 0 { parts.append("\(Int(days)) 天用量") }
+            if let quota = device["quota"].double, quota > 0 { parts.append("\(Int(quota)) 个额度窗口") }
+            if let accounts = device["accounts"].double, accounts > 0 { parts.append("\(Int(accounts)) 个账户") }
+            rows.append(SyncDeviceRow(id: id,
+                                      name: SyncConfigurationStore.label(name: name, device: id),
+                                      isLocal: false,
+                                      appVersion: device["app_version"].string ?? "",
+                                      detail: parts.isEmpty ? "尚未上传用量" : parts.joined(separator: " · "),
+                                      updated: device["updated_at"].date))
+        }
+        return rows
+    }
+
+    private var deviceList: some View {
+        let rows = devices
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("空间内的设备")
+                .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    if index > 0 { Divider().opacity(0.45) }
+                    deviceRow(row)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+        }
+    }
+
+    private func deviceRow(_ row: SyncDeviceRow) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "display")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(row.name).font(.system(size: 12, weight: .medium))
+                    if row.isLocal {
+                        Text("本机")
+                            .font(.system(size: 9, weight: .semibold))
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    }
+                    if !row.appVersion.isEmpty {
+                        Text("v\(row.appVersion)").font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                    }
+                }
+                Text(row.detail).font(.system(size: 10.5)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(row.updated.map { "更新 " + Fmt.moment($0) } ?? (row.isLocal ? "尚未同步" : "尚未上传"))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.tertiary)
+            if !row.isLocal {
+                Button("移除", role: .destructive) { removing = row }
+                    .controlSize(.small)
+                    .disabled(busy || store.syncRunning)
+                    .help("从空间里移除这台设备，并删除它上传的数据")
             }
         }
+        .padding(.vertical, 7)
     }
 
     // MARK: Pairing setup
@@ -169,10 +299,10 @@ struct SyncPairingView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("同步服务地址").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                TextField("https://sync.example.com", text: $baseURL)
-                    .textFieldStyle(.roundedBorder)
+                Text(SyncConfigurationStore.baseURL)
                     .font(.system(size: 12, design: .monospaced))
-                Text("所有 Mac 必须填同一个地址。本机调试可用 http://127.0.0.1:8899")
+                    .textSelection(.enabled)
+                Text("已内置同步服务地址，无需填写。")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
 
@@ -416,8 +546,12 @@ struct SyncPairingView: View {
                             message = "无法把同步密钥写入钥匙串"
                             return
                         }
+                        // Paired on this build: the first round adopts the
+                        // space's preferences, then it runs right away.
+                        UserDefaults.standard.set(true, forKey: SyncPreferenceSync.adoptKey)
                         self.config = config
                         sas = PairingCode.grouped(code)
+                        store.pairingFinished()
                         return
                     }
                 } catch {
@@ -439,6 +573,9 @@ struct SyncPairingView: View {
         code = nil
         sas = ""
         showingPairing = false
+        // The other device starts syncing as soon as it has the key; pick up
+        // what it uploaded instead of waiting for the interval.
+        store.pairingFinished()
     }
 
     private func cancelPairing() {
@@ -454,8 +591,9 @@ struct SyncPairingView: View {
         }
     }
 
+    /// Leaves the space. The store removes this device's blob from the
+    /// service, forgets the other devices and says what it could not do.
     private func clearPairing() {
-        SyncConfigurationStore.clear()
         pollTask?.cancel()
         config = nil
         code = nil
@@ -464,9 +602,7 @@ struct SyncPairingView: View {
         showingPairing = false
         mode = .host
         message = nil
-        store.syncHistory = nil
-        store.syncMessage = nil
-        store.lastSyncAt = nil
+        Task { await store.unpair() }
     }
 
     private func syncNow() {
@@ -497,6 +633,9 @@ struct SyncPairingView: View {
         guard SyncConfigurationStore.save(configuration) else {
             throw PairingError.cryptoFailed
         }
+        // A space created on this build shares its preferences; a device that
+        // pairs into it later adopts them on its first round.
+        UserDefaults.standard.set(true, forKey: SyncPreferenceSync.adoptKey)
         return configuration
     }
 

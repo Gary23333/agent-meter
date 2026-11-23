@@ -15,9 +15,9 @@ MAX_PET_BODY = 4 * 1024
 # A decrypted sync payload from another device travels over loopback only.
 MAX_SYNC_BODY = 8 * 1024 * 1024
 # Sources the app may switch off at runtime.
-# Providers whose daily rewards the app may claim (agent_meter/rewards.py).
-CLAIMABLE = {"trae_cn", "workbuddy", "qoder", "minimax_code"}
 TOGGLEABLE = {"claude", "codex", "kimi", "qoder", "minimax_code", "deepseek_api", "dreamina", "minimax_design", "workbuddy", "trae_cn", "reset_forecast"}
+# Accounts whose daily rewards the claim endpoints accept (agent_meter/rewards.py).
+CLAIMABLE = {"trae_cn", "workbuddy", "qoder", "minimax_code"}
 
 
 def load_or_create_token(path):
@@ -154,21 +154,36 @@ def make_server(service,token,port=8769):
                 return
             if route.path=="/v1/sync/history":
                 # Local rows plus whatever other devices pushed. Synced rows
-                # never enter the snapshot, so this is its own projection.
+                # never enter the snapshot, so this is its own projection. The
+                # shape only ever grows: a client reads the keys it knows.
                 try:
-                    import time as _time
-                    from .sync_store import card_history, device_summaries, history, load_store, quota_history
+                    from .sync_store import (account_history, card_history, day_history, device_summaries, history,
+                                             load_store, quota_history, quota_series, remote_quota_history,
+                                             reward_history)
                     from .sync_payload import card_tally, quota_rows, usage_rows
+                    from .sync_quota import series as local_quota_series
+                    from .sync_usage import usage_periods
+                    runtime=service.config["runtime_dir"]
                     data=service.get()
-                    store=load_store(service.config["runtime_dir"])
+                    store=load_store(runtime)
                     local=store.get("local_device") or ""
-                    now=_time.time()
-                    self.send_json(200,{"schema":1,
+                    # The service's clock, never the wall clock: the same
+                    # "now" as the snapshot the rows are projected from.
+                    now=service.clock()
+                    self.send_json(200,{"schema":1,"local_device":local,
                                         "rows":history(store,usage_rows(data,local)),
                                         "quota":quota_history(store,quota_rows(data,now)),
+                                        "remote_quota":remote_quota_history(store),
+                                        # Every known day of every account window, this
+                                        # device's own journal included.
+                                        "quota_series":quota_series(store,local_quota_series(runtime)),
+                                        "accounts":account_history(store),
+                                        "rewards":reward_history(store),
+                                        "images":day_history(store,"images"),
+                                        "credits":day_history(store,"credits"),
                                         "cards":card_history(store,card_tally(data)),
                                         "devices":device_summaries(store),
-                                        "local_device":local})
+                                        "usage":usage_periods(store,runtime,now)})
                 except Exception:
                     self.send_json(500,{"error":"sync_history_failed"})
                 return
@@ -223,28 +238,79 @@ def make_server(service,token,port=8769):
                 if not isinstance(body,dict):
                     self.send_json(400,{"error":"invalid_sync_payload"});return
                 try:
-                    from .sync_payload import build_payload
+                    from .sync_payload import build_payload, quota_rows
+                    from .sync_quota import record as record_quota
                     from .sync_store import set_local_device
+                    runtime=service.config["runtime_dir"]
                     device=body.get("device")
-                    set_local_device(service.config["runtime_dir"],device)
-                    self.send_json(200,build_payload(service.get(),device,body.get("settings")))
+                    # Checked before anything is written: an invalid device must
+                    # not open the quota journal or name this installation.
+                    if not isinstance(device,str) or not device or len(device)>64:
+                        raise SourceError("invalid_device")
+                    set_local_device(runtime,device)
+                    now=service.clock()
+                    data=service.get()
+                    # Today's observations join this device's quota history. The
+                    # first payload also opens the journal that every later
+                    # collection fills, so the history grows between syncs too.
+                    history=record_quota(runtime,quota_rows(data,now),now,create=True)
+                    self.send_json(200,build_payload(data,device,body.get("settings"),now,
+                                                     settings_times=body.get("settings_times"),
+                                                     device_name=body.get("name"),app_version=body.get("app_version"),
+                                                     quota_history=history,
+                                                     rewards_ledger=service.rewards.ledger if service.rewards else None))
                 except SourceError:
                     self.send_json(400,{"error":"invalid_sync_payload"});return
                 except Exception:
                     self.send_json(500,{"error":"sync_payload_failed"});return
                 return
             if self.path=="/v1/sync/reset":
-                # The user turned sync off: forget every remote device.
+                # The user left the space: forget every remote device, and the
+                # quota history that only existed to be synced.
                 body=self.read_json(MAX_SESSION_BODY)
                 if body is None:return
                 if not isinstance(body,dict):
                     self.send_json(400,{"error":"invalid_sync_payload"});return
                 try:
+                    from .sync_quota import clear as clear_quota
                     from .sync_store import reset
-                    reset(service.config["runtime_dir"])
+                    runtime=service.config["runtime_dir"]
+                    reset(runtime)
+                    clear_quota(runtime)
                 except OSError:
                     self.send_json(500,{"error":"sync_reset_failed"});return
                 self.send_json(200,{"reset":True});return
+            if self.path=="/v1/sync/forget":
+                # One remote device was removed from the space: drop what it sent.
+                body=self.read_json(MAX_SESSION_BODY)
+                if body is None:return
+                if not isinstance(body,dict):
+                    self.send_json(400,{"error":"invalid_device"});return
+                try:
+                    from .sync_store import forget_device, load_store
+                    runtime=service.config["runtime_dir"]
+                    device=body.get("device")
+                    # Only another device's rows can be forgotten here; this
+                    # device's own data is the live snapshot, not a stored copy.
+                    if not isinstance(device,str) or not device:
+                        raise ValueError("invalid_device")
+                    forget_device(runtime,device,load_store(runtime).get("local_device"))
+                except ValueError:
+                    self.send_json(400,{"error":"invalid_device"});return
+                except OSError:
+                    self.send_json(500,{"error":"sync_forget_failed"});return
+                self.send_json(200,{"device":device,"forgotten":True});return
+            if self.path=="/v1/doubao/import-app-cookies":
+                # 从本机豆包客户端的 Cookie 库取登录态；只回给本机 App，不落盘。
+                if self.headers.get("Content-Length","0")!="0" or self.headers.get("Transfer-Encoding"):
+                    self.send_json(400,{"error":"body_not_allowed"});self.close_connection=True;return
+                from .doubao import import_doubao_app_cookies
+                try:cookie=import_doubao_app_cookies(service.config)
+                except SourceError as e:
+                    self.send_json(400,{"error":e.code});return
+                except Exception:
+                    self.send_json(500,{"error":"doubao_cookie_import_failed"});return
+                self.send_json(200,{"cookie":cookie});return
             claim_slot=None
             claim_all=False
             if self.path=="/v1/rewards/claim":
@@ -321,22 +387,18 @@ def make_server(service,token,port=8769):
                     self.send_json(400,{"error":"invalid_preferences"});return
                 self.send_json(200,saved);return
             if self.path=="/v1/preferences":
-                from .rewards import CLAIM_TIME, DEFAULT_CLAIM_TIME
-                ok=isinstance(body,dict) and "disabled_sources" in body and set(body)<={"disabled_sources","low_resource_mode","skip_ledgers_low_resource","auto_claim","claim_time"}
+                # Device-local switches only. Claiming has no preference: it
+                # runs when the user asks for it and at no other time.
+                ok=isinstance(body,dict) and "disabled_sources" in body and set(body)<={"disabled_sources","low_resource_mode","skip_ledgers_low_resource"}
                 off=body.get("disabled_sources") if ok else None
                 low=body.get("low_resource_mode",False) if ok else None
                 skip=body.get("skip_ledgers_low_resource",[]) if ok else None
-                auto=body.get("auto_claim",[]) if ok else None
-                claim_time=body.get("claim_time",DEFAULT_CLAIM_TIME) if ok else None
                 if not isinstance(off,list) or any(x not in TOGGLEABLE for x in off) \
                         or not isinstance(low,bool) \
-                        or not isinstance(skip,list) or any(not isinstance(x,str) for x in skip) \
-                        or not isinstance(auto,list) or any(x not in CLAIMABLE for x in auto) \
-                        or not isinstance(claim_time,str) or not CLAIM_TIME.match(claim_time):
+                        or not isinstance(skip,list) or any(not isinstance(x,str) for x in skip):
                     self.send_json(400,{"error":"invalid_preferences"});return
                 prefs={"disabled_sources":sorted(set(off)),"low_resource_mode":low,
-                       "skip_ledgers_low_resource":sorted(set(skip)),
-                       "auto_claim":sorted(set(auto)),"claim_time":claim_time}
+                       "skip_ledgers_low_resource":sorted(set(skip))}
                 service.set_preferences(prefs)
                 self.send_json(200,prefs);return
             if self.path=="/v1/prices":

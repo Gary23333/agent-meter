@@ -17,20 +17,60 @@ enum SyncError: Error, Equatable {
 ///
 /// Per-device switches (which sources are on, low-resource mode, project
 /// aliases) stay local: they are true of one computer and false of another.
-struct SyncSettings {
+/// Each setting is stamped with the moment it last changed on this device
+/// (`changedAt`); the other devices compare stamps to decide whether a value
+/// is newer than their own (see `SyncPreferenceSync`).
+struct SyncSettings: Equatable {
     var theme: String?
     var lowQuotaThreshold: Double?
-    var sourceOrder: [String]?
-    var claimTime: String?
     var alertsEnabled: Bool?
+    var menuBarMode: String?
+    /// nil: this device never customized the order. []: it reset it to the default.
+    var sourceOrder: [String]?
+    /// Budget amounts that are set, in CNY. [:] means no budget.
+    var budget: [String: Double]?
+    /// Epoch seconds, per key; a key that never changed here is absent.
+    var changedAt: [String: Double] = [:]
 
+    static let keys = ["theme", "low_quota_threshold", "alerts_enabled", "menu_bar_mode",
+                       "source_order", "budget"]
+
+    init() {}
+
+    /// What another device's payload carried. `times` is its `settings_times`;
+    /// an older build sends none, and then no key is newer than anything.
+    init(json: JSON, times: JSON) {
+        theme = json["theme"].string
+        lowQuotaThreshold = json["low_quota_threshold"].double
+        alertsEnabled = json["alerts_enabled"].bool
+        menuBarMode = json["menu_bar_mode"].string
+        sourceOrder = json["source_order"].isNull ? nil : json["source_order"].array.compactMap(\.string)
+        budget = json["budget"].isNull ? nil : json["budget"].object.compactMapValues { $0.double }
+        changedAt = times.object.compactMapValues { $0.double }
+    }
+
+    /// The upload body's `settings` object: only what this device has an opinion on.
     var payload: [String: Any] {
         var out: [String: Any] = [:]
         if let theme { out["theme"] = theme }
         if let lowQuotaThreshold { out["low_quota_threshold"] = lowQuotaThreshold }
-        if let sourceOrder { out["source_order"] = sourceOrder }
-        if let claimTime { out["claim_time"] = claimTime }
         if let alertsEnabled { out["alerts_enabled"] = alertsEnabled }
+        if let menuBarMode { out["menu_bar_mode"] = menuBarMode }
+        if let sourceOrder { out["source_order"] = sourceOrder }
+        if let budget { out["budget"] = budget }
+        return out
+    }
+
+    /// The same values as one comparable tree, every key present (null when unset).
+    var values: [String: JSON] {
+        var out: [String: JSON] = [:]
+        for key in Self.keys { out[key] = .null }
+        out["theme"] = theme.map { .string($0) } ?? .null
+        out["low_quota_threshold"] = lowQuotaThreshold.map { .number($0) } ?? .null
+        out["alerts_enabled"] = alertsEnabled.map { .bool($0) } ?? .null
+        out["menu_bar_mode"] = menuBarMode.map { .string($0) } ?? .null
+        out["source_order"] = sourceOrder.map { .array($0.map(JSON.string)) } ?? .null
+        out["budget"] = budget.map { .object($0.mapValues { .number($0) }) } ?? .null
         return out
     }
 }
@@ -249,9 +289,16 @@ struct SyncService: SyncTransport {
 /// can be tested without a running backend.
 protocol SyncBackend {
     /// The redacted payload this device may upload, as raw JSON bytes.
-    func syncPayload(localDevice: String, settings: SyncSettings) async throws -> Data
+    func syncPayload(localDevice: String, name: String, appVersion: String,
+                     settings: SyncSettings) async throws -> Data
     /// Hands a payload decrypted from the service to the backend.
     func importSync(localDevice: String, payload: Data) async throws
+}
+
+/// What another device carries for the shared settings, and when it uploaded.
+struct SyncedSettings: Equatable {
+    var settings: SyncSettings
+    var generatedAt: Double
 }
 
 /// What one sync round did.
@@ -269,6 +316,13 @@ struct SyncReport: Equatable {
     /// number of rows received, not the number of distinct accounts.
     var remoteQuotaRows = 0
     var remoteQuotaDevices = 0
+    /// Account facts, check-in days and image rows that came across.
+    var remoteAccountRows = 0
+    var remoteRewardRows = 0
+    var remoteImageRows = 0
+    /// The settings each other device carries. Only a device on this build or
+    /// later is listed: an older one sends no change stamps to compare.
+    var remoteSettings: [SyncedSettings] = []
 }
 
 /// Drives one sync round: seal the local payload, upload it, then open every
@@ -283,6 +337,19 @@ struct SyncRunner {
         let sealed = try keys.seal(payload)
         try await transport.put(spaceID: keys.spaceID, deviceID: deviceID,
                                 token: keys.authToken, ciphertext: sealed)
+    }
+
+    /// Removes this device's own blob: it is leaving the space, and what it
+    /// uploaded must not stay behind as a device that no longer updates.
+    func leave() async throws {
+        try await transport.delete(spaceID: keys.spaceID, deviceID: deviceID, token: keys.authToken)
+    }
+
+    /// Removes another device's blob (the user took it out of the space).
+    /// This device's own blob is never the target here.
+    func remove(device: String) async throws {
+        guard device != deviceID else { throw SyncError.notConfigured }
+        try await transport.delete(spaceID: keys.spaceID, deviceID: device, token: keys.authToken)
     }
 
     /// Opens the other devices' blobs. A blob that will not open is reported
@@ -312,12 +379,16 @@ struct SyncCoordinator {
     let backend: any SyncBackend
     let runner: SyncRunner
     var settings = SyncSettings()
+    /// How this device lists itself for the others.
+    var deviceName = ""
+    var appVersion = ""
 
     /// One full round: upload, then pull every other device's payload.
     func run() async throws -> SyncReport {
         var report = SyncReport()
-        let payload = try await backend.syncPayload(localDevice: runner.deviceID, settings: settings)
-        report.localQuotaRows = Self.quotaRowCount(payload)
+        let payload = try await backend.syncPayload(localDevice: runner.deviceID, name: deviceName,
+                                                     appVersion: appVersion, settings: settings)
+        report.localQuotaRows = Self.count(payload, "quota")
         try await runner.upload(payload)
         report.uploaded = true
         // One manifest read for the whole round.
@@ -332,24 +403,41 @@ struct SyncCoordinator {
             do {
                 try await backend.importSync(localDevice: runner.deviceID, payload: plain)
                 report.importedDevices.append(device)
-                let quota = Self.quotaRowCount(plain)
+                let quota = Self.count(plain, "quota")
                 if quota > 0 {
                     report.remoteQuotaRows += quota
                     report.remoteQuotaDevices += 1
+                }
+                report.remoteAccountRows += Self.count(plain, "accounts")
+                report.remoteRewardRows += Self.count(plain, "rewards")
+                report.remoteImageRows += Self.count(plain, "images")
+                if let carried = Self.settings(in: plain) {
+                    report.remoteSettings.append(carried)
                 }
             } catch {
                 report.failedDevices.append(device)
             }
         }
+        // Oldest upload first, so the store reads the newest change last.
+        report.remoteSettings.sort { $0.generatedAt < $1.generatedAt }
         return report
     }
 
-    /// Count the quota observations in a plaintext payload. Kept here rather
-    /// than in the backend protocol so the sync window can report what came
-    /// across without changing the loopback API.
-    private static func quotaRowCount(_ payload: Data) -> Int {
+    /// How many entries a plaintext payload holds in one list section. Kept
+    /// here rather than in the backend protocol so the sync window can report
+    /// what came across without changing the loopback API.
+    private static func count(_ payload: Data, _ key: String) -> Int {
         guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
-              let quota = object["quota"] as? [[String: Any]] else { return 0 }
-        return quota.count
+              let rows = object[key] as? [[String: Any]] else { return 0 }
+        return rows.count
+    }
+
+    /// The settings a remote payload carries. Only when it also carries change
+    /// stamps: without them there is nothing to compare a local value against.
+    private static func settings(in payload: Data) -> SyncedSettings? {
+        guard let data = try? JSONDecoder().decode(JSON.self, from: payload),
+              !data["settings_times"].isNull else { return nil }
+        return SyncedSettings(settings: SyncSettings(json: data["settings"], times: data["settings_times"]),
+                              generatedAt: data["generated_at"].double ?? 0)
     }
 }

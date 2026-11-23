@@ -12,6 +12,9 @@ from pathlib import Path
 
 STORE_NAME = "synced-history.json"
 STORE_SCHEMA = 1
+# Row sections of a device's bucket. A bucket written before a section existed
+# simply lacks it, so every reader goes through ``section()``.
+SECTIONS = ("rows", "quota", "quota_history", "accounts", "rewards", "images", "credits")
 
 
 def store_path(runtime_dir):
@@ -35,7 +38,8 @@ def load_store(runtime_dir):
     return {
         "schema": STORE_SCHEMA,
         "local_device": local if isinstance(local, str) else "",
-        "devices": devices if isinstance(devices, dict) else {},
+        "devices": {device: bucket for device, bucket in (devices or {}).items()
+                    if isinstance(device, str) and isinstance(bucket, dict)} if isinstance(devices, dict) else {},
     }
 
 
@@ -46,6 +50,12 @@ def save_store(runtime_dir, store):
 
     atomic_json(store_path(runtime_dir), store)
     return store
+
+
+def section(bucket, name):
+    """One row section of a device's bucket; always a list."""
+    rows = (bucket or {}).get(name)
+    return rows if isinstance(rows, list) else []
 
 
 def set_local_device(runtime_dir, device):
@@ -74,13 +84,26 @@ def replace_device(runtime_dir, record, local_device=None):
         raise ValueError("invalid_device")
     if local_device and device == local_device:
         return store
-    store["devices"][device] = {
-        "rows": record.get("rows") or [],
-        "quota": record.get("quota") or [],
-        "cards": record.get("cards") or {},
-        "settings": record.get("settings") or {},
+    bucket = {name: list(record.get(name) or []) for name in SECTIONS}
+    bucket.update({
+        "cards": dict(record.get("cards") or {}),
+        "settings": dict(record.get("settings") or {}),
+        "settings_times": dict(record.get("settings_times") or {}),
+        "name": record.get("name") or "",
+        "app_version": record.get("app_version") or "",
+        "generated_at": record.get("generated_at"),
         "updated_at": record.get("updated_at"),
-    }
+    })
+    store["devices"][device] = bucket
+    return save_store(runtime_dir, store)
+
+
+def forget_device(runtime_dir, device, local_device=None):
+    """Drop one remote device (the user removed it from the space)."""
+    store = load_store(runtime_dir)
+    if local_device and device == local_device:
+        raise ValueError("own_device")
+    store["devices"].pop(device, None)
     return save_store(runtime_dir, store)
 
 
@@ -95,6 +118,24 @@ def reset(runtime_dir):
     return save_store(runtime_dir, store)
 
 
+def remote_rows(store, name):
+    """(device, row) for every row of one section, over every remote device."""
+    local = store.get("local_device") or ""
+    for device in sorted(store.get("devices") or {}):
+        if device == local:
+            continue
+        bucket = store["devices"][device] or {}
+        for row in section(bucket, name):
+            if isinstance(row, dict):
+                yield device, row
+
+
+def device_names(store):
+    """{device: name} as each device announced itself."""
+    return {device: (bucket or {}).get("name") or ""
+            for device, bucket in (store.get("devices") or {}).items()}
+
+
 def history(store, local_rows=None):
     """Local rows plus every remote device's rows, one flat list.
 
@@ -103,12 +144,13 @@ def history(store, local_rows=None):
     that is the user's own setup, not something the store can detect.
     """
     rows = list(local_rows or [])
-    devices = store.get("devices") or {}
-    for device in sorted(devices):
-        bucket = devices[device] or {}
-        for row in bucket.get("rows") or []:
-            rows.append(row)
+    for device, row in remote_rows(store, "rows"):
+        rows.append(row)
     return rows
+
+
+def _quota_key(row):
+    return (row.get("account"), row.get("bucket"), row.get("window"), row.get("day"))
 
 
 def quota_history(store, local_quota=None):
@@ -119,20 +161,95 @@ def quota_history(store, local_quota=None):
     """
     latest = {}
     for row in list(local_quota or []):
-        key = (row.get("account"), row.get("bucket"), row.get("window"), row.get("day"))
-        latest[key] = row
-    for device in sorted(store.get("devices") or {}):
-        bucket = store["devices"][device] or {}
-        for row in bucket.get("quota") or []:
-            # Tag the winner with its device so the UI can tell a local
-            # observation from a remote one. The stored row itself stays
-            # device-independent; this is a projection-only field.
-            entry = dict(row, device=device)
-            key = (entry.get("account"), entry.get("bucket"), entry.get("window"), entry.get("day"))
-            previous = latest.get(key)
-            if previous is None or (entry.get("observed_at") or 0) >= (previous.get("observed_at") or 0):
-                latest[key] = entry
+        if isinstance(row, dict):
+            latest[_quota_key(row)] = row
+    for device, row in remote_rows(store, "quota"):
+        # Tag the winner with its device so the UI can tell a local
+        # observation from a remote one. The stored row itself stays
+        # device-independent; this is a projection-only field.
+        entry = dict(row, device=device)
+        previous = latest.get(_quota_key(entry))
+        if previous is None or (entry.get("observed_at") or 0) >= (previous.get("observed_at") or 0):
+            latest[_quota_key(entry)] = entry
     return [latest[key] for key in sorted(latest, key=lambda k: tuple(str(x) for x in k))]
+
+
+def remote_quota_history(store):
+    """Latest remote quota rows, even when a newer local observation wins.
+
+    `quota_history` collapses every account/window/day to one winner for the
+    account cards. That is right for the displayed percentage, but it makes a
+    successful sync invisible whenever this Mac observed the same account
+    later. Keep a separate remote-only view so the UI can say "another device
+    also reported this window" without changing which value is authoritative.
+    """
+    latest = {}
+    for device, row in remote_rows(store, "quota"):
+        entry = dict(row, device=device)
+        previous = latest.get(_quota_key(entry))
+        if previous is None or (entry.get("observed_at") or 0) >= (previous.get("observed_at") or 0):
+            latest[_quota_key(entry)] = entry
+    return [latest[key] for key in sorted(latest, key=lambda k: tuple(str(x) for x in k))]
+
+
+def _is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def quota_series(store, local_series=None):
+    """Every known day of every account window: last value and the day's peak.
+
+    The other values come from the latest observation, which is tagged with
+    its device when it came from another machine. The peak is the highest
+    usage any device saw in that window that day.
+    """
+    latest, peaks = {}, {}
+
+    def offer(row, tagged):
+        key = _quota_key(row)
+        previous = latest.get(key)
+        if previous is None or (row.get("observed_at") or 0) >= (previous.get("observed_at") or 0):
+            latest[key] = row if tagged else dict(row)
+
+    for device, row in remote_rows(store, "quota_history"):
+        offer(dict(row, device=device), tagged=True)
+    for row in list(local_series or []):
+        if isinstance(row, dict):
+            offer(row, tagged=False)
+    for _device, row in remote_rows(store, "quota_history"):
+        if _is_number(row.get("peak_used_percent")):
+            key = _quota_key(row)
+            peaks[key] = max(peaks.get(key, float("-inf")), row["peak_used_percent"])
+    for key, entry in latest.items():
+        peak = peaks.get(key)
+        if peak is not None and (not _is_number(entry.get("peak_used_percent")) or peak > entry["peak_used_percent"]):
+            entry["peak_used_percent"] = peak
+    return [latest[key] for key in sorted(latest, key=lambda k: tuple(str(x) for x in k))]
+
+
+def account_history(store):
+    """The latest account facts each device reported, newest per account.
+
+    Remote only: a device's own accounts are read live. Every row is tagged
+    with the device that saw it.
+    """
+    latest = {}
+    for device, row in remote_rows(store, "accounts"):
+        entry = dict(row, device=device)
+        previous = latest.get(entry.get("account"))
+        if previous is None or (entry.get("observed_at") or 0) >= (previous.get("observed_at") or 0):
+            latest[entry.get("account")] = entry
+    return [latest[key] for key in sorted(latest, key=lambda k: str(k))]
+
+
+def reward_history(store):
+    """The check-in and claim days other devices reported."""
+    return [dict(row, device=device) for device, row in remote_rows(store, "rewards")]
+
+
+def day_history(store, name):
+    """The per-day rows (images, credits) other devices reported."""
+    return [dict(row, device=device) for device, row in remote_rows(store, name)]
 
 
 def card_history(store, local_cards=None):
@@ -155,13 +272,23 @@ def device_summaries(store):
     out = []
     for device, bucket in sorted((store.get("devices") or {}).items()):
         bucket = bucket or {}
-        rows = bucket.get("rows") or []
+        rows = section(bucket, "rows")
         days = {row.get("date") for row in rows if isinstance(row, dict)}
+        windows = {(row.get("account"), row.get("bucket"), row.get("window"))
+                   for row in section(bucket, "quota") if isinstance(row, dict)}
         out.append({
             "device": device,
+            "name": bucket.get("name") or "",
+            "app_version": bucket.get("app_version") or "",
             "rows": len(rows),
             "days": len([d for d in days if isinstance(d, str)]),
             "cards": len(bucket.get("cards") or {}),
+            "quota": len(windows),
+            "accounts": len(section(bucket, "accounts")),
+            "rewards": len(section(bucket, "rewards")),
+            "images": sum(row.get("images", 0) for row in section(bucket, "images") if isinstance(row, dict)
+                          and isinstance(row.get("images"), int)),
+            "generated_at": bucket.get("generated_at"),
             "updated_at": bucket.get("updated_at"),
         })
     return out

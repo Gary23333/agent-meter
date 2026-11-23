@@ -8,7 +8,7 @@ enum Catalog {
         let tint: Color
     }
 
-    static let order = ["codex", "claude", "antigravity", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "zcode", "volcengine", "minimax_design", "dreamina", "mimo", "stepfun", "deepseek_api"]
+    static let order = ["codex", "claude", "antigravity", "kimi", "qoder", "workbuddy", "trae_cn", "minimax_code", "zcode", "volcengine", "doubao", "minimax_design", "dreamina", "mimo", "stepfun", "deepseek_api"]
     static let metricOrder = ["quota", "reset_time", "reset_cards", "credits", "tokens", "cost",
                               "renewal_time", "renewal_countdown", "renewal_amount",
                               "credit_refresh_time", "credit_refresh_countdown"]
@@ -38,6 +38,8 @@ enum Catalog {
         case "deepseek_api": return Brand(name: "DeepSeek API", symbol: "fish.fill", tint: Color(red: 0.25, green: 0.42, blue: 0.95))
         case "zcode": return Brand(name: "ZCode", symbol: "z.square.fill", tint: Color(red: 0.16, green: 0.38, blue: 0.98))
         case "volcengine": return Brand(name: "火山方舟 Coding Plan", symbol: "flame.fill", tint: Color(red: 0.20, green: 0.44, blue: 1.0))
+        case "doubao": return Brand(name: "豆包", symbol: "bubble.left.and.bubble.right.fill", tint: Color(red: 0.14, green: 0.62, blue: 0.86))
+        case "doubao_work": return Brand(name: "豆包工作", symbol: "briefcase.fill", tint: Color(red: 0.14, green: 0.62, blue: 0.86))
         case "mimo": return Brand(name: "MiMo API", symbol: "bolt.horizontal.fill", tint: Color(red: 1.0, green: 0.42, blue: 0.0))
         case "stepfun": return Brand(name: "阶跃星辰", symbol: "figure.stairs", tint: Color(red: 0.15, green: 0.55, blue: 0.95))
         case "reset_forecast": return Brand(name: "重置预测", symbol: "clock.arrow.2.circlepath", tint: Color(red: 0.42, green: 0.36, blue: 0.92))
@@ -62,7 +64,7 @@ enum Catalog {
         let id = ConnectionManager.provider(ofSlot: id)
         return ["codex": "Codex", "claude": "Claude", "kimi": "Kimi", "kimi_desktop": "Kimi 桌面", "qoder": "Qoder", "workbuddy": "WorkBuddy", "trae_cn": "TRAE", "minimax_code": "MiniMax",
          "minimax_design": "Design", "dreamina": "即梦", "deepseek_api": "DeepSeek",
-         "zcode": "ZCode", "volcengine": "火山", "mimo": "MiMo", "stepfun": "阶跃",
+         "zcode": "ZCode", "volcengine": "火山", "doubao": "豆包", "doubao_work": "豆包工作", "mimo": "MiMo", "stepfun": "阶跃",
          "opencode": "OpenCode", "gemini": "Gemini", "antigravity": "Antigravity", "deepseek_harness": "DS Harness", "reset_forecast": "预测",
          "mimo_code": "MiMo Code", "deveco": "DevECo", "kimi_legacy": "Kimi 旧版"][id]
             ?? brand(id).name
@@ -157,6 +159,19 @@ enum Catalog {
             "invalid_stepfun_rate": "阶跃星辰返回的用量比例无法解析",
             "invalid_stepfun_credits": "阶跃星辰返回的积分数无法解析",
             "invalid_stepfun_response": "阶跃星辰返回格式不支持",
+            "doubao_credential_not_connected": "未连接豆包",
+            "doubao_not_authenticated": "豆包登录已过期",
+            "doubao_no_active_subscription": "豆包账号没有有效订阅",
+            "doubao_no_quota_windows": "豆包未返回额度窗口",
+            "doubao_quota_unavailable": "豆包额度暂不可用",
+            "unsupported_doubao_contract": "豆包额度格式暂未支持",
+            "doubao_no_balance_rows": "豆包未返回余额明细",
+            "doubao_app_cookies_not_found": "未找到豆包 App 的登录数据",
+            "doubao_keychain_denied": "钥匙串未授权读取豆包登录数据",
+            "doubao_node_missing": "找不到 node，无法解密豆包登录数据",
+            "doubao_app_cookies_unreadable": "豆包登录数据无法读取",
+            "unsupported_doubao_cookie_format": "豆包登录数据格式暂未支持",
+            "doubao_work_sessions_not_found": "未找到豆包工作会话",
             "dreamina_cli_not_available": "未找到即梦 CLI",
             "dreamina_not_authenticated": "即梦未登录",
             "design_gateway_not_ready": "MiniMax Design 未运行",
@@ -258,7 +273,8 @@ enum Catalog {
                      "stepPlanCredits": "STEP 积分",
                      "5h": "5 小时", "week": "每周", "userQuota": "套餐额度", "addOnQuota": "加购额度",
                      "orgResourcePackage": "组织资源包", "totalQuota": "总额度", "sharedQuota": "共享额度", "credits": "积分", "primary": "主窗口", "secondary": "次窗口",
-                     "tertiary": "第三窗口", "summary": "汇总"]
+                     "tertiary": "第三窗口", "summary": "汇总",
+                     "monthly_quota": "月度额度", "doubao_quota": "豆包额度"]
         let b = q["bucket"].string ?? ""
         return names[b] ?? (b.isEmpty ? "额度" : b)
     }
@@ -301,6 +317,7 @@ enum Catalog {
         case "minimax_design_media_credits": return "媒体积分"
         case "workbuddy_credits", "trae_credits", "qoder_credits": return "积分"
         case "stepfun_credits": return "积分"
+        case "doubao_points": return "点"
         case "zcode_credits": return "额度"
         case "tokens": return "Token"
         case "calls": return "次"
@@ -321,7 +338,8 @@ enum Catalog {
          "mcode": "MiniMax Code", "grokbuild": "Grok Build", "pi": "Pi", "zcode": "ZCode", "workbuddy": "WorkBuddy",
          "antigravity": "Antigravity", "agy": "Antigravity",
          "dsh": "DeepSeek Harness", "deepseek_harness": "DeepSeek Harness",
-         "mimo_code": "MiMo Code", "deveco": "DevECo", "kimi_legacy": "Kimi 旧 CLI"][app] ?? app
+         "mimo_code": "MiMo Code", "deveco": "DevECo", "kimi_legacy": "Kimi 旧 CLI",
+         "doubao": "豆包", "doubao_work": "豆包工作"][app] ?? app
     }
 
     /// Model id for display: the readers prefix the vendor's id with their own
@@ -354,6 +372,7 @@ enum Catalog {
         case "dsh", "deepseek_harness": return brand("deepseek_harness").tint
         case "mimo_code": return brand("mimo_code").tint
         case "deveco": return brand("deveco").tint
+        case "doubao", "doubao_work": return brand("doubao").tint
         case "kimi_legacy": return brand("kimi_legacy").tint
         default: return .purple
         }

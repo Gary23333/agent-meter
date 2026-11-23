@@ -20,6 +20,8 @@ struct WebProvider: Identifiable {
     var keyHelp: (title: String, url: URL)? = nil
     /// Pages a hidden window visits to renew `tokenCapture` after the first login.
     var renewPaths: [String] = []
+    /// 登录窗口提供「从豆包 App 导入」：直接读本机 App 的登录态。
+    var appImport = false
 
     static let all: [WebProvider] = [
         WebProvider(id: "claude", loginURL: URL(string: "https://claude.ai/login")!,
@@ -55,6 +57,10 @@ struct WebProvider: Identifiable {
                                                           wrongPrefixHint: "这是方舟 API Key，不能查询用量。请填访问控制里的 AccessKey ID（以 AK 开头），或直接点「登录…」。"),
                                                  KeyField(field: "secret_access_key", placeholder: "Secret Access Key")]),
                     keyHelp: ("打开 AccessKey 管理页", URL(string: "https://console.volcengine.com/iam/keymanage")!)),
+        WebProvider(id: "doubao", loginURL: URL(string: "https://www.doubao.com/member/quota-management")!,
+                    cookieDomain: "doubao.com",
+                    note: "登录豆包后打开「额度状态 / 豆包订阅」页面再点「完成连接」。只读取额度点数与重置时间，不读聊天内容；豆包和豆包工作不提供 Token 用量。",
+                    appImport: true),
         WebProvider(id: "dreamina", loginURL: URL(string: "https://jimeng.jianying.com/ai-tool/home")!,
                     cookieDomain: "jianying.com",
                     note: "实验性：登录后请打开「会员 / 积分」相关页面，再点「完成连接」。本步只记录页面接口的字段结构，用来定位续费与积分更新时间。",
@@ -352,6 +358,9 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
     var capturedToken: String?
     var capturedOrigin: String?
     var capturedURL: String?
+    /// 从豆包 App 导入的 Cookie，保存时优先于网页窗口的 Cookie。
+    var importedCookie: String?
+    var importing = false
     @ObservationIgnored let discovery = DreaminaDiscovery()
     var status = "请在下方完成登录，然后点「完成连接」。"
     var saving = false
@@ -403,6 +412,24 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
         }
     }
 
+    /// 读取豆包 App 的登录数据；失败只在状态栏提示，不留任何凭据日志。
+    func importAppCookies() async {
+        guard let project = UsageStore.shared.projectDirectory else {
+            status = "后端尚未启动，稍后再试。"
+            return
+        }
+        importing = true
+        defer { importing = false }
+        do {
+            importedCookie = try await BackendClient(project: project).importDoubaoCookies()
+            status = "已读取豆包 App 登录态，点「完成连接」保存。"
+        } catch BackendError.http(_, let code) {
+            status = code.map(Catalog.reason) ?? "读取豆包 App 登录数据失败。"
+        } catch {
+            status = "读取豆包 App 登录数据失败：" + error.localizedDescription
+        }
+    }
+
     func finish() async -> Bool {
         saving = true
         defer { saving = false }
@@ -420,21 +447,27 @@ final class WebLoginModel: NSObject, WKScriptMessageHandler {
             }
         }
         if let domain = provider.cookieDomain {
-            let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-            let now = Date()
-            let header = cookies
-                .filter { c in
-                    let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
-                    return (d == domain || d.hasSuffix("." + domain)) && (c.expiresDate ?? .distantFuture) > now
+            if let imported = importedCookie, !imported.isEmpty {
+                // 优先使用 App 导入的登录态，网页窗口的 Cookie 不覆盖它。
+                guard imported.utf8.count < 16 * 1024 else { status = "Cookie 过大，无法保存。"; return false }
+                session["cookie"] = imported
+            } else {
+                let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
+                let now = Date()
+                let header = cookies
+                    .filter { c in
+                        let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                        return (d == domain || d.hasSuffix("." + domain)) && (c.expiresDate ?? .distantFuture) > now
+                    }
+                    .map { "\($0.name)=\($0.value)" }
+                    .joined(separator: "; ")
+                guard !header.isEmpty else {
+                    status = "没有找到 \(domain) 的登录 Cookie，请先完成登录。"
+                    return false
                 }
-                .map { "\($0.name)=\($0.value)" }
-                .joined(separator: "; ")
-            guard !header.isEmpty else {
-                status = "没有找到 \(domain) 的登录 Cookie，请先完成登录。"
-                return false
+                guard header.utf8.count < 16 * 1024 else { status = "Cookie 过大，无法保存。"; return false }
+                session["cookie"] = header
             }
-            guard header.utf8.count < 16 * 1024 else { status = "Cookie 过大，无法保存。"; return false }
-            session["cookie"] = header
         }
         if provider.discovers, let dir = UsageStore.shared.projectDirectory {
             discovery.write(to: dir.appendingPathComponent(".runtime/dreamina-discovery.json"))
@@ -468,6 +501,10 @@ struct WebLoginView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 150)
                     .help("用来区分多个账号，例如「主号」「小号」")
+                if model.provider.appImport {
+                    Button("从豆包 App 导入") { Task { await model.importAppCookies() } }
+                        .disabled(model.importing || model.saving)
+                }
                 Button("取消", action: close)
                 Button("完成连接") {
                     Task { if await model.finish() { close() } }

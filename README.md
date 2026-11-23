@@ -1,7 +1,7 @@
 <!-- WORKSPACE-STATUS-START -->
 ## 当前入口与目录约定
 
-2026-11-12 更新。当前源码版本 v0.11.0，新增桌宠分享与漫游、Claude 桌面额度、本机历史导出及联网汇率。
+2026-11-20 更新。当前源码版本 v0.12.3，新增多机同步与短码配对、自动同步间隔，消耗页合并全部设备的用量，账户页可合并其他设备同步的额度；同步服务地址已内置为 https://sync.joycine.xyz，修复刚启动时点「立即同步」误报后端不可连接的问题。
 
 - 目录导览：[STRUCTURE.md](STRUCTURE.md)。
 - AI 接手先读 [AGENTS.md](AGENTS.md)，再按任务阅读相应模块文档；共享知识入口在 [docs/agent-knowledge/README.md](docs/agent-knowledge/README.md)。
@@ -35,9 +35,9 @@ python3.14 -m agent_meter verify                 # 本机账本独立重算对�
   <img src="https://img.shields.io/badge/Platform-macOS%2014%2B-black?logo=apple" alt="Platform: macOS 14+" />
   <img src="https://img.shields.io/badge/Frontend-Swift%20%2F%20SwiftUI-orange?logo=swift" alt="Frontend: Swift Native" />
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
-  <img src="https://img.shields.io/badge/Schema-v5-success" alt="Schema: v5" />
+  <img src="https://img.shields.io/badge/Schema-v6-success" alt="Schema: v6" />
   <img src="https://img.shields.io/badge/Security-Read--Only%20by%20Default-red" alt="Security: Read-Only by Default" />
-  <img src="https://img.shields.io/badge/Version-v0.11.0-blue" alt="Version v0.11.0" />
+  <img src="https://img.shields.io/badge/Version-v0.12.3-blue" alt="Version v0.12.3" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -269,6 +269,7 @@ python3.14 -m agent_meter verify                 # 本机账本独立重算对�
 | **火山方舟 Coding Plan** | 火山引擎方舟 | 内嵌控制台登录（回放页面自身的只读 `GetCodingPlanUsage`）/ AccessKey 签名 | 5 小时 / 每周 / 每月额度与各自重置时间 | 最多 5 账号 |
 | **小米 MiMo API** | MiMo 开放平台控制台 | 内嵌安全网页登录 / Cookie | 账户余额（现金 / 赠送）、Token Plan 本月用量 | 最多 5 账号 |
 | **阶跃星辰 (StepFun)** | 阶跃星辰开放平台 | 内嵌安全网页登录 / Cookie + 开放平台 API Key | 账户余额（充值 / 赠送）、5 小时 / 每周窗口或月度积分池、套餐名与到期日 | 最多 5 账号 |
+| **豆包 / 豆包工作** | 豆包客户端（含豆包工作） | 内嵌安全网页登录 / 从豆包 App 导入登录态 | 豆包订阅额度点数（已用 / 总量 / 百分比、剩余、重置时间）；豆包工作本机会话活动（轮次 / 工具调用，**不是 Token**） | 最多 5 账号；**不提供 Token 用量** |
 | **Antigravity** | Google Antigravity 桌面端 / agy CLI | 本机会话 SQLite 只读 + 运行中 `language_server` 本地 RPC | 5 小时 / 周额度（Gemini / Claude+GPT / Argon 分组）、重置时间、本机 Token 今日/30 天/全部、模型分组、缓存命中率、估算费用 | 独立账户 |
 | **历史导入** | 早期由本机路由数据库记录、现由项目自有文件保存的历史消耗 | `<runtime>/imported-history.json`（一次性迁移写入，0600） | 今日 / 7 天 / 30 天 / 全部 Token、缓存命中率、估算费用（逐请求行可拆峰谷） | 本机历史 |
 | **本机 Agent 会话账本** | Codex CLI、Claude Code + Claude 桌面端 local-agent、Gemini CLI、Antigravity、OpenCode、MiniMax Code、Kimi Code / 桌面端 / 旧 CLI、ZCode、WorkBuddy、MiMo Code、DevECo、**DeepSeek Harness (dsh)** | 本机会话日志 / SQLite / zstd 压缩会话日志只读直读（无需第三方路由数据库） | 今日 / 7 天 / 30 天 / 全部 Token、按模型分组、缓存命中率、API 等价费用 | 本机历史 |
@@ -325,7 +326,7 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 打开本机打包生成的 `AgentMeter-0.11.0-macos-arm64.dmg`，或从 [GitHub Releases](https://github.com/Gary23333/agent-meter/releases) 下载已公开的版本。
+1. 打开本机打包生成的 `AgentMeter-0.12.3-macos-arm64.dmg`，或从 [GitHub Releases](https://github.com/Gary23333/agent-meter/releases) 下载已公开的版本。
 2. 打开 DMG，把「Agent 用量.app」拖进「应用程序」文件夹；
 3. 双击启动。菜单栏会立即出现行情条。
    - *App 自带独立 Python 后端，**无需安装 Python、Xcode 或项目源码**。各来源仍需对应的客户端或登录态。*
@@ -446,6 +447,22 @@ CI 运行 Python 3.9、3.12、3.14 离线回归、源码包 / wheel 版本校验
 ## 📝 更新日志
 
 完整说明见 [docs/](docs/) 下的 `release-v*.md`。
+
+### v0.12.3 · 2026-11-20
+
+- **消耗页合并全部设备**：本机与已同步设备的 Token、请求与费用一起统计，页头标注「含 N 台其他设备」；费用按本机价格表谷时基价估算，未匹配模型继续在页脚列出。
+- **额度归属修复**：同步额度按账户键回落到对应账户卡片；Antigravity 这类只有隐式账户的来源，现在会把另一台设备的额度窗口直接显示在自己的卡片里。
+- **同步地址内置**：默认使用 `https://sync.joycine.xyz`，配对时只需输入短码，不再填写服务器地址。
+- **远端额度状态可见**：本机观测更新时仍显示本机值，但账户卡片会标注「其他设备也上报了 N 条额度」；远端更新时显示「含其他设备同步的额度」。详见[版本说明](docs/release-v0.12.3.md)。
+
+### v0.12.1 · 2026-11-19
+
+- **修复启动竞态**：应用刚启动、内置后端尚未监听时点「立即同步」会显示「无法连接本机后端」并一直停留；现在会先等待后端就绪再同步，后端确实不可用时提示「本机后端尚未就绪」。详见[版本说明](docs/release-v0.12.1.md)。
+
+### v0.12.0 · 2026-11-19
+
+- **云端同步（多机）**：6 位短码配对，主密钥只在设备间封装传递，服务端只存密文；自动同步可选关闭 / 5 分钟 / 30 分钟 / 1 小时 / 1 天。
+- **额度合并**：账户页新增「其他设备同步的额度」，同账号按最新观测展示，不重复累加。详见[版本说明](docs/release-v0.12.0.md)。
 
 ### v0.11.0 · 2026-11-12
 

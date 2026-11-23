@@ -11,11 +11,13 @@ import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-TARGETS = ("qoder", "workbuddy", "mimo", "stepfun", "volcengine")
+TARGETS = ("qoder", "workbuddy", "mimo", "stepfun", "volcengine", "doubao")
 CONNECTED_STATUSES = {"available", "partial", "stale"}
 NOT_CONNECTED_REASONS = {"not_authenticated", "web_session_missing", "mimo_not_authenticated",
                          "stepfun_credential_not_connected", "stepfun_not_authenticated",
                          "volcengine_credential_not_connected", "volcengine_not_authenticated",
+                         "doubao_credential_not_connected", "doubao_not_authenticated",
+                         "doubao_no_active_subscription",
                          "zcode_credential_not_connected", "disabled_by_user", "disabled_in_config"}
 
 
