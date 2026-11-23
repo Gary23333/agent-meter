@@ -262,6 +262,13 @@ struct SyncReport: Equatable {
     /// must not cost the whole round.
     var failedDevices: [String] = []
     var devices = 0
+    /// Quota observations included in this device's uploaded payload.
+    var localQuotaRows = 0
+    /// Quota observations imported from other devices. A same-account
+    /// observation replaces an older one in the local store, so this is the
+    /// number of rows received, not the number of distinct accounts.
+    var remoteQuotaRows = 0
+    var remoteQuotaDevices = 0
 }
 
 /// Drives one sync round: seal the local payload, upload it, then open every
@@ -310,6 +317,7 @@ struct SyncCoordinator {
     func run() async throws -> SyncReport {
         var report = SyncReport()
         let payload = try await backend.syncPayload(localDevice: runner.deviceID, settings: settings)
+        report.localQuotaRows = Self.quotaRowCount(payload)
         try await runner.upload(payload)
         report.uploaded = true
         // One manifest read for the whole round.
@@ -324,10 +332,24 @@ struct SyncCoordinator {
             do {
                 try await backend.importSync(localDevice: runner.deviceID, payload: plain)
                 report.importedDevices.append(device)
+                let quota = Self.quotaRowCount(plain)
+                if quota > 0 {
+                    report.remoteQuotaRows += quota
+                    report.remoteQuotaDevices += 1
+                }
             } catch {
                 report.failedDevices.append(device)
             }
         }
         return report
+    }
+
+    /// Count the quota observations in a plaintext payload. Kept here rather
+    /// than in the backend protocol so the sync window can report what came
+    /// across without changing the loopback API.
+    private static func quotaRowCount(_ payload: Data) -> Int {
+        guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let quota = object["quota"] as? [[String: Any]] else { return 0 }
+        return quota.count
     }
 }

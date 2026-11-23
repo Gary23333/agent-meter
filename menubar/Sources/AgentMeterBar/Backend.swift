@@ -323,6 +323,23 @@ struct BackendClient {
         }
     }
 
+    /// Local rows plus the remote devices' merged projection
+    /// (GET /v1/sync/history). Used by the account view to show quota
+    /// observations that came from another Mac.
+    func syncHistory() async throws -> JSON {
+        let r = try request("v1/sync/history", timeout: 20)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        if http.statusCode == 401 { throw BackendError.unauthorized }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+        do { return try JSONDecoder().decode(JSON.self, from: data) }
+        catch { throw BackendError.invalidResponse }
+    }
+
     /// The desktop pet's current frame (raw JSON, forwarded to the web view). Cheap: it only interprets
     /// cached data and never triggers a collection.
     func petFrame() async throws -> Data {

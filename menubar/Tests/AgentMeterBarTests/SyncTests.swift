@@ -214,6 +214,30 @@ final class SyncRunnerTests: XCTestCase {
         XCTAssertEqual(report.importedDevices, [local])
         XCTAssertEqual(report.failedDevices, [good])
     }
+
+    func testReportCountsLocalAndRemoteQuotaRows() async throws {
+        let transport = FakeTransport()
+        let keys = try SyncKeys(masterKey: SyncKeys.randomMasterKey(), spaceID: space)
+
+        // Seed the space with a remote payload carrying two quota rows.
+        let remotePayload = Data(#"""
+        {"schema":1,"device":"2","usage":[],"quota":[{"account":"a"},{"account":"b"}]}
+        """#.utf8)
+        let remoteRunner = SyncRunner(transport: transport, keys: keys, deviceID: remote)
+        try await remoteRunner.upload(remotePayload)
+
+        // The local payload carries one quota row.
+        let localBackend = FakeBackend()
+        localBackend.payload = Data(#"""
+        {"schema":1,"device":"1","usage":[],"quota":[{"account":"a"}]}
+        """#.utf8)
+        let localRunner = SyncRunner(transport: transport, keys: keys, deviceID: local)
+        let report = try await SyncCoordinator(backend: localBackend, runner: localRunner).run()
+
+        XCTAssertEqual(report.localQuotaRows, 1)
+        XCTAssertEqual(report.remoteQuotaRows, 2)
+        XCTAssertEqual(report.remoteQuotaDevices, 1)
+    }
 }
 
 /// The Swift client against the real Python service. The service only ever

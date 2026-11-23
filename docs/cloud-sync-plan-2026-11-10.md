@@ -172,7 +172,7 @@ auth_hash   = SHA256(auth_token)          # 建空间时交给服务，之后不
 | **M0** | 骨架与契约：载荷 / 存储 / 本机接口 / 加密客户端 / 同步服务 | **已完成（2026-11-10）** |
 | M1 | 会员闭环：签发工具、license 校验、权益门控、兑换 UI | 未开始 |
 | M2 | 云同步闭环：空间创建、短码配对、手动同步、状态展示 | **已完成（2026-11-19，服务端 + 客户端 + UI）** |
-| M3 | UI：跨设备「历史」页、Pro 分享图模板 | 未开始 |
+| M3 | UI：跨设备「历史」页、Pro 分享图模板 | **部分完成（2026-11-19：账户页已展示其他设备额度；完整历史页未做）** |
 | M4 | 文档与发布：README/SECURITY 隐私章节、CI job、发版 | 未开始 |
 
 发布建议：**v0.11.0 = M0+M1**，**v0.12.0 = M2+M3**。分两次发，避免半成品上云。
@@ -198,3 +198,15 @@ auth_hash   = SHA256(auth_token)          # 建空间时交给服务，之后不
 - `menubar/Sources/AgentMeterBar/SyncConfigurationStore.swift` —— master key 与 space/device id 存登录 Keychain（`local.agent-meter.sync`），服务地址与 device id 存 UserDefaults。
 - `menubar/Sources/AgentMeterBar/SyncPairingView.swift` —— 设置菜单「多机同步（合并用量）…」：创建配对码、输码加入、安全码核对、立即同步、解除配对。
 - 测试：服务端 45 项、`tests.test_sync_payload` 39 项、Swift 118 项全过；其中 Swift 集成测试会启动真实 Python 服务并在两端跑完整短码交接。
+
+## 实施状态（2026-11-19，自动同步 + 额度合并）
+
+分支 `feat/sync-auto-quota`：
+
+- `menubar/Sources/AgentMeterBar/SyncInterval.swift` —— 自动同步间隔：关闭 / 5 分钟 / 30 分钟 / 1 小时 / 1 天，写入 UserDefaults。
+- `menubar/Sources/AgentMeterBar/UsageStore.swift` —— 手动同步与自动同步共用 `syncNow(automatic:)`；自动循环按间隔重启，退出时取消；同步成功后重读 `/v1/sync/history`。
+- `menubar/Sources/AgentMeterBar/SyncPairingView.swift` —— 已配对状态新增自动同步间隔选择、上次同步时间和同步结果。
+- `menubar/Sources/AgentMeterBar/SyncClient.swift` —— `SyncReport` 增加本机/远端额度行计数，同步结果会显示“合并了多少条额度”。
+- `agent_meter/sync_store.py` —— 额度合并结果给远端行标注 `device`，同账号仍按 `observed_at` 取最新一条，不重复累加。
+- `menubar/Sources/AgentMeterBar/AccountViews.swift` —— 账户页新增“其他设备同步的额度”区块；同一账号显示最新观测，不同账号分行展示。
+- 回归：Swift 122 项、`tests.test_sync_payload` 39 项通过。

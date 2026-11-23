@@ -4,6 +4,31 @@ import SwiftUI
 struct AccountsView: View {
     let snapshot: Snapshot
     let now: Date
+    /// GET /v1/sync/history. Quota rows with a `device` field came from
+    /// another Mac; local rows stay authoritative and are not repeated here.
+    var syncHistory: JSON? = nil
+
+    private var remoteQuota: [JSON] {
+        // The store keeps one row per account/window/day. The account page
+        // only wants the newest observation per window, not every historical
+        // day that device ever uploaded.
+        var latest: [String: JSON] = [:]
+        for row in syncHistory?["quota"].array ?? [] {
+            guard row["device"].string != nil,
+                  row["remaining_percent"].double != nil else { continue }
+            let key = [row["account"].string ?? "", row["bucket"].string ?? "",
+                       row["window"].string ?? ""].joined(separator: "|")
+            let observed = row["observed_at"].double ?? 0
+            if latest[key] == nil || observed >= (latest[key]?["observed_at"].double ?? 0) {
+                latest[key] = row
+            }
+        }
+        return latest.values.sorted {
+            let a = ($0["account"].string ?? "", $0["bucket"].string ?? "", $0["window"].string ?? "")
+            let b = ($1["account"].string ?? "", $1["bucket"].string ?? "", $1["window"].string ?? "")
+            return a < b
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -12,13 +37,79 @@ struct AccountsView: View {
                     Text("暂时没有可显示的账户额度。").font(.system(size: 12)).themeForeground(.secondary)
                 }
             }
-            ForEach(snapshot.accountSources) { AccountCard(source: $0, snapshot: snapshot, now: now) }
+            ForEach(snapshot.accountSources) {
+                AccountCard(source: $0, snapshot: snapshot, now: now,
+                            remoteQuota: remoteQuota(for: $0))
+            }
+            let unmatched = remoteQuota.filter { row in
+                guard let account = row["account"].string else { return true }
+                return !snapshot.accountSources.contains { $0.accountKey == account }
+            }
+            if !unmatched.isEmpty {
+                RemoteQuotaSection(rows: unmatched, snapshot: snapshot, now: now)
+                    .padding(.top, 4)
+            }
             if !snapshot.inactiveSources.isEmpty {
                 SectionTitle(text: "未接入").padding(.top, 4)
                 Card {
                     ForEach(Array(snapshot.inactiveSources.enumerated()), id: \.element.id) { i, s in
                         if i > 0 { Divider().opacity(0.5) }
                         InactiveRow(source: s, snapshot: snapshot)
+                    }
+                }
+            }
+        }
+    }
+
+    private func remoteQuota(for source: Source) -> [JSON] {
+        guard let account = source.accountKey else { return [] }
+        return remoteQuota.filter { $0["account"].string == account }
+    }
+}
+
+/// Quota observations that came from another device. Same-account rows were
+/// already collapsed to the latest observation by the backend's
+/// `quota_history`; different accounts remain separate rows.
+private struct RemoteQuotaSection: View {
+    let rows: [JSON]
+    let snapshot: Snapshot
+    let now: Date
+
+    private func source(for row: JSON) -> Source? {
+        guard let account = row["account"].string else { return nil }
+        return snapshot.sources.first { $0.accountKey == account }
+    }
+
+    private func displayRow(_ row: JSON) -> JSON {
+        // Local quota rows carry resets_at as {epoch_seconds, ...}; synced
+        // rows carry a bare epoch. Normalize so QuotaBar can render both.
+        guard let reset = row["resets_at"].double else { return row }
+        var object = row.object
+        object["resets_at"] = .object(["epoch_seconds": .number(reset)])
+        return .object(object)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionTitle(text: "其他设备同步的额度")
+            Card {
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
+                        if i > 0 { Divider().opacity(0.45) }
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 6) {
+                                Text(source(for: row)?.displayName
+                                     ?? "账号 " + String((row["account"].string ?? "未知").prefix(8)) + "…")
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .themeForeground()
+                                Spacer(minLength: 6)
+                                Text(row["device"].string.map { "设备 \(String($0.prefix(8)))…" } ?? "已同步")
+                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .themeForeground(.tertiary)
+                            }
+                            QuotaBar(quota: displayRow(row), now: now,
+                                     isClaude: source(for: row)?.baseID == "claude")
+                        }
                     }
                 }
             }
@@ -60,13 +151,48 @@ struct AccountCard: View {
     let source: Source
     let snapshot: Snapshot
     let now: Date
+    /// Latest synced observations for this account. Same-account quota is
+    /// merged by observation time; different accounts never reach this card.
+    var remoteQuota: [JSON] = []
     @Environment(\.panelTheme) private var theme
 
     private var brand: Catalog.Brand { Catalog.brand(source.id) }
     /// Brand colour as the current theme shows it.
     private var tint: Color { theme.tint(brand.tint) }
-    private var quotas: [JSON] { Catalog.sortedQuotas(source.metric("quota")?.value.rows.filter { $0["remaining_percent"].double != nil } ?? []) }
+    private var quotas: [JSON] { mergedQuotas() }
     private var isClaude: Bool { source.id == "claude" || source.id.hasPrefix("claude#") }
+
+    private func sameWindow(_ lhs: JSON, _ rhs: JSON) -> Bool {
+        lhs["bucket"].string == rhs["bucket"].string
+            && lhs["window"].string == rhs["window"].string
+    }
+
+    /// Local rows win unless a synced observation for the same account/window
+    /// is newer. Merged rows keep local display fields (used/limit/unit) and
+    /// overlay the latest percentage/reset time from the other device.
+    private func mergedQuotas() -> [JSON] {
+        let local = source.metric("quota")?.value.rows
+            .filter { $0["remaining_percent"].double != nil } ?? []
+        guard !remoteQuota.isEmpty else { return Catalog.sortedQuotas(local) }
+        let localObserved = source.observedAt?.timeIntervalSince1970 ?? 0
+        var rows = local
+        for i in rows.indices {
+            guard let remote = remoteQuota.first(where: { sameWindow(rows[i], $0) }) else { continue }
+            guard (remote["observed_at"].double ?? 0) > localObserved else { continue }
+            var object = rows[i].object
+            for key in ["used_percent", "remaining_percent", "observed_at"] {
+                if !remote[key].isNull { object[key] = remote[key] }
+            }
+            if let reset = remote["resets_at"].double {
+                object["resets_at"] = .object(["epoch_seconds": .number(reset)])
+            }
+            rows[i] = .object(object)
+        }
+        for remote in remoteQuota where !rows.contains(where: { sameWindow($0, remote) }) {
+            rows.append(remote)
+        }
+        return Catalog.sortedQuotas(rows)
+    }
 
     var body: some View {
         Card(tint: brand.tint) {

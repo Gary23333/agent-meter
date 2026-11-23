@@ -231,6 +231,7 @@ class StoreTests(unittest.TestCase):
             quota = sync_store.quota_history(store)
             self.assertEqual(len(quota), 1)
             self.assertEqual(quota[0]["used_percent"], 55.0)
+            self.assertEqual(quota[0]["device"], "c" * 32)
 
     def test_the_card_tally_is_the_highest_any_device_reports(self):
         with tempfile.TemporaryDirectory() as home:

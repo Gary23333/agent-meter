@@ -124,10 +124,14 @@ def quota_history(store, local_quota=None):
     for device in sorted(store.get("devices") or {}):
         bucket = store["devices"][device] or {}
         for row in bucket.get("quota") or []:
-            key = (row.get("account"), row.get("bucket"), row.get("window"), row.get("day"))
+            # Tag the winner with its device so the UI can tell a local
+            # observation from a remote one. The stored row itself stays
+            # device-independent; this is a projection-only field.
+            entry = dict(row, device=device)
+            key = (entry.get("account"), entry.get("bucket"), entry.get("window"), entry.get("day"))
             previous = latest.get(key)
-            if previous is None or (row.get("observed_at") or 0) >= (previous.get("observed_at") or 0):
-                latest[key] = row
+            if previous is None or (entry.get("observed_at") or 0) >= (previous.get("observed_at") or 0):
+                latest[key] = entry
     return [latest[key] for key in sorted(latest, key=lambda k: tuple(str(x) for x in k))]
 
 
