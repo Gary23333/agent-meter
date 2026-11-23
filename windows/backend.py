@@ -980,7 +980,7 @@ def main():
             return
         try:
             if args.rewards_status:
-                result = windows_rewards.status(directory, request, time.time())
+                result = windows_rewards.status(directory, time.time())
             else:
                 result = windows_rewards.claim(directory, request, time.time())
         except Exception:

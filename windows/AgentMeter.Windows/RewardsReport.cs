@@ -57,12 +57,46 @@ internal static class RewardsReport
         var details = new List<string>();
         int streak = Number(account, "streak_days");
         if (streak > 0) details.Add($"连续 {streak} 天");
-        var next = Get(account, "next_claim_at");
-        string clock = Text(account, "claim_time");
-        if (next.ValueKind == JsonValueKind.Object && clock.Length > 0) details.Add($"自动 {clock}");
         if (status == "error" && reason.Length == 0) details.Add("领取请求失败，已保留上次结果");
         string detail = details.Count > 0 ? string.Join(" · ", details) : "";
         return new RewardRow(id.Length > 0 ? id : provider, title, today, claimedText, checkedText, detail);
+    }
+
+    /// <summary>只返回本次点击真正新增的领取；已经领过的旧记录不重复通知。</summary>
+    public static IReadOnlyList<string> Successes(string? json)
+    {
+        var rows = new List<string>();
+        if (string.IsNullOrWhiteSpace(json)) return rows;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var accounts = Get(root, "accounts");
+            if (accounts.ValueKind != JsonValueKind.Array) return rows;
+            foreach (var account in accounts.EnumerateArray())
+            {
+                if (account.ValueKind != JsonValueKind.Object) continue;
+                var fresh = Get(account, "claimed_now");
+                if (fresh.ValueKind != JsonValueKind.Array || fresh.GetArrayLength() == 0) continue;
+                int count = fresh.GetArrayLength();
+                int credits = Number(account, "claimed_credits_now");
+                string suffix = credits > 0 ? $"+{credits} 积分" : "领取成功";
+                if (count > 1) suffix += $"（{count} 项）";
+                rows.Add(AccountTitle(account) + "：" + suffix);
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or OverflowException) { }
+        return rows;
+    }
+
+    static string AccountTitle(JsonElement account)
+    {
+        string id = Text(account, "id");
+        string provider = Text(account, "provider");
+        if (provider.Length == 0) provider = id.Split('#')[0];
+        string title = ProviderTitle(provider);
+        if (id.Contains('#')) title += " · 账户 " + id[(id.IndexOf('#') + 1)..];
+        return title;
     }
 
     static string TodayText(JsonElement today)

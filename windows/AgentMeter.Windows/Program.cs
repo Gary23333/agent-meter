@@ -341,16 +341,17 @@ internal sealed partial class MeterContext : ApplicationContext
         menu.Opening += (_, _) => { TrayMenuStyle.Apply(menu, VisualThemes.Find(window.ThemeId)); window.PopupMenuVisible = true; };
         menu.Closed += (_, _) => window.PopupMenuVisible = false;
         window.MenuRequested += point => menu.Show(window, point);
-        void ShowAlert(string title, IReadOnlyList<string> messages)
+        void ShowBalloon(string title, IReadOnlyList<string> messages, ToolTipIcon icon)
         {
             string summary = string.Join("\n", messages.Take(3)) + (messages.Count > 3 ? $"\n另有 {messages.Count - 3} 项，请打开面板查看。" : "");
             if (summary.Length > 240) summary = summary[..239] + "…";
-            try { tray.ShowBalloonTip(8000, title, summary, ToolTipIcon.Warning); }
+            try { tray.ShowBalloonTip(8000, title, summary, icon); }
             catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.ComponentModel.Win32Exception) { }
         }
-        window.QuotaLow += messages => ShowAlert("Agent 额度提醒", messages);
-        window.CardsExpiring += messages => ShowAlert("Agent 重置卡提醒", messages);
-        window.BudgetTriggered += messages => ShowAlert("Agent 预算提醒", messages);
+        window.QuotaLow += messages => ShowBalloon("Agent 额度提醒", messages, ToolTipIcon.Warning);
+        window.CardsExpiring += messages => ShowBalloon("Agent 重置卡提醒", messages, ToolTipIcon.Warning);
+        window.BudgetTriggered += messages => ShowBalloon("Agent 预算提醒", messages, ToolTipIcon.Warning);
+        window.RewardsClaimed += messages => ShowBalloon("Agent 积分领取", messages, ToolTipIcon.Info);
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else if (!window.JustDismissedAtCursor) ShowPanel(true); } };
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
@@ -485,8 +486,7 @@ internal sealed partial class MeterWindow : Form
     CancellationTokenSource? activityCancellation;
     Func<CancellationToken, Task<string>>? syntheticActivityReader;
     bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
-    RewardSettings rewardSettings = RewardSettings.Default;
-    bool rewardBusy, autoClaimPending;
+    bool rewardBusy;
     int alertThreshold = 20;
     int refreshIntervalMinutes = 15;
     bool cardAlertsEnabled;
@@ -513,7 +513,6 @@ internal sealed partial class MeterWindow : Form
         this.demo = demo; popup = !windowed; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
         usagePeriod = demo ? "today" : UsagePeriodPreferences.Load(AccountPreferences.DefaultDirectory);
         refreshIntervalMinutes = demo ? 15 : RefreshIntervalPreferences.Load(AccountPreferences.DefaultDirectory);
-        rewardSettings = demo ? RewardSettings.Default : RewardPreferences.Load(AccountPreferences.DefaultDirectory);
         var alertSettings = demo ? new AlertSettings(false, 20) : AlertPreferences.LoadSettings(AccountPreferences.DefaultDirectory);
         alertsEnabled = alertSettings.Enabled; alertThreshold = alertSettings.Threshold; cardAlertsEnabled = alertSettings.ResetCardsEnabled;
         forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
@@ -1091,24 +1090,18 @@ internal sealed partial class MeterWindow : Form
         }
         return RefreshData();
     }
-    internal void ReloadRewardSettings()
-    {
-        rewardSettings = demo ? RewardSettings.Default : RewardPreferences.Load(AccountPreferences.DefaultDirectory);
-        if (rewardSettings.Enabled) _ = AutoClaimRewardsAsync();
-    }
-    internal async Task<string> RewardStatusAsync(RewardSettings settings)
+    internal async Task<string> RewardStatusAsync()
     {
         if (demo) return RewardError("demo_rewards_disabled");
         try
         {
-            var input = new JsonObject { ["auto_claim"] = RewardAutoList(settings), ["claim_time"] = settings.ClaimTime };
-            return await RunCollector("--rewards-status", shutdown.Token, input.ToJsonString());
+            return await RunCollector("--rewards-status", shutdown.Token, "{}");
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception or
             OperationCanceledException or ObjectDisposedException)
         { return RewardError("rewards_status_unavailable"); }
     }
-    internal async Task<string> ClaimRewardsAsync(RewardSettings settings, bool claimAll)
+    internal async Task<string> ClaimRewardsAsync(bool claimAll)
     {
         if (demo) return RewardError("demo_rewards_disabled");
         if (busy) return RewardError("refresh_in_progress");
@@ -1118,35 +1111,21 @@ internal sealed partial class MeterWindow : Form
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
             cancellation.CancelAfter(TimeSpan.FromSeconds(90));
-            return await ClaimRewardsCoreAsync(settings, claimAll, cancellation.Token);
+            string output = await ClaimRewardsCoreAsync(claimAll, cancellation.Token);
+            var successes = RewardsReport.Successes(output);
+            if (successes.Count > 0 && !IsDisposed && !Disposing) RewardsClaimed?.Invoke(successes);
+            return output;
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception or
             OperationCanceledException or ObjectDisposedException)
         { return RewardError("rewards_unavailable"); }
         finally { rewardBusy = false; }
     }
-    async Task AutoClaimRewardsAsync()
-    {
-        if (demo || !rewardSettings.Enabled || busy || rewardBusy) return;
-        rewardBusy = true;
-        try
-        {
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
-            cancellation.CancelAfter(TimeSpan.FromSeconds(90));
-            await ClaimRewardsCoreAsync(rewardSettings, claimAll: false, cancellation.Token);
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception or
-            OperationCanceledException or ObjectDisposedException)
-        { }
-        catch (JsonException) { }
-        finally { rewardBusy = false; }
-    }
-    async Task<string> ClaimRewardsCoreAsync(RewardSettings settings, bool claimAll, CancellationToken cancellation)
+    async Task<string> ClaimRewardsCoreAsync(bool claimAll, CancellationToken cancellation)
     {
         var sessions = await RewardSessionsAsync(cancellation);
         if (sessions.Count == 0) return RewardError("rewards_session_unavailable");
-        var input = new JsonObject { ["sessions"] = sessions, ["auto_claim"] = RewardAutoList(settings),
-            ["claim_time"] = settings.ClaimTime, ["claim_all"] = claimAll };
+        var input = new JsonObject { ["sessions"] = sessions, ["claim_all"] = claimAll };
         return await RunCollector("--rewards-claim", cancellation, input.ToJsonString());
     }
     async Task<JsonObject> RewardSessionsAsync(CancellationToken cancellation)
@@ -1179,14 +1158,6 @@ internal sealed partial class MeterWindow : Form
             Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException)
         { return null; }
     }
-    JsonArray RewardAutoList(RewardSettings settings)
-    {
-        var rows = new JsonArray();
-        if (!settings.Enabled) return rows;
-        if (preferences.Trae) rows.Add(JsonValue.Create("trae_cn"));
-        if (preferences.WorkBuddy) rows.Add(JsonValue.Create("workbuddy"));
-        return rows;
-    }
     static string RewardError(string reason) => JsonSerializer.Serialize(new
     {
         schema_version = 1, timezone = "Asia/Shanghai", accounts = Array.Empty<object>(),
@@ -1216,7 +1187,6 @@ internal sealed partial class MeterWindow : Form
     {
         ["theme"] = ThemeId,
         ["low_quota_threshold"] = AlertThreshold,
-        ["claim_time"] = rewardSettings.ClaimTime,
         ["alerts_enabled"] = AlertsEnabled
     }.ToJsonString();
     public bool ForecastEnabled => forecastEnabled;
@@ -1240,6 +1210,7 @@ internal sealed partial class MeterWindow : Form
     public event Action<IReadOnlyList<string>>? QuotaLow;
     public event Action<IReadOnlyList<string>>? CardsExpiring;
     public event Action<IReadOnlyList<string>>? BudgetTriggered;
+    public event Action<IReadOnlyList<string>>? RewardsClaimed;
     public bool SetAlertsEnabled(bool enabled)
     {
         try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, new AlertSettings(enabled, alertThreshold, cardAlertsEnabled)); }
@@ -1478,7 +1449,6 @@ internal sealed partial class MeterWindow : Form
                 if (forecastTask is not null) pending.Add(("forecast", forecastTask));
                 await ApplyRefreshPartsAsync(combined, pending, false, profilesInvalid, snapshot =>
                     RunCollector("--cards-update", accountCancellation.Token, CardInput.Create(snapshot)));
-                if (rewardSettings.Enabled) autoClaimPending = true;
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException or ObjectDisposedException)
@@ -1490,11 +1460,6 @@ internal sealed partial class MeterWindow : Form
         finally
         {
             accountCancellation?.Dispose(); accountCancellation = null; busy = false;
-            if (autoClaimPending)
-            {
-                autoClaimPending = false;
-                if (!IsDisposed && !Disposing) _ = AutoClaimRewardsAsync();
-            }
             if (!IsDisposed && !Disposing)
             {
                 refresh.Enabled = true;
