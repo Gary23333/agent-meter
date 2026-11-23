@@ -391,6 +391,7 @@ python3 -m agent_meter serve --start-kimi-server
 | `/v1/coverage` | `GET` | 各应用在关键指标上的覆盖状况矩阵 |
 | `/v1/status` | `GET` | 采集状态、失败来源、被跳过的账本与缓存节流信息 |
 | `/v1/activity` | `GET` | 最近 24 小时的会话活动（轻量端点，不触发全量采集） |
+| `/v1/processes` | `GET` | 只含 harness 启动的进程：进程树、CPU、内存、监听端口（只读，命令行已脱敏） |
 | `/v1/projects` | `GET` | 项目归因：各项目用到的应用、Token 与未归因部分 |
 | `/v1/periods/week` · `/v1/periods/month` | `GET` | 本机消耗的周报 / 月报环比 |
 | `/v1/budget` | `GET` / `PUT` | 日 / 周预算与异常阈值 |

@@ -255,6 +255,22 @@ struct BackendClient {
         return json
     }
 
+    /// Processes started by local harnesses (never any other process). Reads the process table on the
+    /// backend; like activity() it cannot trigger a collection.
+    func processes() async throws -> ProcessFeed {
+        let r = try request("v1/processes", timeout: 15)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await Self.session.data(for: r) } catch { throw BackendError.unreachable }
+        guard let http = resp as? HTTPURLResponse else { throw BackendError.invalidResponse }
+        if http.statusCode == 401 { throw BackendError.unauthorized }
+        guard http.statusCode == 200 else {
+            let err = (try? JSONDecoder().decode(JSON.self, from: data))?["error"].string
+            throw BackendError.http(http.statusCode, err)
+        }
+        guard let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw BackendError.invalidResponse }
+        return ProcessFeed(json)
+    }
+
     /// Recent session/turn activity. A lightweight local scan on the backend;
     /// unlike snapshot() this never triggers full account collection.
     func activity() async throws -> ActivityFeed {

@@ -55,7 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Notifier.shared.setup()
             PetController.shared.start()
             // `--panel-window`: the panel in a normal window (development aid; see DevPanelWindow).
-            if args.contains("--panel-window") { DevPanelWindow.show(selfTest: args.contains("--selftest")) }
+            if args.contains("--panel-window") {
+                if let i = args.firstIndex(of: "--live-snapshot"), args.count > i + 1 { PreviewRenderer.prepareLive(snapshotPath: args[i + 1]) }
+                DevPanelWindow.show(selfTest: args.contains("--selftest"))
+            }
         }
         Task { @MainActor in
             await UsageStore.shared.bootstrap()

@@ -103,6 +103,11 @@ def make_server(service,token,port=8769):
                 try:self.send_json(200,service.activity())
                 except Exception:self.send_json(500,{"error":"activity_failed"})
                 return
+            if route.path=="/v1/processes":
+                # Harness-spawned processes only; reads the process table, never triggers a collection.
+                try:self.send_json(200,service.processes())
+                except Exception:self.send_json(500,{"error":"processes_failed"})
+                return
             if route.path in {"/v1/projects","/v1/status","/v1/periods/week","/v1/periods/month"}:
                 # Projections of the cached snapshot; no new account collection.
                 try:

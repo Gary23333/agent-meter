@@ -374,7 +374,7 @@ struct InfoRow: View {
     @Environment(\.panelTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             if nested {
                 Color.clear.frame(width: theme == .minimal ? 8 : 14, height: 1)
                 Text("└").font(theme.font(10)).themeForeground(.tertiary)
@@ -399,8 +399,10 @@ struct InfoRow: View {
                 }
             }
             .frame(minWidth: 72, alignment: .trailing)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(minHeight: nested ? 16 : 18)
+        .frame(minHeight: nested ? 16 : 18, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)   // a two-line value pushes the next row down
     }
 }
 

@@ -30,6 +30,7 @@ enum DevPanelWindow {
         print("panel-window id=\(window.windowNumber)")
         fflush(stdout)
         if selfTest { PanelSelfTest.run(in: window) }
+        if CommandLine.arguments.contains("--live3d-check") { Live3DCheck.run(in: window) }
     }
 
     /// Neon, titanium and prism are always dark, like the popover frame.
@@ -149,6 +150,57 @@ enum PanelSelfTest {
             fflush(stdout)
             UsageStore.shared.shutdown()   // exit() skips applicationWillTerminate; stop the backend this run started
             exit(failures == 0 ? 0 : 1)
+        }
+    }
+}
+
+/// `--panel-window --live-snapshot <json> --live3d-check`: what the real SceneKit views do in the real window, which
+/// the offline preview cannot show. Prints how many live views exist, whether they render and the idle CPU cost,
+/// and leaves the window open for a screenshot.
+@MainActor
+enum Live3DCheck {
+    private static func sceneViews(in view: NSView?, into list: inout [PassiveSceneView]) {
+        guard let view else { return }
+        if let scene = view as? PassiveSceneView { list.append(scene) }
+        for sub in view.subviews { sceneViews(in: sub, into: &list) }
+    }
+
+    private static func cpuSeconds() -> Double {
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        func seconds(_ t: timeval) -> Double { Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000 }
+        return seconds(usage.ru_utime) + seconds(usage.ru_stime)
+    }
+
+    static func run(in window: NSWindow) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            var views: [PassiveSceneView] = []
+            sceneViews(in: window.contentView, into: &views)
+            print("live3d: \(views.count) live SceneKit view(s); available=\(Scene3D.isAvailable)")
+            let out = ProcessInfo.processInfo.environment["AGENT_METER_LIVE3D_OUT"]
+            for (i, view) in views.enumerated() {
+                let image = view.snapshot()
+                var opaque = 0.0
+                if let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
+                    var lit = 0, total = 0
+                    for y in stride(from: 0, to: rep.pixelsHigh, by: 4) {
+                        for x in stride(from: 0, to: rep.pixelsWide, by: 4) {
+                            total += 1
+                            if (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 { lit += 1 }
+                        }
+                    }
+                    opaque = total == 0 ? 0 : Double(lit) / Double(total)
+                    if let out, let png = rep.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: out + "-\(i).png"))
+                    }
+                }
+                print("live3d: view \(i) bounds=\(Int(view.bounds.width))x\(Int(view.bounds.height)) playing=\(view.isPlaying) continuous=\(view.rendersContinuously) fps=\(view.preferredFramesPerSecond) drawn=\(String(format: "%.0f", opaque * 100))% of pixels non-transparent, hitTest=\(view.hitTest(NSPoint(x: 5, y: 5)) == nil ? "passes through" : "BLOCKS")")
+            }
+            let before = cpuSeconds()
+            try? await Task.sleep(for: .seconds(4))
+            print(String(format: "live3d: idle CPU %.1f%% of one core over 4 s", (cpuSeconds() - before) / 4 * 100))
+            fflush(stdout)
         }
     }
 }

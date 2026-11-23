@@ -182,6 +182,16 @@ collector 路由：网页会话优先读额度，桌面登录补卡（`diagnosti
 
 `enable_dreamina_cli` 打开时按顺序选择传输：旧 `dreamina user_credit`（配置键 `dreamina_binary`，返回积分）优先；旧 CLI 不存在时回退 `dreamina-canvas auth account --format json --non-interactive`（配置键 `dreamina_canvas_binary`，默认探测 PATH 与 `~/.local/bin`）。canvas 契约（本机实测 schemaVersion=1）：`{ok:true,data:{userId,isVip,vipLevel}}`——**画布 CLI 不提供积分查询**，credits 标 `not_provided`（reason `dreamina_canvas_cli_no_credit_query`），由网页 observations 经 `merge_dreamina` 补齐；VIP 等级进 subscription。未登录 → `dreamina_not_authenticated`；两个 CLI 都不存在 → `dreamina_cli_not_available`。默认仍关闭 CLI 路由，网页采集不受影响。
 
+## Harness 进程监控（GET /v1/processes，schema 1）
+
+实现在 `agent_meter/processes.py`。只报告 harness（Claude Code、Codex、Kimi Code、Gemini CLI、OpenCode、DeepSeek Harness、Antigravity、MiMo Code、Qoder CLI）进程树里的后代，其余进程读完进程表即丢弃。
+
+- 顶层：`status`（`available` / `unavailable` / `unsupported_platform`）、`reason`、`scope=harness_spawned_only`、`harnesses[]`、`totals{harness_count,process_count,cpu_percent,rss_bytes}`。
+- `harnesses[]`：`app`、`label`、`pid`（遗留组为 null）、`alive`、`uptime_seconds`、`project_path`、`project_alias`、`process_count`、`cpu_percent`、`rss_bytes`、`truncated`、`processes[]`。
+- `processes[]`：`pid`、`ppid`、`depth`、`name`、`command`（已脱敏、截断）、`kind`（shell/mcp/test/build/vcs/server/runtime/harness/other）、`state`、`cpu_percent`、`cpu_basis`（`instant` 两次采样差值 / `average` 首次采样）、`rss_bytes`、`uptime_seconds`、`ports`、`orphaned`、`core`。
+
+边界：只运行 `ps` 和 `lsof`；不读环境变量、文件内容、标准流；harness 根进程不返回命令行（参数里可能有提示词）；不发送任何信号。缓存 2 秒，不触发全量采集。遗留进程只有在仍挂在 harness 下时被观测到过才会被认领，启动后立刻脱离父进程的后台任务可能看不到。当前支持 macOS / Linux。
+
 ## 会话活动（GET /v1/activity，schema 1）
 
 `agent_meter/activity.py` 提供一个**独立于全量快照的轻量活动视图**：只扫最近窗口（`activity_window_hours`，默认 24 小时），按会话/线程聚合，绝不触发完整账户采集与全历史解析；文件源先按 mtime 预过滤（窗口外文件不解压不解析），解析结果进独立的 4 MB 小缓存（不挤占 token 账本的 16 MB 共享缓存）。服务端 `SnapshotService.activity()` 额外做 3 秒 TTL 防抖（配置变更即失效重算），菜单栏活动页按 5 秒（页签可见）/15 秒（后台有进行中）/120 秒（空闲）轮询该端点。**只读 usage、status 与路径元数据；绝不读提示词、对话正文、工具输出与会话标题**。费用按 USD 价格表逐模型匹配估算（`estimated_cost_usd`，无匹配模型的行留空——未计价 ≠ 0）。

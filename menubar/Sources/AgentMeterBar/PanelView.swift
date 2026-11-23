@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case accounts, apps, forecast, usage, pet, collection
+    case accounts, apps, processes, forecast, usage, pet, collection
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -9,6 +9,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .forecast: return "重置预测"
         case .usage:       return "本机消耗"
         case .apps:        return "应用"
+        case .processes:   return "进程"
         case .pet:         return "桌宠"
         case .collection:  return "收集"
         }
@@ -18,6 +19,7 @@ enum Tab: String, CaseIterable, Identifiable {
 struct PanelView: View {
     @Environment(UsageStore.self) private var store
     @AppStorage("panelTab") private var tabRaw = Tab.accounts.rawValue
+    @AppStorage("scene3D") private var scene3D = true
 
     /// "activity"/"projects" are pre-merge tab ids that now live inside the apps tab.
     private var selectedTab: Tab {
@@ -153,6 +155,8 @@ struct PanelView: View {
             Picker("界面风格", selection: Binding(get: { store.theme }, set: { store.theme = $0 })) {
                 ForEach(PanelTheme.allCases) { Text($0.label).tag($0) }
             }
+            Toggle("真 3D 效果（仪表环 · 徽标 · 奖章 · 进程星图）", isOn: $scene3D)
+                .disabled(!Scene3D.isAvailable)
             Picker("菜单栏显示", selection: Binding(get: { store.menuBarMode }, set: { store.menuBarMode = $0 })) {
                 ForEach(MenuBarMode.allCases) { Text($0.label).tag($0) }
             }
@@ -245,6 +249,7 @@ struct PanelView: View {
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now, budget: store.budget)
             case .apps: ActivityView(snapshot: snapshot)
+            case .processes: ProcessesView(snapshot: snapshot, now: store.now)
             case .pet: PetTabView()
             case .collection: CollectionView(snapshot: snapshot, now: store.now)
             }
@@ -320,8 +325,17 @@ struct PanelView: View {
 /// App mark next to the title; grows louder with the theme.
 private struct HeaderLogo: View {
     @Environment(\.panelTheme) private var theme
+    @AppStorage("scene3D") private var scene3D = true
 
     var body: some View {
+        if scene3D && Scene3D.isAvailable && theme != .minimal {
+            BrandMark3D(size: 36)
+        } else {
+            flatLogo
+        }
+    }
+
+    @ViewBuilder private var flatLogo: some View {
         switch theme {
         case .minimal:
             EmptyView()
@@ -405,6 +419,13 @@ struct CockpitStrip: View {
     let snapshot: Snapshot
     let now: Date
     @Environment(\.panelTheme) private var theme
+    @AppStorage("scene3D") private var scene3D = true
+    @State private var gauge3D = GaugeSceneModel()
+
+    /// Layout of the 3D gauge cells: one cell per account, the ring area on top, labels below.
+    private let cellWidth: CGFloat = 76
+    private let ringHeight: CGFloat = 72
+    private var use3D: Bool { scene3D && Scene3D.isAvailable }
 
     private struct Window {
         let label: String
@@ -446,21 +467,54 @@ struct CockpitStrip: View {
         let list = gauges
         if !list.isEmpty {
             ScrollView(.horizontal) {
-                HStack(spacing: 14) {
-                    ForEach(list) { g in
-                        Button {
-                            if let t = AppLauncher.targets(for: g.source, in: snapshot).first { AppLauncher.open(t) }
-                        } label: { gaugeView(g) }
-                        .buttonStyle(.plain)
-                        .help(g.windows.map { "\($0.label) 剩余 \(Fmt.percent($0.remaining.rounded()))" }.joined(separator: "，")
-                              + " · 打开 " + Catalog.brand(g.source).name)
-                    }
+                Group {
+                    if use3D { strip3D(list) } else { strip2D(list) }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
             }
             .scrollIndicators(.never)
             .padding(.bottom, 8)
+        }
+    }
+
+    private func strip2D(_ list: [Gauge]) -> some View {
+        HStack(spacing: 14) {
+            ForEach(list) { g in opener(g) { gaugeView(g) } }
+        }
+    }
+
+    /// One click target per account: opens the app behind the gauge.
+    private func opener<Content: View>(_ g: Gauge, @ViewBuilder _ label: () -> Content) -> some View {
+        Button {
+            if let t = AppLauncher.targets(for: g.source, in: snapshot).first { AppLauncher.open(t) }
+        } label: { label() }
+        .buttonStyle(.plain)
+        .help(g.windows.map { "\($0.label) 剩余 \(Fmt.percent($0.remaining.rounded()))" }.joined(separator: "，")
+              + " · 打开 " + Catalog.brand(g.source).name)
+        .accessibilityLabel(g.name + "，" + g.windows.map { "\($0.label) 剩余 \(Int($0.remaining.rounded()))%" }.joined(separator: "，"))
+    }
+
+    /// Real-3D gauges: one SceneKit view behind the whole row, SwiftUI labels and click targets on top.
+    private func strip3D(_ list: [Gauge]) -> some View {
+        ZStack(alignment: .topLeading) {
+            Gauge3DStrip(model: gauge3D, specs: list.map { GaugeSpec(id: $0.id, remaining: $0.windows.map(\.remaining)) },
+                         cellWidth: cellWidth, height: ringHeight)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(list) { g in opener(g) { gaugeView3D(g) } }
+            }
+        }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let p):
+                let index = Int(p.x / cellWidth)
+                guard p.x >= 0, index < list.count, p.y >= 0, p.y <= ringHeight + 6 else { gauge3D.hover(index: nil); return }
+                let ux = (p.x - CGFloat(index) * cellWidth) / cellWidth * 2 - 1
+                let uy = -(p.y / ringHeight * 2 - 1)
+                gauge3D.hover(index: index, unit: CGPoint(x: max(-1, min(1, ux)), y: max(-1, min(1, uy))))
+            case .ended:
+                gauge3D.hover(index: nil)
+            }
         }
     }
 
@@ -496,5 +550,45 @@ struct CockpitStrip: View {
                 .font(.system(size: 9)).themeForeground(.secondary).monospacedDigit()
         }
         .frame(minWidth: 52)
+    }
+
+    /// The 3D cell: the number sits on the puck, the app icon in the gap of the dial, labels underneath.
+    private func gaugeView3D(_ g: Gauge) -> some View {
+        let rings = min(g.windows.count, 3)
+        let size: CGFloat = rings == 1 ? 17 : rings == 2 ? 12.5 : 10.5
+        return VStack(spacing: 3) {
+            ZStack {
+                if let first = g.windows.first {
+                    (Text(Fmt.trim(first.remaining.rounded())).font(theme.number(size))
+                     + Text("%").font(.system(size: size * 0.55, weight: .semibold, design: theme.numberDesign)))
+                        .monospacedDigit()
+                        .themeForeground()
+                }
+                if let icon = AppLauncher.icon(for: g.source, in: snapshot) {
+                    Image(nsImage: icon).resizable().frame(width: 14, height: 14).offset(y: ringHeight * 0.37)
+                }
+            }
+            .frame(width: cellWidth, height: ringHeight)
+            Text(g.name).font(.system(size: 9.5, weight: .semibold, design: theme == .neon ? .monospaced : .default))
+                .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, 2)
+            // Every cell reserves the same label rows, so single-window accounts line up with the rest.
+            HStack(spacing: 4) {
+                ForEach(g.windows.indices, id: \.self) { i in
+                    let w = g.windows[i]
+                    (Text(w.label).foregroundStyle(.secondary)
+                     + Text(" \(Int(w.remaining.rounded()))").foregroundStyle(theme.health(w.remaining)))
+                }
+                if g.windows.count < 2 { Text(" ").hidden() }
+            }
+            .font(.system(size: 8.5, weight: .medium, design: theme.numberDesign))
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize()
+            .opacity(g.windows.count > 1 ? 1 : 0)
+            Text(g.windows.first?.reset.map { Fmt.shortCountdown(to: $0, now: now, past: "待刷新") } ?? "—")
+                .font(.system(size: 9)).themeForeground(.secondary).monospacedDigit()
+        }
+        .frame(width: cellWidth)
+        .contentShape(Rectangle())
     }
 }

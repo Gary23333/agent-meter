@@ -505,6 +505,12 @@ class SnapshotService:
         self._activity=None
         self._activity_at=0
         self._activity_generation=-1
+        # Harness process monitor: reads the process table on demand, short cache, never a collection.
+        from .processes import ProcessMemory
+        self.process_lock=threading.Lock()
+        self._processes=None
+        self._processes_at=0
+        self._process_memory=ProcessMemory()
         # Desktop pet: interprets data this service already holds, never collects.
         self.pet=PetMind(clock)
         # Daily free-credit rewards (status always, claiming opt-in).
@@ -546,6 +552,22 @@ class SnapshotService:
                 self._activity=payload
                 self._activity_at=current
                 self._activity_generation=generation
+            return copy.deepcopy(payload)
+
+    def processes(self,now=None):
+        """Processes started by local harnesses (agent_meter/processes.py), cached for 2 seconds.
+
+        Independent of the snapshot: it neither waits for nor triggers a collection. The lock is held
+        across the read so concurrent polls share one `ps` run.
+        """
+        from .processes import collect_processes
+        current=self.clock() if now is None else float(now)
+        with self.process_lock:
+            if self._processes is not None and 0<=current-self._processes_at<2:
+                return copy.deepcopy(self._processes)
+            payload=collect_processes(self.config,now=current,memory=self._process_memory)
+            self._processes=payload
+            self._processes_at=current
             return copy.deepcopy(payload)
 
     def peek(self):

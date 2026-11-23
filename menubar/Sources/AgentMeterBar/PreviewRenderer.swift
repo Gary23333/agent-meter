@@ -184,6 +184,60 @@ enum PreviewRenderer {
         ])))
     }
 
+    /// Invented harness process trees for the 进程 tab: a dev server and MCP under Claude Code, a build under Codex,
+    /// a static server under Kimi Code, and a leftover Node server whose harness has exited.
+    private static func previewProcesses() {
+        func row(_ pid: Int, _ parent: Int, _ depth: Int, _ name: String, _ command: String, _ kind: String,
+                 cpu: Double, mb: Double, up: Double, ports: [Int] = [], state: String = "sleeping",
+                 orphaned: Bool = false, core: Bool = false) -> JSON {
+            .object(["pid": .number(Double(pid)), "ppid": .number(Double(parent)), "depth": .number(Double(depth)),
+                     "name": .string(name), "command": .string(command), "kind": .string(kind), "state": .string(state),
+                     "cpu_percent": .number(cpu), "cpu_basis": .string("instant"), "rss_bytes": .number(mb * 1_048_576),
+                     "uptime_seconds": .number(up), "ports": .array(ports.map { .number(Double($0)) }),
+                     "orphaned": .bool(orphaned), "core": .bool(core)])
+        }
+        func group(_ app: String, _ label: String, pid: Int?, alias: String?, up: Double?, cpu: Double, mb: Double,
+                   count: Int, rows: [JSON]) -> JSON {
+            .object(["app": .string(app), "label": .string(label), "pid": pid.map { .number(Double($0)) } ?? .null,
+                     "alive": .bool(pid != nil), "uptime_seconds": up.map { .number($0) } ?? .null,
+                     "project_path": alias.map { .string("/Users/u/proj/" + $0) } ?? .null,
+                     "project_alias": alias.map { .string($0) } ?? .null,
+                     "process_count": .number(Double(count)), "cpu_percent": .number(cpu), "rss_bytes": .number(mb * 1_048_576),
+                     "truncated": .bool(false), "processes": .array(rows)])
+        }
+        let groups: [JSON] = [
+            group("codex", "Codex", pid: 61002, alias: "0916-宝格丽烟花", up: 2640, cpu: 262.4, mb: 1710, count: 5, rows: [
+                row(61010, 61002, 1, "zsh", "zsh -c …", "shell", cpu: 0, mb: 3, up: 410),
+                row(61012, 61010, 2, "swift-build", "swift-build -c release", "build", cpu: 96.2, mb: 820, up: 408, state: "running"),
+                row(61020, 61012, 3, "swift-frontend", "swift-frontend -frontend -c Sources/Core/Render.swift", "build", cpu: 88.5, mb: 410, up: 41, state: "running"),
+                row(61021, 61012, 3, "swift-frontend", "swift-frontend -frontend -c Sources/Core/Scene.swift", "build", cpu: 75.0, mb: 365, up: 39, state: "running"),
+                row(61030, 61002, 1, "git", "git status --porcelain", "vcs", cpu: 0.4, mb: 12, up: 2),
+            ]),
+            group("claude", "Claude Code", pid: 52311, alias: "agent-launcher", up: 7260, cpu: 71.8, mb: 1320, count: 6, rows: [
+                row(52320, 52311, 1, "zsh", "zsh -c …", "shell", cpu: 0, mb: 3, up: 1800),
+                row(52322, 52320, 2, "npm", "npm run dev", "runtime", cpu: 0.2, mb: 62, up: 1798),
+                row(52325, 52322, 3, "vite", "vite --port 5173", "server", cpu: 12.4, mb: 184, up: 1797, ports: [5173], state: "running"),
+                row(52340, 52311, 1, "zsh", "zsh -c …", "shell", cpu: 0, mb: 3, up: 36),
+                row(52342, 52340, 2, "pytest", "pytest tests/test_render.py -x", "test", cpu: 41.0, mb: 196, up: 35, state: "running"),
+                row(52360, 52311, 1, "playwright-mcp", "playwright-mcp --headless", "mcp", cpu: 3.1, mb: 247, up: 7100, ports: [8931]),
+            ]),
+            group("kimi", "Kimi Code", pid: 70155, alias: "docs-site", up: 980, cpu: 0.6, mb: 262, count: 2, rows: [
+                row(70160, 70155, 1, "zsh", "zsh -c …", "shell", cpu: 0, mb: 3, up: 600),
+                row(70162, 70160, 2, "http.server", "http.server 8000", "server", cpu: 0.6, mb: 26, up: 598, ports: [8000]),
+            ]),
+            group("deepseek_harness", "DeepSeek Harness", pid: nil, alias: nil, up: 5400, cpu: 1.8, mb: 148, count: 1, rows: [
+                row(48210, 1, 1, "server.js", "server.js --port 3000", "server", cpu: 1.8, mb: 148, up: 5400, ports: [3000], orphaned: true),
+            ]),
+        ]
+        ProcessTracker.shared.preview(ProcessFeed(.object([
+            "schema_version": .number(1), "status": .string("available"), "reason": .null,
+            "generated_at": .object(["epoch_seconds": .number(Date().timeIntervalSince1970)]),
+            "harnesses": .array(groups),
+            "totals": .object(["harness_count": .number(4), "process_count": .number(14), "cpu_percent": .number(336.6),
+                               "rss_bytes": .number(3440 * 1_048_576)]),
+        ])))
+    }
+
     /// Synthetic projections for the E2/E3/E4 surfaces (no backend in preview).
     private static func previewFeeds(_ store: UsageStore) {
         store.projects = ProjectsFeed(.object([
@@ -248,6 +302,21 @@ enum PreviewRenderer {
         ]))
     }
 
+    /// `--panel-window --live-snapshot <snapshot.json>`: demo data in the real, live panel (the 3D views are real
+    /// SceneKit views here, not the offline snapshots `run` draws). Never contacts the backend.
+    static func prepareLive(snapshotPath path: String) {
+        guard let data = FileManager.default.contents(atPath: path),
+              let json = try? JSONDecoder().decode(JSON.self, from: data) else {
+            FileHandle.standardError.write("cannot read snapshot\n".data(using: .utf8)!)
+            return
+        }
+        let store = UsageStore.shared
+        store.preview(Snapshot(json))
+        previewActivity()
+        previewProcesses()
+        previewFeeds(store)
+    }
+
     static func run(snapshot path: String, outDir: String) {
         guard let data = FileManager.default.contents(atPath: path),
               let json = try? JSONDecoder().decode(JSON.self, from: data) else {
@@ -258,6 +327,7 @@ enum PreviewRenderer {
         store.preview(Snapshot(json))
         PanelView.expandForPreview = true
         previewActivity()
+        previewProcesses()
         previewFeeds(store)
         previewPet()
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
