@@ -499,6 +499,7 @@ internal sealed partial class MeterWindow : Form
     string UsagePeriodLabel => usagePeriod switch { "7d" => "近 7 天", "30d" => "近 30 天", "all" => "累计", _ => "今日" };
     readonly HashSet<string> expandedApplications = new(StringComparer.Ordinal);
     string? lastSnapshot;
+    string? displayedAccountSnapshot;
     public string? CurrentSnapshot => lastSnapshot;
     internal WorkBuddyBrowser WorkBuddyBrowser => workBuddyBrowser;
     internal MiMoBrowser MiMoBrowser => mimoBrowser;
@@ -534,7 +535,7 @@ internal sealed partial class MeterWindow : Form
             tab.ForeColor = Primary;
             tab.Font = tabRegular; tab.Size = new Size(86, 36);
         }
-        gauges.Location = new Point(16, 72); gauges.Size = new Size(406, 116);
+        gauges.Location = new Point(16, 114); gauges.Size = new Size(406, 116);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = false; gauges.BackColor = Background;
         gauges.Resize += (_, _) => LayoutGauges();
@@ -707,7 +708,7 @@ internal sealed partial class MeterWindow : Form
         Size = new Size(500, 1100);
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Accounts);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())
-            .Any(label => label.Text == "本机 Token · 未按账户区分"))
+            .Any(label => label.Name == "account-local-today"))
             throw new InvalidOperationException("account_local_usage_missing");
         SavePreview("aurora-account-local-detail");
         content.AutoScrollPosition = new Point(0, 230); Application.DoEvents();
@@ -915,9 +916,11 @@ internal sealed partial class MeterWindow : Form
         // 多账户分页；避免系统滚动条挤压额度环。
         var many = JsonNode.Parse(lastSnapshot!)!.AsObject();
         var accounts = new JsonArray();
-        for (int index = 1; index <= 5; index++)
+        double[] remaining = [0, 12.5, 99.9, 100, 55];
+        for (int index = 1; index <= remaining.Length; index++)
             accounts.Add(new JsonObject { ["label"] = "演示" + index, ["status"] = "available",
-                ["quota"] = JsonNode.Parse("""{"value":[{"bucket":"5h","remaining_percent":55}]}""") });
+                ["quota"] = new JsonObject { ["value"] = new JsonArray(new JsonObject {
+                    ["bucket"] = "5h", ["remaining_percent"] = remaining[index - 1] }) } });
         many["other_accounts"]!["MiniMax Code"] = accounts;
         using (var snapshot = JsonDocument.Parse(many.ToJsonString())) Render(snapshot.RootElement);
         SetView(View.Accounts); SavePreview("aurora-many-accounts-narrow");
@@ -932,6 +935,13 @@ internal sealed partial class MeterWindow : Form
         gaugeNext.PerformClick(); Application.DoEvents();
         if (gaugePage != 1 || !gaugePrevious.Enabled || gauges.Controls.OfType<QuotaGauge>().Count(item => item.Visible) > 4)
             throw new InvalidOperationException("下一组账户额度未正确切换");
+        var thirdAccount = gauges.Controls.Find("gauge-MINIMAX CODE · 演示3", false).OfType<QuotaGauge>().Single();
+        var thirdCard = content.Controls.Find("account-MINIMAX CODE · 演示3", false).Single();
+        if (!thirdAccount.Visible) throw new InvalidOperationException("第二组缺少指定的 MiniMax 账户");
+        thirdAccount.PerformClick(); Application.DoEvents();
+        var heading = thirdCard.Controls.OfType<Label>().First();
+        if (-content.AutoScrollPosition.Y <= 0 || !contentClip.RectangleToScreen(contentClip.ClientRectangle).Contains(heading.RectangleToScreen(heading.ClientRectangle)))
+            throw new InvalidOperationException("点击第二组额度环没有定位到对应别名的卡片");
         SavePreview("aurora-many-accounts-next");
         gaugePrevious.PerformClick();
         if (gaugePage != 0) throw new InvalidOperationException("上一组账户额度未正确切换");
@@ -1019,6 +1029,7 @@ internal sealed partial class MeterWindow : Form
         foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast), (petTab, View.Pet), (collectionTab, View.Collection) })
         {
             button.SetAppearance(theme, view == tab);
+            button.TabStop = view == tab;
         }
         gauges.Visible = view == View.Accounts;
         header.Height = view == View.Accounts ? 234 : 118;
@@ -1033,7 +1044,8 @@ internal sealed partial class MeterWindow : Form
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
         string[] full = ["账户额度", "应用", "本机消耗", "用量报告", "重置预测", "桌宠", "收集"];
         string[] compact = ["账户", "应用", "用量", "报告", "预测", "桌宠", "收集"];
-        navigationStrip.Bounds = new Rectangle(16, view == View.Accounts ? 192 : 76, Math.Max(1, header.ClientSize.Width - 32), 35);
+        // 七页共用同一排点击位置，账户额度环在导航下方单独展开。
+        navigationStrip.Bounds = new Rectangle(16, 76, Math.Max(1, header.ClientSize.Width - 32), 35);
         int width = Math.Max(1, (navigationStrip.ClientSize.Width - 6) / tabs.Length);
         for (int index = 0; index < tabs.Length; index++)
         {
@@ -1065,6 +1077,8 @@ internal sealed partial class MeterWindow : Form
         bool changed = view != selected;
         if (changed) content.AutoScrollPosition = Point.Empty;
         view = selected; UpdateTabs();
+        // 正文会重建许多子窗口。先将新标题和整排标签画到屏幕上，避免正文先出现、旧高亮仍停留。
+        if (changed && Visible && header.IsHandleCreated) header.Refresh();
         if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
         if (changed) content.AutoScrollPosition = Point.Empty;
         if (selected == View.Applications) _ = RefreshActivityIfNeeded();
@@ -1437,7 +1451,7 @@ internal sealed partial class MeterWindow : Form
                 };
                 if (profilesInvalid) combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
                 ApplyAccountPreferences(combined);
-                using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement);
+                using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement, accountDetailsPending: true);
                 var pending = new List<(string Name, Task<string> Task)> { ("accounts", accountTask), ("history", historyTask) };
                 if (deepseekTask is not null) pending.Add(("DeepSeek API", deepseekTask));
                 if (zcodeTask is not null) pending.Add(("ZCode", zcodeTask));
@@ -1643,11 +1657,30 @@ internal sealed partial class MeterWindow : Form
         if (process.ExitCode != 0) throw new InvalidOperationException("backend_failed");
         return await output;
     }
-    void Render(JsonElement root)
+    void Render(JsonElement root, bool accountDetailsPending = false)
     {
         lastSnapshot = root.GetRawText();
         SnapshotUpdated?.Invoke(lastSnapshot);
-        if (view == View.Accounts) UpdateGauges(root);
+        // 分批采集时，托盘仍接收最新结果。正在阅读明细的人可以继续操作眼前的卡片。
+        if (accountDetailsPending && view == View.Accounts && displayedAccountSnapshot is not null &&
+            (content.AutoScrollPosition.Y != 0 || gauges.ContainsFocus || content.ContainsFocus))
+        {
+            status.Text = "正在刷新 · 当前显示上次账户明细";
+            return;
+        }
+        RenderPage(root, lastSnapshot);
+    }
+    void RenderPage(JsonElement root, string snapshotText)
+    {
+        displayedAccountSnapshot = view == View.Accounts ? snapshotText : null;
+        string? focusedGaugeName = gauges.Controls.OfType<QuotaGauge>().FirstOrDefault(gauge => gauge.Focused)?.Name;
+        bool resetToggleFocused = view == View.Accounts && content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focused == true;
+        int previousTop = -content.AutoScrollPosition.Y;
+        if (view == View.Accounts)
+        {
+            gauges.SuspendLayout();
+            while (gauges.Controls.Count > 0) gauges.Controls[0].Dispose();
+        }
         content.SuspendLayout();
         forecastClocks.Clear(); quotaResetLabels.Clear(); accountClockUpdates.Clear();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();
@@ -1668,7 +1701,7 @@ internal sealed partial class MeterWindow : Form
                 string prefix = bucket.Equals("codex", StringComparison.OrdinalIgnoreCase) ? "" : bucket.ToUpperInvariant() + " · ";
                 rows.Add(new QuotaRow(prefix + period, remaining, QuotaResetClock.Read(q)));
             }
-            AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"), codexDetails);
+            AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"), codexDetails, account);
         }
         else if (codexDetails.HasContent) AddQuotaGroup("CODEX", [], GetValue(localHistories, "Codex"), codexDetails);
         else if (GetString(account, "status", "") == "disabled") AddCard("CODEX", "账户查询已关闭", "可在托盘菜单重新开启", null);
@@ -1694,7 +1727,7 @@ internal sealed partial class MeterWindow : Form
                     double? remaining = GetNumber(q, "remaining_percent");
                     rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
                 }
-                AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount));
+                AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount), kimiAccount);
             }
             else if (AccountDetails.Read("Kimi Code", kimiAccount).HasContent) AddQuotaGroup("KIMI CODE", [], GetValue(localHistories, "Kimi Code"), AccountDetails.Read("Kimi Code", kimiAccount));
             else if (kimiStatus == "disabled") AddCard("KIMI CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
@@ -1714,7 +1747,7 @@ internal sealed partial class MeterWindow : Form
                 double? remaining = GetNumber(q, "remaining_percent");
                 rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(q)));
             }
-            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"), AccountDetails.Read("Claude Code", claudeAccount));
+            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"), AccountDetails.Read("Claude Code", claudeAccount), claudeAccount);
         }
         else if (GetString(claudeAccount, "status", "") == "disabled") AddCard("CLAUDE CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else if (GetString(claudeAccount, "status", "") == "loading") AddCard("CLAUDE CODE", "正在读取额度", "正在查询账户", null);
@@ -1736,6 +1769,10 @@ internal sealed partial class MeterWindow : Form
         AddQoderAccount(GetValue(otherAccounts, "Qoder CN"));
         AddTraeAccount(GetValue(otherAccounts, "TRAE CN"));
         AddQoderLocalCredits(GetValue(root, "local_credits"));
+        FinishAccountGauges(root);
+        gauges.ResumeLayout();
+        if (focusedGaugeName is not null)
+            gauges.Controls.OfType<QuotaGauge>().FirstOrDefault(gauge => gauge.Visible && gauge.Name == focusedGaugeName)?.Focus();
         }
         else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)
@@ -1816,6 +1853,11 @@ internal sealed partial class MeterWindow : Form
         else if (view == View.Pet) AddPetPage(root);
         else AddCollection(GetValue(root, "local_medals"), GetValue(root, "quota_cards"));
         content.ResumeLayout(); ResizeCards();
+        if (view == View.Accounts)
+        {
+            if (resetToggleFocused) content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focus();
+            content.AutoScrollPosition = new Point(0, previousTop);
+        }
     }
     void AddCollection(JsonElement collection, JsonElement quotaCards)
     {
@@ -1989,7 +2031,7 @@ internal sealed partial class MeterWindow : Form
                 double? remaining = GetNumber(quota, "remaining_percent");
                 rows.Add(new QuotaRow(label, remaining, QuotaResetClock.Read(quota)));
             }
-            AddQuotaGroup(prefix, rows);
+            AddQuotaGroup(prefix, rows, gaugeAccount: account);
         }
         else if (GetString(account, "status", "") == "loading")
             AddCard(prefix, "正在读取额度", "正在查询账户", null);
@@ -2026,7 +2068,7 @@ internal sealed partial class MeterWindow : Form
             if (quota.ValueKind == JsonValueKind.Array)
                 foreach (var item in quota.EnumerateArray())
                     rows.Add(new QuotaRow("积分额度", GetNumber(item, "remaining_percent"), QuotaResetClock.Read(item)));
-            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("WORKBUDDY", rows, localHistory, details); return; }
+            if (rows.Count > 0 || details.HasContent) { AddQuotaGroup("WORKBUDDY", rows, localHistory, details, account); return; }
 
         }
         string note = GetString(account, "reason", "") switch
@@ -2138,24 +2180,8 @@ internal sealed partial class MeterWindow : Form
                 "导出未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
-    void UpdateGauges(JsonElement root)
+    void FinishAccountGauges(JsonElement root)
     {
-        while (gauges.Controls.Count > 0) gauges.Controls[0].Dispose();
-        AddGauge("Codex", GetValue(root, "account"));
-        AddGauge("Kimi", GetValue(GetValue(root, "other_accounts"), "Kimi Code"));
-        AddGauge("Claude", GetValue(GetValue(root, "other_accounts"), "Claude Code"));
-        AddGauge("WorkBuddy", GetValue(GetValue(root, "other_accounts"), "WorkBuddy"));
-        AddGauge("ZCode", GetValue(GetValue(root, "other_accounts"), "ZCode"));
-        AddGauge("火山方舟", GetValue(GetValue(root, "other_accounts"), "Volcengine"));
-        AddGauge("小米 MiMo", GetValue(GetValue(root, "other_accounts"), "MiMo"));
-        AddGauge("Qoder CN", GetValue(GetValue(root, "other_accounts"), "Qoder CN"));
-        AddGauge("TRAE CN", GetValue(GetValue(root, "other_accounts"), "TRAE CN"));
-        var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
-        if (minimax.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var account in minimax.EnumerateArray()) AddGauge("MiniMax · " + GetString(account, "label", "账户"), account);
-        }
-        else AddGauge("MiniMax", minimax);
         if (gauges.Controls.Count == 0)
         {
             var others = GetValue(root, "other_accounts");
@@ -2172,7 +2198,8 @@ internal sealed partial class MeterWindow : Form
         gaugePage = Math.Clamp(gaugePage, 0, pages - 1);
         gaugePrevious.Visible = gaugeNext.Visible = view == View.Accounts && pages > 1;
         gaugePrevious.Enabled = gaugePage > 0; gaugeNext.Enabled = gaugePage + 1 < pages;
-        gaugePrevious.Location = new Point(1, 110); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 21), 110);
+        int pageButtonTop = gauges.Top + 38;
+        gaugePrevious.Location = new Point(1, pageButtonTop); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 21), pageButtonTop);
         if (items.Length == 0) return;
         int shown = Math.Min(4, items.Length - gaugePage * 4);
         int width = Math.Clamp(gauges.ClientSize.Width / Math.Max(1, shown) - 7, 70, 95);
@@ -2180,16 +2207,6 @@ internal sealed partial class MeterWindow : Form
         {
             items[index].Visible = index / 4 == gaugePage;
             items[index].Width = width;
-        }
-    }
-    void AddGauge(string provider, JsonElement account)
-    {
-        var windows = QuotaWindows.Select(account);
-        if (windows is not null)
-        {
-            var gauge = new QuotaGauge(provider, windows, theme, demo ? ForecastDemoNow : null);
-            popupTips.SetToolTip(gauge, provider);
-            gauges.Controls.Add(gauge);
         }
     }
     static string FormatNumber(double n) => n >= 1_000_000_000 ? $"{n / 1_000_000_000:0.##}B" : n >= 1_000_000 ? $"{n / 1_000_000:0.##}M" : n >= 1_000 ? $"{n / 1_000:0.##}K" : $"{n:0}";
@@ -2371,14 +2388,15 @@ internal sealed partial class MeterWindow : Form
         StyleCard(box); content.Controls.Add(box);
     }
 
-    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default, AccountDetails? details = null)
+    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default, AccountDetails? details = null, JsonElement gaugeAccount = default)
     {
         int shown = Math.Min(rows.Count, 40);
         details ??= AccountDetails.Empty;
         if (shown == 0 && !details.HasContent) return;
-        int headingHeight = details.Plan is null ? 62 : 78;
+        int headingHeight = details.Plan is null ? 49 : 63;
+        const int rowHeight = 57;
         var identity = ProviderStyle.For(provider);
-        var box = new RoundedCard(theme, identity.Color) { Height = headingHeight + shown * 70, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme, identity.Color) { Name = "account-" + provider, Height = headingHeight + shown * rowHeight, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         box.Controls.Add(new ProviderMark(identity) { Location = new Point(16, 13), Size = new Size(34, 34) });
         var heading = new Label { Text = identity.DisplayName, AutoEllipsis = true, Height = 25,
             Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = new Point(60, 19) };
@@ -2394,15 +2412,15 @@ internal sealed partial class MeterWindow : Form
         for (int index = 0; index < shown; index++)
         {
             var row = rows[index];
-            int top = headingHeight - 3 + index * 70;
+            int top = headingHeight + index * rowHeight;
             string label = new string(row.Name.Where(c => !char.IsControl(c)).Take(80).ToArray());
             if (label.Length == 0) label = "额度窗口";
             var name = new Label { Text = label, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(16, top) };
             double? remaining = row.Remaining is double number && double.IsFinite(number) && number >= 0 && number <= 100 ? number : null;
             var amount = new Label { Text = remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", AutoSize = true,
                 Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = remaining.HasValue ? MeterBar.ValueColor(theme, remaining.Value) : Muted, Location = new Point(0, top) };
-            var note = new Label { Text = QuotaResetClock.Detail(row.ResetEpoch, ForecastNow), AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 40) };
-            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 27), Height = 7 };
+            var note = new Label { Text = QuotaResetClock.Detail(row.ResetEpoch, ForecastNow), AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 30) };
+            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 21), Height = 5 };
             quotaResetLabels.Add((note, row.ResetEpoch));
             box.Controls.AddRange([name, amount, note, bar]);
             box.Resize += (_, _) =>
@@ -2412,40 +2430,23 @@ internal sealed partial class MeterWindow : Form
                 bar.Width = Math.Max(0, box.ClientSize.Width - 32);
             };
         }
-        box.Height += AddAccountDetails(box, box.Height, details);
         var usage = AccountLocalUsage.Read(localHistory);
-        if (usage is not null)
-        {
-            int top = box.Height;
-            box.Height += usage.Trend is null ? 86 : 166;
-            var divider = new Panel { Location = new Point(16, top), Height = 1, BackColor = theme.Border };
-            var title = new Label { Text = "本机 Token · 未按账户区分", Font = new Font(Font.FontFamily, 9F, FontStyle.Bold),
-                ForeColor = Muted, Location = new Point(16, top + 10), Height = 22, AutoEllipsis = true };
-            var parts = new List<string>();
-            if (usage.Today.HasValue) parts.Add("今日 " + FormatNumber(usage.Today.Value));
-            if (usage.ThirtyDays.HasValue) parts.Add("近 30 天 " + FormatNumber(usage.ThirtyDays.Value));
-            if (usage.All.HasValue) parts.Add("累计 " + FormatNumber(usage.All.Value));
-            var summary = new Label { Text = parts.Count == 0 ? "本机统计汇总未提供" : string.Join("  ·  ", parts), ForeColor = Primary,
-                Location = new Point(16, top + 34), Height = 22, AutoEllipsis = true };
-            var note = new Label { Text = usage.Incomplete ? "部分本机记录不完整" : "与账户额度分别统计",
-                Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, Location = new Point(16, top + 57), Height = 20, AutoEllipsis = true };
-            box.Controls.AddRange([divider, title, summary, note]);
-            TokenSparkline? chart = null;
-            if (usage.Trend is not null)
-            {
-                var label = new Label { Text = "近 30 个自然日 · 北京时间", Font = new Font(Font.FontFamily, 8F),
-                    ForeColor = Muted, Location = new Point(16, top + 82), Height = 20, AutoEllipsis = true };
-                chart = new TokenSparkline(usage.Trend, identity.Color) { Location = new Point(16, top + 104), Height = 52 };
-                box.Controls.AddRange([label, chart]);
-                box.Resize += (_, _) => label.Width = Math.Max(0, box.ClientSize.Width - 32);
-            }
-            box.Resize += (_, _) =>
-            {
-                divider.Width = title.Width = summary.Width = note.Width = Math.Max(0, box.ClientSize.Width - 32);
-                if (chart is not null) chart.Width = Math.Max(0, box.ClientSize.Width - 32);
-            };
-        }
+        if (usage is not null) box.Height += AddLocalUsageSummary(box, box.Height, usage, identity.Color);
+        box.Height += AddAccountDetails(box, box.Height, details);
         StyleCard(box); content.Controls.Add(box);
+        if (QuotaWindows.Select(gaugeAccount) is { } windows)
+        {
+            // 圆环直接关联本次渲染的卡片，同名账户也不会按文字误跳到第一张。
+            var gauge = new QuotaGauge(identity.DisplayName, windows, theme, demo ? ForecastDemoNow : null)
+                { Name = "gauge-" + provider };
+            gauge.Click += (_, _) => {
+                int top = box.Top - content.AutoScrollPosition.Y;
+                content.AutoScrollPosition = new Point(0, Math.Max(0, top - content.Padding.Top));
+                scrollRail?.Invalidate();
+            };
+            popupTips.SetToolTip(gauge, gauge.AccessibleName + "\n查看账户明细");
+            gauges.Controls.Add(gauge);
+        }
         if (rows.Count > shown) AddCard(provider, "部分额度未显示", $"仅展示前 {shown} 个窗口", null);
     }
 
@@ -2594,7 +2595,7 @@ internal sealed class GaugePageButton(bool forward) : Button
     }
 }
 
-internal sealed class QuotaGauge : Control
+internal sealed class QuotaGauge : Button
 {
     readonly string provider;
     readonly QuotaWindowPair windows;
@@ -2604,14 +2605,17 @@ internal sealed class QuotaGauge : Control
     {
         this.provider = provider; this.windows = windows; this.theme = theme; this.referenceNow = referenceNow;
         Size = new Size(95, 116); Margin = new Padding(0, 0, 7, 0);
-        AccessibleRole = AccessibleRole.Graphic;
+        FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
+        UseVisualStyleBackColor = false; BackColor = theme.Background; Cursor = Cursors.Hand;
+        AccessibleDescription = "查看此账户的额度明细";
         AccessibleName = $"{provider} {windows.Primary.Label}，剩余 {windows.Primary.Remaining:0.#}%" +
             (windows.Secondary is null ? "" : $"；{windows.Secondary.Label}，剩余 {windows.Secondary.Remaining:0.#}%");
         DoubleBuffered = true;
     }
     protected override void OnPaint(PaintEventArgs e)
     {
-        base.OnPaint(e); e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.Clear(BackColor);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         void Ring(Rectangle rect, double remaining, Color normal)
         {
             using var track = new Pen(theme.Border, 5);
@@ -2637,19 +2641,28 @@ internal sealed class QuotaGauge : Control
         if (windows.Secondary is not null)
             Ring(new Rectangle(left + 8, 12, 44, 44), windows.Secondary.Remaining,
                 theme.Light ? Color.FromArgb(103, 75, 159) : Color.FromArgb(178, 145, 255));
-        using var valueFont = new Font(Font.FontFamily, 9F, FontStyle.Bold);
+        string valueText = $"{windows.Primary.Remaining:0.#}%";
+        using var valueFont = new Font(Font.FontFamily, valueText.Length > 4 ? 8F : 9F, FontStyle.Bold);
         using var small = new Font(Font.FontFamily, 7.5F);
         using var accountNameFont = new Font(Font.FontFamily, 8F);
-        TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(left + 12, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        const string accountPrefix = "MiniMax · ";
-        bool namedAccount = provider.StartsWith(accountPrefix, StringComparison.Ordinal);
-        string displayName = namedAccount ? provider[accountPrefix.Length..] + " · MiniMax" : provider;
-        TextRenderer.DrawText(e.Graphics, displayName, namedAccount ? accountNameFont : Font,
-            new Rectangle(0, 66, Width, 19), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        string shortName = windows.Primary.Label == "5 小时" ? "5h" : windows.Primary.Label == "7 天" ? "7d" : windows.Primary.Label;
-        string periods = $"{shortName} {windows.Primary.Remaining:0.#}" + (windows.Secondary is null ? "%" : $" / 7d {windows.Secondary.Remaining:0.#}");
-        TextRenderer.DrawText(e.Graphics, periods, small, new Rectangle(0, 84, Width, 16), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        TextRenderer.DrawText(e.Graphics, QuotaResetClock.Short(windows.Primary.ResetAt, referenceNow ?? DateTimeOffset.UtcNow), small, new Rectangle(0, 100, Width, 16), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        const TextFormatFlags centered = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+        var secondary = windows.Secondary;
+        TextRenderer.DrawText(e.Graphics, valueText, valueFont, new Rectangle(left + 8, secondary is null ? 18 : 15, 44, secondary is null ? 32 : 23), theme.Primary, centered);
+        if (secondary is not null)
+            TextRenderer.DrawText(e.Graphics, windows.Primary.Label, small, new Rectangle(left + 8, 36, 44, 15), theme.Secondary, centered);
+        const string aliasPrefix = "MiniMax Code · ";
+        string displayName = provider.StartsWith(aliasPrefix, StringComparison.Ordinal) ? provider[aliasPrefix.Length..] :
+            provider switch { "MiniMax Code" => "MiniMax", "Kimi Code" => "Kimi", "Claude Code" => "Claude",
+                "Qoder CN · 账户额度" => "Qoder CN", "TRAE CN · 账户额度" => "TRAE CN", _ => provider };
+        TextRenderer.DrawText(e.Graphics, displayName, displayName.Length > 9 ? accountNameFont : Font,
+            new Rectangle(0, 66, Width, 19), theme.Primary, centered | TextFormatFlags.EndEllipsis);
+        string period = secondary is null ? windows.Primary.Label : $"{secondary.Label} · {secondary.Remaining:0.#}%";
+        TextRenderer.DrawText(e.Graphics, period, small, new Rectangle(0, 84, Width, 16), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(e.Graphics, QuotaResetClock.Short(windows.Primary.ResetAt, referenceNow ?? DateTimeOffset.UtcNow),
+            small, new Rectangle(0, 100, Width, 16), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
+        if (Focused && ShowFocusCues)
+            ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -2, -2), theme.Primary, BackColor);
     }
 }
 internal sealed class DailyChart : Control

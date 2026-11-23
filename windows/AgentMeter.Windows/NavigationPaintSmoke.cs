@@ -49,17 +49,18 @@ internal sealed partial class MeterWindow
         // 只在隔离构建机运行，移开鼠标以免悬停色干扰像素判断。
         Cursor.Position = new Point(1, 1);
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab };
-        foreach (var (selected, page) in new[] { (0, View.Accounts), (1, View.Applications), (2, View.Usage), (5, View.Pet) })
+        foreach (var (selected, page) in new[] { (0, View.Accounts), (1, View.Applications), (2, View.Usage),
+            (3, View.Report), (4, View.Forecast), (5, View.Pet), (6, View.Collection), (0, View.Accounts) })
         {
             ClickOnIsolatedDesktop(tabs[selected]);
             await Task.Delay(350);
             Cursor.Position = new Point(1, 1);
             if (view != page) throw new InvalidOperationException("导航鼠标点击没有切换页面");
-            navigationStrip.Invalidate(true); Update();
             await Task.Delay(100);
             using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(picture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
             picture.Save(Path.Combine(output, $"navigation-{selected}.png"), ImageFormat.Png);
+            CheckNaturalNavigationFrame(picture, output, $"{page}");
             for (int i = 0; i < tabs.Length; i++)
             {
                 if (tabs[i].IsSelected != (i == selected)) throw new InvalidOperationException("导航选中状态错误");
@@ -134,6 +135,7 @@ internal sealed partial class MeterWindow
                 }
             }
         }
+        await CheckAccountFirstScreenAsync(output);
         // 真实键盘事件检查自绘控件的可操作性，再逐个核对七种主题的高亮。
         if (!reportTab.Focus()) throw new InvalidOperationException("无法聚焦导航按钮");
         keybd_event(0x20, 0, 0, UIntPtr.Zero);
@@ -232,6 +234,97 @@ internal sealed partial class MeterWindow
                 !((Label)broken.Controls.Find("budget-message", true).Single()).Text.Contains("无法读取") || File.ReadAllText(testConfig) != "invalid")
                 throw new InvalidOperationException("损坏预算设置应保留原文件并阻止覆盖");
         }
+    }
+
+    async Task CheckAccountFirstScreenAsync(string output)
+    {
+        // 此入口仅运行已固定的演示数据；为 macOS 对照保留相同的显示字段。
+        var demoFrame = System.Text.Json.Nodes.JsonNode.Parse(lastSnapshot!)!;
+        var comparison = new System.Text.Json.Nodes.JsonObject { ["clock"] = ForecastDemoNow.ToUnixTimeSeconds() };
+        foreach (var (id, name) in new[] { ("codex", "Codex"), ("kimi", "Kimi Code"), ("claude", "Claude Code"), ("minimax", "MiniMax Code") })
+        {
+            var account = id == "codex" ? demoFrame["account"] : demoFrame["other_accounts"]?[name];
+            comparison[id] = new System.Text.Json.Nodes.JsonObject {
+                ["quota"] = account?["quota"]?["value"]?.DeepClone(), ["plan"] = account?["subscription"]?["plan"]?.DeepClone(),
+                ["credits"] = account?["credits"]?["value"]?.DeepClone(), ["cards"] = account?["reset_cards"]?["value"]?.DeepClone(),
+                ["history"] = demoFrame["history"]?[name]?["value"]?.DeepClone() };
+        }
+        File.WriteAllText(Path.Combine(output, "account-demo.json"), comparison.ToJsonString());
+        foreach (var (style, width) in new[] { ("aurora", 440), ("aurora", 420), ("porcelain", 380) })
+        {
+            SetTheme(VisualThemes.Find(style)); Size = new Size(width, 680);
+            content.AutoScrollPosition = Point.Empty;
+            await Task.Delay(100);
+            var card = content.Controls.Find("account-CODEX", false).Single();
+            var today = (Label)card.Controls.Find("account-local-today", false).Single();
+            var trend = card.Controls.Find("account-local-trend", false).Single();
+            var viewport = contentClip.RectangleToScreen(contentClip.ClientRectangle);
+            if (ClientSize.Width != width || today.Text != "1.43M" ||
+                !viewport.Contains(today.RectangleToScreen(today.ClientRectangle)) ||
+                !viewport.Contains(trend.RectangleToScreen(trend.ClientRectangle)))
+                throw new InvalidOperationException($"账户首屏未完整显示今日用量与趋势：宽 {ClientSize.Width}，DPI {DeviceDpi}");
+            using var picture = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(picture)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+            picture.Save(Path.Combine(output, $"accounts-{style}-{width}.png"), ImageFormat.Png);
+        }
+        // 检查按空格展开和收起之后焦点仍在同一操作入口。
+        var toggle = content.Controls.Find("account-reset-toggle", true).Single();
+        if (!toggle.Focus()) throw new InvalidOperationException("重置卡明细不能获取键盘焦点");
+        foreach (bool expanded in new[] { true, false })
+        {
+            keybd_event(0x20, 0, 0, UIntPtr.Zero); keybd_event(0x20, 0, 0x0002, UIntPtr.Zero);
+            await Task.Delay(150);
+            if (content.Controls.Find("account-reset-tile", true).Length != (expanded ? 3 : 0) ||
+                !content.Controls.Find("account-reset-toggle", true).Single().Focused)
+                throw new InvalidOperationException("重置卡键盘展开或焦点恢复失败");
+            int before = -content.AutoScrollPosition.Y;
+            using var refreshed = System.Text.Json.JsonDocument.Parse(lastSnapshot!);
+            using var loading = System.Text.Json.JsonDocument.Parse("""{"account":{"status":"loading"},"history":{}}""");
+            Render(loading.RootElement, accountDetailsPending: true);
+            if (!content.Controls.Find("account-reset-toggle", true).Single().Focused ||
+                lastSnapshot != loading.RootElement.GetRawText() || !status.Text.Contains("上次账户明细"))
+                throw new InvalidOperationException("分批刷新覆盖了正在阅读的卡片，或托盘未收到读取状态");
+            foreach (bool showTiles in new[] { !expanded, expanded })
+            {
+                keybd_event(0x20, 0, 0, UIntPtr.Zero); keybd_event(0x20, 0, 0x0002, UIntPtr.Zero);
+                await Task.Delay(75);
+                if (content.Controls.Find("account-reset-tile", true).Length != (showTiles ? 3 : 0) || lastSnapshot != loading.RootElement.GetRawText())
+                    throw new InvalidOperationException("读取期间操作明细失败或旧额度回写到了托盘");
+            }
+            Render(refreshed.RootElement);
+            await Task.Delay(100);
+            if (!content.Controls.Find("account-reset-toggle", true).Single().Focused ||
+                content.Controls.Find("account-reset-tile", true).Length != (expanded ? 3 : 0) || Math.Abs(-content.AutoScrollPosition.Y - before) > 2)
+                throw new InvalidOperationException("刷新后重置卡明细、焦点或阅读位置发生变化");
+        }
+        Size = new Size(440, 680); SetTheme(VisualThemes.Find("aurora"));
+        Hide(); Show(); Activate();
+        using (var snapshot = System.Text.Json.JsonDocument.Parse(lastSnapshot!)) Render(snapshot.RootElement);
+        await Task.Delay(150);
+        using var reopened = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(reopened)) graphics.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, ClientSize);
+        CheckNaturalNavigationFrame(reopened, output, "reopened-refresh");
+    }
+
+    // 先保留用户正常点击后看到的整条导航，再与同位置同步重绘的结果逐像素对照。
+    // 单点取色可以确认高亮位置，但无法发现文字笔画或胶囊边缘上的残影。
+    void CheckNaturalNavigationFrame(Bitmap picture, string output, string page)
+    {
+        Point origin = navigationStrip.PointToScreen(Point.Empty);
+        var area = new Rectangle(PointToClient(origin), navigationStrip.ClientSize);
+        using var natural = picture.Clone(area, PixelFormat.Format32bppArgb);
+        navigationStrip.Refresh();
+        using var reference = new Bitmap(area.Width, area.Height, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(reference))
+            graphics.CopyFromScreen(origin, Point.Empty, reference.Size);
+        int changed = 0;
+        for (int y = 0; y < area.Height; y++)
+            for (int x = 0; x < area.Width; x++)
+                if (natural.GetPixel(x, y).ToArgb() != reference.GetPixel(x, y).ToArgb()) changed++;
+        if (changed == 0) return;
+        natural.Save(Path.Combine(output, $"navigation-{page}-natural.png"), ImageFormat.Png);
+        reference.Save(Path.Combine(output, $"navigation-{page}-reference.png"), ImageFormat.Png);
+        throw new InvalidOperationException($"{page} 自然切页与重绘后的导航有 {changed} 个像素不同");
     }
 
     void CheckTabPixel(Bitmap picture, NavigationTab tab, bool selected)

@@ -10,7 +10,7 @@
 [![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml)
 [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 
-[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.45) · [快速使用](QUICK_START.md) · [更新记录](CHANGELOG.md) · [移植进度](PORT_PLAN.md) · [English](OVERVIEW.en.md)
+[下载](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.49) · [快速使用](QUICK_START.md) · [更新记录](CHANGELOG.md) · [移植进度](PORT_PLAN.md) · [English](OVERVIEW.en.md)
 
 </div>
 
@@ -25,7 +25,7 @@
 
 ## 三步开始
 
-1. 从 [Alpha 45 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.45) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
+1. 从 [Alpha 49 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.49) 下载 `AgentMeter-Windows-x64.zip`。更新时请先从旧版托盘菜单选择「退出」。
 2. 解压并保留完整文件夹，运行 `AgentMeter.Windows.exe`。便携包已包含运行环境；3D 桌宠以及 WorkBuddy、小米 MiMo、Qoder 和 TRAE 登录另需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 3. 点击通知区域的图标查看用量；找不到时展开隐藏图标。右键或顶部三个圆点可切换账户、托盘余量和界面风格。
 

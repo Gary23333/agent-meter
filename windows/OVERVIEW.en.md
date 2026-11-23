@@ -21,6 +21,7 @@ The panel previews use fictional data on an isolated Windows runner. The default
 ## What it does
 
 - **Tray flyout** — a compact borderless panel with no taskbar window button. Click the tray icon to toggle, click outside or press Esc to dismiss, or pin it temporarily. The top menu and tray context menu share the same settings.
+- **Account shortcuts** — click a quota ring or focus it with Tab and press Space or Enter to scroll to that account. Named MiniMax accounts keep their own shortcuts. Dual rings show the five-hour percentage in the center and the seven-day percentage under the account name.
 - **MiMo platform (experimental)** — opt in via a separate WebView2 profile for balance and Token Plan usage; real sign-in and accounts remain unverified. Local MiMo Code history stays separate.
 - **Volcengine Coding Plan quota** — opt in with a user-supplied AccessKey pair stored in Windows Credential Manager; it signs only the quota request and has synthetic tests only.
 - **ZCode Coding Plan quota** — opt in with an API key stored in Windows Credential Manager. Account quota, MCP allowance and local ZCode tokens remain separate; tested with synthetic data only.
@@ -87,7 +88,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.31](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.31), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy, MiMo, Qoder and TRAE require a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. Isolated Windows checks cover deactivation, pinning, owned windows, Esc and scrolling. Real taskbar, multi-monitor, high-DPI and a separate clean physical installation remain unverified.
+Download [Windows Alpha 49](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.49), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. When updating, exit the previous version from its tray menu first. The portable bundle includes the application runtime. The 3D pet and the WorkBuddy, MiMo, Qoder and TRAE sign-in windows require WebView2 Runtime. This unsigned preview includes a SHA-256 checksum on the release page. The [Windows test record](windows/PORT_PLAN.md) documents the Explorer interactions and display scales tested with fictional accounts. Mixed-DPI displays and a clean physical installation still need device testing.
 
 ### Build from source
 

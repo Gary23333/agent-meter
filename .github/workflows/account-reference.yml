@@ -1,0 +1,37 @@
+name: macOS 账户首屏对照
+on:
+  workflow_dispatch:
+    inputs:
+      windows_run:
+        description: 同一版本 Windows port 的运行编号
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+jobs:
+  preview:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: AgentMeter-navigation-paint
+          run-id: ${{ inputs.windows_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/windows-preview
+      - name: 使用同一批虚构数据渲染原版账户页
+        run: |
+          python3 -m windows.qa.mac_account_preview "$RUNNER_TEMP/windows-preview/account-demo.json" "$RUNNER_TEMP/account-reference.json"
+          swift build --package-path menubar -c release
+          app="$(swift build --package-path menubar -c release --show-bin-path)/AgentMeterBar"
+          "$app" --preview "$RUNNER_TEMP/account-reference.json" "$RUNNER_TEMP/mac-preview" --tab accounts --theme aurora
+          test -s "$RUNNER_TEMP/mac-preview/accounts-dark.png"
+          test -s "$RUNNER_TEMP/mac-preview/accounts-light.png"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-account-reference
+          path: ${{ runner.temp }}/mac-preview/accounts-*.png

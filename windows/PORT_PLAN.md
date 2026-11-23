@@ -2,6 +2,73 @@
 
 目标是以 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) v0.11.0（提交 `ac547d0`）为对照，完成具备相近功能完整度与视觉质量的 Windows 版本。系统托盘是常驻入口；账户额度与本机账本分别计量。保留原作者 MIT 版权声明，并在仓库、安装包中说明依赖与来源。
 
+## 下一轮验收重点
+
+1. **复核其他设备上的导航表现。** 已定位并修复正文切页后页头仍停留在旧选项的一种情形。接下来在 200% 和两块不同缩放的显示器上复核，记录面板在哪块屏上打开、是否恰逢刷新，并保留文字重叠或旧高亮出现时的画面。
+2. **复核真实账户的刷新。** 首页已经支持按别名定位账户。接着用已授权的来源检查网络变慢、登录过期和额度窗口刚重置时的显示，特别核对上次结果的提示何时消失。
+3. **走通最常用的数据路径。** 先选 Codex 和另一个已有授权的常用来源，从打开托盘、手动刷新一直核对到用量导出。额度按服务端同一时间窗口核对，本机 Token 按本机账本核对。README 分别标出已实测、仅有虚构数据验证和待适配的来源。
+
+下一次面向用户的发版优先交付能在托盘里看到的修复，附复现条件、前后画面和验证范围。验证阶段使用 [中文问题反馈](https://github.com/FoxBai/agent-meter-windows/issues/new/choose) 收集版本、屏幕缩放、触发步骤。稳定版仍需覆盖实体设备上的常用操作。
+
+## Alpha 49 在托盘中定位账户
+
+Alpha 48 翻到第二组额度环后，正文还在 Codex；想看某个 MiniMax 账户，需要继续向下找。Alpha 49 把每个额度环连到自己的账户卡。下面左图是从任务栏打开后点击 Kimi 的画面，右图是第二组里点「演示3」后的窄面板。两处均为虚构账户。
+
+| 点击 Kimi | 选择同一服务的不同账户 |
+| --- | --- |
+| <img src="assets/alpha49-kimi-details.png" width="315" alt="点击 Kimi 后，第一张卡显示 Kimi Code 的 64% 额度和钱包"> | <img src="assets/alpha49-multiple-accounts.png" width="315" alt="第二组的演示3圆环与明细卡都显示 99.9%"> |
+
+四台隔离桌面分别从发布页下载 ZIP、校验并解压，从 Explorer 托盘图标打开。每档都先用鼠标点 Kimi，再按空格选 Codex，最后用 Tab 移回 Kimi 并按 Enter。每次都检查对应卡片是否出现在额度环正下方。随后在七页之间往返，导航纵向偏移均为 0。「用量」与「报告」的切换共抽取 135 帧，均只显示一项高亮。150% 的桌面在程序运行中改为 125%，也能从原图标重新打开。[100%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671607) · [125%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671679) · [150%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671843) · [175%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990671713)
+
+分批刷新另用受控的窗口测试覆盖。在保持明细展开、保持明细收起两种状态下，先发来「正在读取」的快照，再在等待期间用键盘展开和收起，最后送达完整数据。检查覆盖托盘收到的最新状态、明细内容、阅读位置及键盘焦点。[分批刷新与界面检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990319598)
+
+本次另尝试了 200% 缩放。隔离桌面的显示设置只提供 100%、125%、150%、175% 四项，测试在启动程序前结束。200% 和混合缩放双屏均待其他设备验收。[系统提供的缩放选项](https://github.com/FoxBai/agent-meter-windows/actions/runs/44989752453)
+
+## Alpha 48 连续切页实测
+
+Alpha 47 从「账户」切到「用量」时会收起额度环，把整排导航向上移。150% 缩放下，鼠标与原来的目标相距 174 个物理像素。Alpha 48 将导航固定在标题下方，账户页在它下面展示额度环，其余六页直接显示正文。这样保留了短屏上的可用空间，连续点击同一排即可切页。
+
+固定导航后的第一份候选包还暴露出另一个问题。从「账户」切到「应用」时，正文已经出现「应用概览」，标题说明和紫色高亮仍留在账户页。自然画面与强制重绘后的导航相差 3172 个像素。最终实现先把标题和导航一起绘制出来，再重建正文控件。[保留失败画面的构建记录](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986327407)
+
+![同一切页步骤的真实画面。左图正文已是应用，高亮仍在账户。右图正文、说明和高亮都已切到应用。](assets/alpha48-navigation-comparison.png)
+
+这次验收从任务栏的隐藏图标进入，按正序和逆序点击七个页面，对同一页两次进入时的导航截图逐像素比较。随后用左右方向键跨越首尾标签，检查选中项和键盘焦点，再点击刷新，按 Esc 收起并从托盘重新打开。另在「用量」「报告」往返时连续取样高亮，日志保存每次采样的时间和选中项。此检查使用隔离桌面上的演示数据。
+
+从公开下载的 Alpha 48 便携包实测，四档缩放下七页导航的纵向偏移均为 0。对「用量」「报告」的八次切换共截取 138 帧，每帧均只有一项高亮。运行中从 150% 切回 125% 后，用量页也可从原托盘图标重新打开。[100%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083441) · [125%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083457) · [150%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083616) · [175%](https://github.com/FoxBai/agent-meter-windows/actions/runs/44987083539)
+
+| 账户页 | 用量页 |
+| --- | --- |
+| <img src="assets/screenshot.png" width="325" alt="账户页选中第一个标签，额度环位于导航下方"> | <img src="assets/usage-preview.png" width="325" alt="用量页选中第三个标签，导航保持原位"> |
+
+## Alpha 47 高缩放实测
+
+在 1920 × 1080、Windows 缩放 150% 时，从任务栏通知区域打开面板并点击「用量」。Alpha 46 的弹层仍宽 440 个物理像素，文字随系统放大，导致「1.77M」和「$2.464」的下缘被裁掉。Alpha 47 中弹层按同一比例放大到 660 个物理像素。以下是同一组演示数据的真实窗口截图，可点图查看原始尺寸。
+
+| Alpha 46 · 修复前 | Alpha 47 · 修复后 |
+| --- | --- |
+| [![旧版用量页，Token 和金额底部被截断](assets/alpha46-usage-150.png)](assets/alpha46-usage-150.png) | [![新版用量页，Token 和金额完整可读](assets/alpha47-usage-150.png)](assets/alpha47-usage-150.png) |
+
+复测顺序为从隐藏图标打开 → 切到用量页 → 按 Esc 收起 → 再次点开 → 将图标设为常驻 → 长按松开 → 再次单击。每档缩放单独启动程序，读回显示器 DPI，截取数字和整条导航。数字底部留白以物理像素计，导航比较收起前后同一区域的像素。
+
+| 从公开发布包实测 | 屏幕分辨率 | 弹层宽度 | Token / 金额底部留白 |
+| --- | --- | ---: | ---: |
+| [100% · 96 DPI](https://github.com/FoxBai/agent-meter-windows/actions/runs/44937152854) | 1024 × 768 | 440 px | 9 / 5 px |
+| [125% · 120 DPI](https://github.com/FoxBai/agent-meter-windows/actions/runs/44937152834) | 1024 × 768 | 550 px | 12 / 8 px |
+| [150% · 144 DPI](https://github.com/FoxBai/agent-meter-windows/actions/runs/44937152650) | 1920 × 1080 | 660 px | 14 / 8 px |
+| [175% · 168 DPI](https://github.com/FoxBai/agent-meter-windows/actions/runs/44937152725) | 1920 × 1080 | 770 px | 16 / 9 px |
+
+以上四档均通过。Alpha 46 在同一套 150% 检查中两项留白均为 0。另在 Alpha 47 运行期间，将同一块屏幕从 150% 调回 125%，点原图标重开后仍是用量页，弹层宽度调整到 550 px，数字完整。[旧版基线](https://github.com/FoxBai/agent-meter-windows/actions/runs/44936728108) · [运行中改变缩放](https://github.com/FoxBai/agent-meter-windows/actions/runs/44937152650)
+
+隔离机只有一块屏幕，驱动最高提供 1920 × 1080，系统预设缩放最高为 175%。200% 和运行中跨不同缩放的显示器仍待实机验证。此次修复使用 Windows 整体缩放，部分自绘图形在分数倍率下仍有柔化。
+
+## Alpha 46 同数据首屏对照
+
+| macOS 原版 | Windows 托盘 |
+| --- | --- |
+| <img src="assets/alpha46-mac-account-420.png" width="360" alt="macOS 原版账户首屏"> | <img src="assets/alpha46-windows-account-420.png" width="360" alt="Windows Alpha 46 账户首屏"> |
+
+两列均为 420 × 680。Windows 是隔离桌面上的真实窗口，macOS 图取自原版离线预览顶端的同尺寸区域。两端读取同一组虚构用量，演示时钟按运行日期平移以保留重置间隔。5 小时余量为 73%，7 天余量为 46%，今日 1,426,000 Token，重置卡共 3 张。原版以中文数量单位显示，Windows 保留 M 与 B。此对照验证账户首页的信息位置，真实任务栏与多屏缩放仍需实机复核。[Windows 检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44927035989) · [原版渲染](https://github.com/FoxBai/agent-meter-windows/actions/runs/44927082918)
+
 ## 与 Mac 版逐项对照
 
 | 功能或界面 | Windows 当前状态 | 后续验收 |
@@ -21,6 +88,14 @@
 | 中文体验与文档 | 中文首页、快速使用、安全和贡献说明正在调整；英文作为辅助 | Windows 新代码的说明与注释以中文为主，保证 README、实际行为及下载版本一致 |
 
 ## 当前证据和限制
+
+- [Alpha 49 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.49) 对应提交 `c9f7afe`。便携包 SHA-256 为 `2a40c6422616755128d36370c642f76c59b6ec64640fe3ddb1ca65f04e1ff1ee`。已从 ZIP 单独解压核对程序版本、中文说明、第三方许可，并用虚构数据复核账本、零用量和预算历史。界面检查覆盖分批刷新期间的键盘操作及 94 张演示画面。[Windows 构建与界面检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990319598) · [跨平台检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44990319591)
+
+- [Alpha 48 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.48) 对应提交 `347b0c8`。便携包 SHA-256 为 `c59e63b5e4a9a5d7fe3dddc7ad89dda0a3e197ca35b0b94b14909c4b09bf2d43`。独立解压后已检查版本、虚构账本、零用量、错误价格及预算历史保护。[Windows 构建与界面检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986715114) · [跨平台检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44986715119)
+
+- [Alpha 47 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.47) 对应提交 `65e80e6`，发布包 SHA-256 为 `4cc46c0c5d21dd7db3c1a5b186cf077ac5ac4fe5ea39d311d284522bc4ece5a6`。[Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/runs/44936713285)与[跨平台检查](https://github.com/FoxBai/agent-meter-windows/actions/runs/44936713231)均已通过。
+
+- [Alpha 46 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.46) 对应提交 `03aa1a4`。380、420 和 440 像素宽的隔离窗口都能在首屏看到今日用量与趋势。键盘展开和收起、焦点恢复、窗口重新显示和快照刷新后的导航均通过检查。已独立解压核对发布包，SHA-256 为 `9df9a32391441043dff79aca73d8b9db92fa39fa31136f3411f6810a1bf830dd`。
 
 - [Alpha 45 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.45) 对应提交 `66618c6`；Windows 构建和跨平台检查通过，托盘弹层、导航重绘、零用量及价格损坏提示在隔离窗口验证。发布包独立解压，用虚构账本核对零用量、无效价格和预算历史保护；真实账本、系统通知、实体设备及高 DPI 仍待验收。SHA-256：`40c05da358aa71e82b009682add8e595980aa0152f8856a149c470e9551cd4eb`。
 
