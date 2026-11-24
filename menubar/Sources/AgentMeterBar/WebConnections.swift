@@ -520,7 +520,7 @@ struct WebLoginView: View {
                   ? "凭据只存入钥匙串，并只发送给本机后端用于读取用量。登录网站留下的 Cookie 保存在本机独立的浏览器数据目录，只用于在后台自动续期，不会发送给后端。"
                   : "登录只在本窗口内进行。保存的 Cookie / 凭据仅存入钥匙串，并只发送给本机后端用于读取用量。",
                   systemImage: "lock.shield")
-                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12).padding(.vertical, 6)
         }
@@ -571,8 +571,8 @@ struct ConnectionsView: View {
             HStack(spacing: 8) {
                 BrandBadge(brand: Catalog.brand(p.id), size: 22, icon: AppLauncher.icon(for: p.id, in: store.snapshot))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(Catalog.brand(p.id).name).font(.system(size: 12.5, weight: .semibold))
-                    Text(p.hint).font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(Catalog.brand(p.id).name).font(.system(size: 13, weight: .semibold))
+                    Text(p.hint).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 if savedKeys.contains(p.id) {
@@ -622,7 +622,7 @@ struct ConnectionsView: View {
             BrandBadge(brand: brand, icon: AppLauncher.icon(for: p.id, in: store.snapshot))
             VStack(alignment: .leading, spacing: 2) {
                 Text(brand.name).font(.system(size: 13, weight: .semibold))
-                Text(p.note).font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(p.note).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
@@ -667,7 +667,7 @@ struct ConnectionsView: View {
             }
             .controlSize(.small)
             if let error = manualError[p.id] {
-                Text(error).font(.system(size: 10.5)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Text(error).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
         }
         if let help = p.keyHelp {

@@ -29,7 +29,7 @@ struct SourceOrderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("拖动或用箭头调整顺序。账户卡片、顶部仪表、菜单栏行情和提醒都按这个顺序排列。")
-                .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             List {
                 ForEach(Array(ids.enumerated()), id: \.element) { index, id in
                     row(id, index: index)
@@ -71,7 +71,7 @@ struct SourceOrderView: View {
             BrandBadge(brand: Catalog.brand(id), size: 20,
                        icon: AppLauncher.icon(for: ConnectionManager.provider(ofSlot: id), in: store.snapshot))
             VStack(alignment: .leading, spacing: 1) {
-                Text(source?.displayName ?? Catalog.brand(id).name).font(.system(size: 12.5, weight: .medium))
+                Text(source?.displayName ?? Catalog.brand(id).name).font(.system(size: 13, weight: .medium))
                 if let s = source, !s.hasAccountData {
                     Text("未接入 · " + Catalog.reason(s.reason)).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                 }

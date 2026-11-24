@@ -214,7 +214,7 @@ extension CollectionView {
                                                  set: { UserDefaults.standard.set($0, forKey: TrophyShare.qrKey) }))
         } label: {
             Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(Color.primary.opacity(0.07)))
         }
@@ -327,7 +327,7 @@ private struct HeroStat: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 Image(systemName: symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(tint)
-                Text(title).font(theme.font(9.5)).themeForeground(.secondary)
+                Text(title).font(theme.font(10)).themeForeground(.secondary)
             }
             Text(value).font(.system(size: 13, weight: .bold, design: .rounded)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
         }
@@ -378,9 +378,9 @@ private struct RarityChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text(String(repeating: "★", count: rarity.stars)).font(.system(size: 7.5, weight: .black))
+            Text(String(repeating: "★", count: rarity.stars)).font(.system(size: 8, weight: .black))
             Text(rarity.label).font(.system(size: 10, weight: .semibold))
-            Text("\(count)").font(.system(size: 10.5, weight: .heavy, design: .rounded)).monospacedDigit()
+            Text("\(count)").font(.system(size: 11, weight: .heavy, design: .rounded)).monospacedDigit()
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 7).padding(.vertical, 4)
@@ -423,7 +423,7 @@ private struct NextGoals: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(m.name).font(theme.font(12, weight: .semibold))
-                    Text(m.categoryName).font(theme.font(9.5)).themeForeground(.tertiary)
+                    Text(m.categoryName).font(theme.font(10)).themeForeground(.tertiary)
                     Spacer()
                     Text("\(Int(m.progress * 100))%").font(.system(size: 11, weight: .bold, design: .rounded)).monospacedDigit()
                         .foregroundStyle(m.tier.colors[1])
@@ -438,7 +438,7 @@ private struct NextGoals: View {
                 }
                 .frame(height: 5)
                 Text("还差 " + TrophyShare.valueText(m, max(0, m.target - m.value)) + " · 目标 " + TrophyShare.medalGoal(m))
-                    .font(theme.font(9.5)).themeForeground(.tertiary).lineLimit(1)
+                    .font(theme.font(10)).themeForeground(.tertiary).lineLimit(1)
             }
         }
         .contentShape(Rectangle())
@@ -492,13 +492,13 @@ private struct RecentDrops: View {
                 .frame(width: 14, height: 19)
                 .overlay(Image(systemName: def.symbol).font(.system(size: 7, weight: .bold)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 1) {
-                Text(def.name).font(theme.font(11.5, weight: .semibold)).lineLimit(1)
+                Text(def.name).font(theme.font(12, weight: .semibold)).lineLimit(1)
                 Text([drop.source.map { Catalog.brand($0).name }, drop.detail].compactMap { $0 }.joined(separator: " · "))
-                    .font(theme.font(9.5)).themeForeground(.tertiary).lineLimit(1)
+                    .font(theme.font(10)).themeForeground(.tertiary).lineLimit(1)
             }
             Spacer(minLength: 4)
             if let at = drop.at {
-                Text(Fmt.ago(at, now: now)).font(theme.font(9.5)).themeForeground(.tertiary).lineLimit(1)
+                Text(Fmt.ago(at, now: now)).font(theme.font(10)).themeForeground(.tertiary).lineLimit(1)
             }
         }
     }
@@ -534,7 +534,7 @@ private struct OpenWindowsSection: View {
         let tint = (current ?? next)?.rarity.glow ?? .gray
         return VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Text(Catalog.brand(w.source).name).font(theme.font(11.5, weight: .semibold))
+                Text(Catalog.brand(w.source).name).font(theme.font(12, weight: .semibold))
                 Text(w.kind == "five_hour" ? "5 小时" : "7 天").font(theme.font(10)).themeForeground(.tertiary)
                 Spacer()
                 if let at = w.resetsAt { Text(Fmt.countdown(to: at, now: now) + "重置").font(theme.font(10)).themeForeground(.tertiary) }
@@ -585,7 +585,7 @@ private struct MedalWall: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(groups, id: \.name) { g in
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(g.name).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.secondary)
+                            Text(g.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                             HStack(alignment: .top, spacing: 6) {
                                 ForEach(g.medals) { m in
                                     MedalView(medal: m, tilts: true)

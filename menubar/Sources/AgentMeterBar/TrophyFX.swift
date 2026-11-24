@@ -330,7 +330,7 @@ struct TrophyStage: View {
     private var topBar: some View {
         HStack {
             Text(heading)
-                .font(.system(size: 11.5, weight: .heavy)).kerning(3)
+                .font(.system(size: 12, weight: .heavy)).kerning(3)
                 .foregroundStyle(LinearGradient(colors: [accent[1], .white], startPoint: .leading, endPoint: .trailing))
             Spacer()
             if !isUnlock {
@@ -394,7 +394,7 @@ struct TrophyStage: View {
                 .foregroundStyle(owned ? AnyShapeStyle(LinearGradient(colors: [.white, accent[1]], startPoint: .top, endPoint: .bottom))
                                        : AnyShapeStyle(Color.white.opacity(0.75)))
                 .shadow(color: accent[1].opacity(owned ? 0.8 : 0), radius: 8)
-            Text(subtitle).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(accent[1])
+            Text(subtitle).font(.system(size: 12, weight: .semibold)).foregroundStyle(accent[1])
         }
         .opacity(stage)
         .offset(y: (1 - stage) * 14)
@@ -402,7 +402,7 @@ struct TrophyStage: View {
 
     @ViewBuilder private var infoBlock: some View {
         VStack(spacing: 8) {
-            Text(goal).font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.8)).multilineTextAlignment(.center)
+            Text(goal).font(.system(size: 12)).foregroundStyle(.white.opacity(0.8)).multilineTextAlignment(.center)
             if let medal, !medal.earned {
                 VStack(spacing: 4) {
                     GeometryReader { geo in
@@ -414,7 +414,7 @@ struct TrophyStage: View {
                     }
                     .frame(width: 220, height: 6)
                     Text("当前 \(TrophyShare.valueText(medal, medal.value)) · 完成 \(Int(medal.progress * 100))%")
-                        .font(.system(size: 10.5, design: .rounded)).foregroundStyle(.white.opacity(0.6))
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.white.opacity(0.6))
                 }
             }
             HStack(spacing: 8) {
@@ -422,7 +422,7 @@ struct TrophyStage: View {
                     VStack(spacing: 2) {
                         Text(fact.1).font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundStyle(.white).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.7)
-                        Text(fact.0).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.55))
+                        Text(fact.0).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55))
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
@@ -507,7 +507,7 @@ struct TrophyStage: View {
     private func ghostButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(Capsule().fill(.white.opacity(0.12)))
                 .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.8))
@@ -698,7 +698,7 @@ private struct ShareBrand: View {
             .frame(width: 26, height: 26)
             VStack(alignment: .leading, spacing: 0) {
                 Text("AgentMeter").font(.system(size: 13, weight: .heavy))
-                Text("Agent 用量 · 收集册").font(.system(size: 9.5)).opacity(0.6)
+                Text("Agent 用量 · 收集册").font(.system(size: 10)).opacity(0.6)
             }
             Spacer()
             Text(Fmt.day(Date())).font(.system(size: 11, design: .monospaced)).opacity(0.6)
@@ -730,7 +730,7 @@ private struct ShareStatsGrid: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.1).font(.system(size: 15, weight: .heavy, design: .rounded)).foregroundStyle(.white)
                             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
-                        Text(item.0).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.55))
+                        Text(item.0).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55))
                     }
                     Spacer(minLength: 0)
                 }
@@ -749,8 +749,8 @@ private struct ShareFooter: View {
     var body: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("数据来自本机账本 · 不含对话内容").font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.45))
-                Text("金额为 API 等价估算 · " + Fmt.currencyNote).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.45))
+                Text("数据来自本机账本 · 不含对话内容").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                Text("金额为 API 等价估算 · " + Fmt.currencyNote).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
             }
             Spacer()
             if showsQR { QRBadge(size: 64) }

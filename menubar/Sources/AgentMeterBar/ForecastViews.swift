@@ -28,7 +28,7 @@ struct ForecastView: View {
                 Card {
                     QSectionTitle(symbol: "clock.arrow.2.circlepath", text: "重置预测")
                     Text("后端未返回预测来源，可在设置里确认它没有被禁用。")
-                        .font(.system(size: 11.5)).themeForeground(.secondary)
+                        .font(.system(size: 12)).themeForeground(.secondary)
                 }
             }
         }
@@ -219,10 +219,10 @@ private struct TiboHeroCard: View {
                 QSticker(symbol: "arrow.counterclockwise")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Tibo 重置器")
-                        .font(.system(size: 13.5, weight: .bold, design: theme.isLuminous ? .monospaced : .rounded))
+                        .font(.system(size: 14, weight: .bold, design: theme.isLuminous ? .monospaced : .rounded))
                         .themeForeground()
                     Text("ChatGPT / Codex 全员重置 · 第三方预测")
-                        .font(theme.font(10.5, weight: .medium)).themeForeground(.secondary)
+                        .font(theme.font(11, weight: .medium)).themeForeground(.secondary)
                 }
                 Spacer(minLength: 8)
                 StatusPill(status: forecast["cache_state"].string == "stale" ? "stale" : source.status)
@@ -247,7 +247,7 @@ private struct TiboHeroCard: View {
                 IconButton(symbol: "arrow.clockwise", help: "立即刷新预测与全部用量", spinning: store.isBusy) { store.refresh() }
                     .disabled(store.isBusy)
             }
-            .font(theme.font(10.5, weight: .medium)).themeForeground(.secondary)
+            .font(theme.font(11, weight: .medium)).themeForeground(.secondary)
             if let disclaimer = forecast["disclaimer"].string {
                 Text(disclaimer)
                     .font(.system(size: 10)).themeForeground(.tertiary)
@@ -295,7 +295,7 @@ private struct EnsembleCard: View {
         Card {
             QSectionTitle(symbol: "chart.bar.fill", text: "下次全员重置概率", trailing: "各站自己公布的数值")
             if horizons.isEmpty {
-                Text("没有任何一家给出可用预测。").font(.system(size: 11.5)).themeForeground(.secondary)
+                Text("没有任何一家给出可用预测。").font(.system(size: 12)).themeForeground(.secondary)
             }
             ForEach(["24h", "48h"], id: \.self) { key in
                 if let band = horizons[key] { BandRow(horizon: key, band: band) }
@@ -321,16 +321,16 @@ private struct BandRow: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(horizon == "24h" ? "24 小时内" : "48 小时内")
-                    .font(theme.font(11.5, weight: .medium)).themeForeground(.secondary)
+                    .font(theme.font(12, weight: .medium)).themeForeground(.secondary)
                 Spacer(minLength: 6)
                 Text("\(Fmt.trim(low))–\(Fmt.trim(high))%")
                     .font(theme.number(13)).monospacedDigit().themeForeground()
-                    .frame(width: 76, alignment: .trailing)
+                    .lineLimit(1).minimumScaleFactor(0.75).frame(width: 76, alignment: .trailing)
                 Text("中位 \(Fmt.trim(band["weighted_median"].double ?? 0))%")
                     .font(.system(size: 11, weight: .medium, design: theme.numberDesign))
-                    .themeForeground(.secondary).monospacedDigit().frame(width: 72, alignment: .trailing)
+                    .themeForeground(.secondary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75).frame(width: 72, alignment: .trailing)
                 Text(close ? "接近" : "分歧")
-                    .font(theme.font(9.5, weight: .semibold))
+                    .font(theme.font(10, weight: .semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill((close ? tone.good : tone.warn).opacity(0.13)))
                     .foregroundStyle(close ? tone.good : tone.warn)
@@ -392,15 +392,15 @@ private struct PromiseCard: View {
                         HStack(alignment: .center, spacing: 6) {
                             TiboFace(mood: .excited, size: 18)
                             Text(ForecastCopy.source(item["source"].string))
-                                .font(.system(size: 11.5, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                             if let floor = item["floor_percent"].double {
                                 Text("该站据此给 \(Fmt.trim(floor))%")
-                                    .font(.system(size: 10.5)).foregroundStyle(tone.warn)
+                                    .font(.system(size: 11)).foregroundStyle(tone.warn)
                             }
                             Spacer(minLength: 6)
                             if let at = item["at"].date {
                                 Text(Fmt.day(at, now: now) + " " + Fmt.time(at))
-                                    .font(.system(size: 10.5, design: .rounded)).monospacedDigit().themeForeground(.secondary)
+                                    .font(.system(size: 11, design: .rounded)).monospacedDigit().themeForeground(.secondary)
                             }
                         }
                         Text(ForecastCopy.promise(item["label"].string))
@@ -409,7 +409,7 @@ private struct PromiseCard: View {
                             Button {
                                 if let link = URL(string: url) { NSWorkspace.shared.open(link) }
                             } label: {
-                                Text("“\(quote)”").font(.system(size: 10.5)).foregroundStyle(tone.link)
+                                Text("“\(quote)”").font(.system(size: 11)).foregroundStyle(tone.link)
                             }
                             .buttonStyle(.plain)
                             .lineLimit(2)
@@ -460,7 +460,7 @@ private struct CountdownRow: View {
                     .font(.system(size: 12, weight: .medium))
                 if let close, target["precision"].string == "window" {
                     Text((open.map { Fmt.moment($0, now: now) + " → " } ?? "") + Fmt.moment(close, now: now) + " 北京时间")
-                        .font(.system(size: 10.5)).themeForeground(.secondary)
+                        .font(.system(size: 11)).themeForeground(.secondary)
                 }
                 if let url = target["url"].string, let quote = target["quote"].string {
                     Button {
@@ -473,9 +473,9 @@ private struct CountdownRow: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 1) {
                 Text(ForecastCopy.countdown(target, now: now))
-                    .font(theme.number(12.5)).monospacedDigit()
+                    .font(theme.number(13)).monospacedDigit()
                     .foregroundStyle(tint(state))
-                Text(sourcesBadge(target["sources"].array)).font(.system(size: 9.5)).themeForeground(.tertiary)
+                Text(sourcesBadge(target["sources"].array)).font(.system(size: 10)).themeForeground(.tertiary)
             }
         }
         .padding(.vertical, 2)
@@ -534,7 +534,7 @@ private struct SourceRow: View {
                 Text(row["name"].string ?? row["source"].string ?? "")
                     .font(.system(size: 12, weight: .medium))
                 if failed {
-                    Text(Catalog.reason(row["reason"].string)).font(.system(size: 10.5)).foregroundStyle(tone.bad).lineLimit(2)
+                    Text(Catalog.reason(row["reason"].string)).font(.system(size: 11)).foregroundStyle(tone.bad).lineLimit(2)
                 }
                 Spacer(minLength: 6)
                 if !failed {
@@ -544,7 +544,7 @@ private struct SourceRow: View {
                 }
             }
             if !failed {
-                Text(details(row)).font(.system(size: 10.5)).themeForeground(.secondary)
+                Text(details(row)).font(.system(size: 11)).themeForeground(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let note = row["self_reported"]["note"].string {
                     Text(note).font(.system(size: 10)).themeForeground(.tertiary)
@@ -596,7 +596,7 @@ private struct SourceRow: View {
     }
 
     private func chip(_ text: String) -> some View {
-        Text(text).font(.system(size: 9.5)).monospacedDigit()
+        Text(text).font(.system(size: 10)).monospacedDigit()
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(Capsule().fill(ForecastTone(theme: theme).chip))
             .themeForeground(.secondary)
@@ -650,14 +650,14 @@ private struct HistoryRow: View {
                 .frame(width: 90, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
                 Text(event["summary"].string ?? event["kind"].string ?? "")
-                    .font(theme.font(11.5, weight: .medium)).themeForeground().lineLimit(2)
+                    .font(theme.font(12, weight: .medium)).themeForeground().lineLimit(2)
                 HStack(spacing: 6) {
                     if event["kind"].string == "reset" { TiboFace(mood: .celebrate, size: 14) }
-                    Text(ForecastCopy.kind(event["kind"].string)).font(theme.font(9.5, weight: .semibold))
+                    Text(ForecastCopy.kind(event["kind"].string)).font(theme.font(10, weight: .semibold))
                         .foregroundStyle(kindTint(event["kind"].string))
-                    if event["scope"].string == "global" { Text("全员").font(theme.font(9.5, weight: .medium)).themeForeground(.secondary) }
+                    if event["scope"].string == "global" { Text("全员").font(theme.font(10, weight: .medium)).themeForeground(.secondary) }
                     let sources = event["sources"].array.count
-                    if sources > 1 { Text("\(sources) 家印证").font(theme.font(9.5, weight: .medium)).foregroundStyle(tone.good) }
+                    if sources > 1 { Text("\(sources) 家印证").font(theme.font(10, weight: .medium)).foregroundStyle(tone.good) }
                 }
             }
             Spacer(minLength: 0)

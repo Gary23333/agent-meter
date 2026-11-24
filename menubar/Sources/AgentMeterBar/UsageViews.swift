@@ -66,7 +66,7 @@ struct UsageView: View {
                 PillTabs(items: Period.allCases, title: { $0.label },
                          selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
                 Spacer(minLength: 4)
-                Text(scopeLabel).font(.system(size: 9.5)).foregroundStyle(.secondary)
+                Text(scopeLabel).font(.system(size: 10)).foregroundStyle(.secondary)
                 IconButton(symbol: "square.and.arrow.up", help: "生成用量报告与分享图") {
                     ReportWindow.show()
                 }
@@ -145,7 +145,7 @@ private struct PeriodSummary: View {
         return HStack(alignment: .top, spacing: 10) {
             Card(tint: Color(red: 0.36, green: 0.52, blue: 1)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("TOKEN 总量").font(theme.font(10.5, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
+                    Text("TOKEN 总量").font(theme.font(11, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
                         Text(Fmt.tokens(total)).font(theme.number(27)).monospacedDigit()
                             .themeForeground()
@@ -156,21 +156,21 @@ private struct PeriodSummary: View {
                         }
                     }
                     Text("\(Fmt.grouped(totals["requests"].double ?? 0)) 次请求")
-                        .font(theme.font(10.5, weight: .medium)).themeForeground(.tertiary)
+                        .font(theme.font(11, weight: .medium)).themeForeground(.tertiary)
                 }
                 .frame(minHeight: 78, alignment: .topLeading)
             }
             Card(tint: Color(red: 0.15, green: 0.82, blue: 0.62)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("估算费用").font(theme.font(10.5, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
+                    Text("估算费用").font(theme.font(11, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
                     Text(cost.map { Fmt.amount($0.amount, unit: $0.unit) } ?? "—")
                         .font(theme.number(27)).monospacedDigit()
                         .themeForeground()
                         .contentTransition(.numericText())
-                    Text(costComposition).font(theme.font(10.5, weight: .medium)).themeForeground(.tertiary)
+                    Text(costComposition).font(theme.font(11, weight: .medium)).themeForeground(.tertiary)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if let note = unpricedNote {
-                        Text(note).font(theme.font(10.5, weight: .medium)).foregroundStyle(.orange)
+                        Text(note).font(theme.font(11, weight: .medium)).foregroundStyle(.orange)
                             .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                             .help("这些模型在本地价格表里没有匹配条目，未计入估算；可在「API 价格表（本机估算）…」里补充")
                     }
@@ -191,9 +191,9 @@ private struct PeriodSummary: View {
             Card(tint: Catalog.brand("codex").tint) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 8) {
-                        Text("生图").font(theme.font(10.5, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
+                        Text("生图").font(theme.font(11, weight: .semibold)).themeForeground(.secondary).kerning(0.35)
                         Spacer(minLength: 4)
-                        Text("Codex 内置 image_gen").font(theme.font(9.5)).themeForeground(.tertiary)
+                        Text("Codex 内置 image_gen").font(theme.font(10)).themeForeground(.tertiary)
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(use.images) 张").font(theme.number(27)).monospacedDigit()
@@ -209,7 +209,7 @@ private struct PeriodSummary: View {
                     Text("Codex 内置 image_gen · \(quality) 档估算"
                          + (use.remote > 0 ? " · 含其他设备 \(use.remote) 张" : "")
                          + " · 不计入上方 Token 费用")
-                        .font(theme.font(10.5)).themeForeground(.tertiary)
+                        .font(theme.font(11)).themeForeground(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     if use.partial {
                         Text(Catalog.reason(use.reason))
@@ -341,9 +341,9 @@ private struct PeriodSummary: View {
                             Text(s.label).font(theme.font(11, weight: .medium)).themeForeground(.secondary)
                             Spacer(minLength: 8)
                             Text(Fmt.tokens(s.value))
-                                .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
+                                .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
                                 .monospacedDigit().themeForeground()
-                                .frame(width: 64, alignment: .trailing)
+                                .lineLimit(1).minimumScaleFactor(0.75).frame(width: 64, alignment: .trailing)
                         }
                     }
                 }
@@ -393,9 +393,9 @@ private struct PeriodSummary: View {
                             Spacer(minLength: 4)
                             Text(Fmt.tokens(a.tokens))
                                 .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
-                                .monospacedDigit().themeForeground().frame(width: 64, alignment: .trailing)
-                            Text(costLabel(a.costs)).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary).monospacedDigit()
-                                .frame(width: 56, alignment: .trailing)
+                                .monospacedDigit().themeForeground().lineLimit(1).minimumScaleFactor(0.75).frame(width: 64, alignment: .trailing)
+                            Text(costLabel(a.costs)).font(theme.font(11, weight: .medium)).themeForeground(.secondary).monospacedDigit()
+                                .lineLimit(1).minimumScaleFactor(0.75).frame(width: 56, alignment: .trailing)
                         }
                         Meter(fraction: a.tokens / max(top, 1), tint: theme.tint(Catalog.appTint(a.id)), height: 5)
                     }
@@ -427,11 +427,11 @@ private struct PeriodSummary: View {
                                     .background(Capsule().fill(Color.primary.opacity(0.08)))
                             }
                             Spacer(minLength: 4)
-                            Text(costLabel(d.costs)).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary).monospacedDigit()
-                                .frame(width: 56, alignment: .trailing)
+                            Text(costLabel(d.costs)).font(theme.font(11, weight: .medium)).themeForeground(.secondary).monospacedDigit()
+                                .lineLimit(1).minimumScaleFactor(0.75).frame(width: 56, alignment: .trailing)
                             Text(Fmt.tokens(d.tokens))
                                 .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
-                                .monospacedDigit().themeForeground().frame(width: 64, alignment: .trailing)
+                                .monospacedDigit().themeForeground().lineLimit(1).minimumScaleFactor(0.75).frame(width: 64, alignment: .trailing)
                         }
                         Meter(fraction: d.tokens / max(top, 1), tint: theme.tint(d.isLocal ? local : other), height: 5)
                     }
@@ -481,7 +481,7 @@ private struct PeriodSummary: View {
                 SectionTitle(text: "模型排行", trailing: "Top \(groups.count)")
                 ForEach(groups) { g in
                     HStack(spacing: 6) {
-                        Text(g.label).font(theme.font(11.5, weight: .medium)).themeForeground()
+                        Text(g.label).font(theme.font(12, weight: .medium)).themeForeground()
                             .lineLimit(1).truncationMode(.middle).layoutPriority(1)
                         Text(Catalog.appLabel(g.app))
                             .font(theme.font(9, weight: .semibold))
@@ -489,11 +489,11 @@ private struct PeriodSummary: View {
                             .foregroundStyle(theme.tint(Catalog.appTint(g.app)))
                             .background(Capsule().fill(theme.tint(Catalog.appTint(g.app)).opacity(theme == .minimal ? 0.07 : 0.12)))
                         Spacer(minLength: 4)
-                        Text(costLabel(g.costs)).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary)
-                            .monospacedDigit().frame(width: 56, alignment: .trailing)
+                        Text(costLabel(g.costs)).font(theme.font(11, weight: .medium)).themeForeground(.secondary)
+                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75).frame(width: 56, alignment: .trailing)
                         Text(Fmt.tokens(g.tokens))
-                            .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
-                            .monospacedDigit().themeForeground().frame(width: 62, alignment: .trailing)
+                            .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
+                            .monospacedDigit().themeForeground().lineLimit(1).minimumScaleFactor(0.75).frame(width: 62, alignment: .trailing)
                     }
                     .frame(minHeight: 21)
                 }

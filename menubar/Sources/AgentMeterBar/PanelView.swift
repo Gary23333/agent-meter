@@ -102,7 +102,7 @@ struct PanelView: View {
             HeaderLogo()
             VStack(alignment: .leading, spacing: 1) {
                 HeaderTitle()
-                Text(statusLine).font(.system(size: 10.5, design: store.theme == .neon ? .monospaced : .default))
+                Text(statusLine).font(.system(size: 11, design: store.theme == .neon ? .monospaced : .default))
                     .themeForeground(.secondary).lineLimit(1)
             }
             Spacer()
@@ -279,7 +279,7 @@ struct PanelView: View {
             VStack(spacing: 12) {
                 Image(systemName: "bolt.horizontal.circle").font(.system(size: 34)).foregroundStyle(.orange)
                 Text("无法读取用量").font(.system(size: 14, weight: .semibold))
-                Text(error).font(.system(size: 11.5)).themeForeground(.secondary).multilineTextAlignment(.center)
+                Text(error).font(.system(size: 12)).themeForeground(.secondary).multilineTextAlignment(.center)
                 Button("重试") { store.refresh() }.controlSize(.regular)
             }
             .padding(28)
@@ -290,7 +290,7 @@ struct PanelView: View {
                 ProgressView().controlSize(.regular)
                 Text(store.phase == .starting ? "正在启动本机后端…" : "正在读取账户额度与本机记录…")
                     .font(.system(size: 12)).themeForeground(.secondary)
-                Text("首次采集通常需要几秒").font(.system(size: 10.5)).themeForeground(.tertiary)
+                Text("首次采集通常需要几秒").font(.system(size: 11)).themeForeground(.tertiary)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 300)
@@ -315,7 +315,7 @@ struct PanelView: View {
         }
         Text(Fmt.currencyNote).font(.system(size: 9))
         }
-        .font(.system(size: 10.5))
+        .font(.system(size: 11))
         .themeForeground(.secondary)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -531,7 +531,7 @@ struct CockpitStrip: View {
                     Image(nsImage: icon).resizable().frame(width: 15, height: 15).offset(x: 3, y: 3)
                 }
             }
-            Text(g.name).font(.system(size: 9.5, weight: .semibold, design: theme == .neon ? .monospaced : .default)).lineLimit(1)
+            Text(g.name).font(.system(size: 10, weight: .semibold, design: theme == .neon ? .monospaced : .default)).lineLimit(1)
             if g.windows.count > 1 {
                 // Each ring's value, outer first, in its own health colour.
                 HStack(spacing: 4) {
@@ -541,7 +541,7 @@ struct CockpitStrip: View {
                          + Text(" \(Int(w.remaining.rounded()))").foregroundStyle(theme.health(w.remaining)))
                     }
                 }
-                .font(.system(size: 8.5, weight: .medium, design: theme.numberDesign))
+                .font(.system(size: 9, weight: .medium, design: theme.numberDesign))
                 .monospacedDigit()
                 .lineLimit(1)
                 .fixedSize()
@@ -569,7 +569,7 @@ struct CockpitStrip: View {
                 }
             }
             .frame(width: cellWidth, height: ringHeight)
-            Text(g.name).font(.system(size: 9.5, weight: .semibold, design: theme == .neon ? .monospaced : .default))
+            Text(g.name).font(.system(size: 10, weight: .semibold, design: theme == .neon ? .monospaced : .default))
                 .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, 2)
             // Every cell reserves the same label rows, so single-window accounts line up with the rest.
             HStack(spacing: 4) {
@@ -580,7 +580,7 @@ struct CockpitStrip: View {
                 }
                 if g.windows.count < 2 { Text(" ").hidden() }
             }
-            .font(.system(size: 8.5, weight: .medium, design: theme.numberDesign))
+            .font(.system(size: 9, weight: .medium, design: theme.numberDesign))
             .monospacedDigit()
             .lineLimit(1)
             .fixedSize()

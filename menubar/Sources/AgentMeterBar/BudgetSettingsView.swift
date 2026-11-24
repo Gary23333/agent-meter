@@ -114,9 +114,13 @@ struct BudgetSettingsView: View {
                 TextField("周预算（元）", text: $weekly, prompt: Text("未设置则不提醒"))
                 TextField("异常倍率", text: $multiplier, prompt: Text("2.0"))
                 Text("今日消耗速率超过近期日均的该倍数时提醒（今日已过至少 2 小时才判断）。")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .scrollDisabled(true)
+            .frame(height: 232)
+            .padding(.horizontal, -16)
             if let status = store.budget, status.isOK {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("当前进度").font(.system(size: 12, weight: .semibold))
@@ -145,7 +149,7 @@ struct BudgetSettingsView: View {
         let spentText = spent.map { Fmt.amount($0, unit: "CNY") } ?? "—"
         let budgetText = budget.map { Fmt.amount($0, unit: "CNY") } ?? "未设置"
         return Text("\(label)：\(spentText) / \(budgetText)")
-            .font(.system(size: 11.5)).monospacedDigit().foregroundStyle(.secondary)
+            .font(.system(size: 12)).monospacedDigit().foregroundStyle(.secondary)
     }
 
     private func load() async {
@@ -191,13 +195,13 @@ struct BudgetProgressRow: View {
             let tint = budget.dailyExceeded ? Color.orange : theme.accent[0]
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text("今日预算").font(theme.font(10.5, weight: .semibold)).themeForeground(.secondary)
+                    Text("今日预算").font(theme.font(11, weight: .semibold)).themeForeground(.secondary)
                     Spacer(minLength: 4)
                     Text((spent.map { Fmt.amount($0, unit: "CNY") } ?? "—") + " / " + Fmt.amount(limit, unit: "CNY"))
                         .font(theme.font(11, weight: .semibold)).monospacedDigit()
                         .foregroundStyle(budget.dailyExceeded ? AnyShapeStyle(.orange) : AnyShapeStyle(Color.primary.opacity(0.75)))
                     if budget.dailyPartial {
-                        Text("部分").font(theme.font(9.5, weight: .medium)).foregroundStyle(.orange)
+                        Text("部分").font(theme.font(10, weight: .medium)).foregroundStyle(.orange)
                             .help("有来源未计价，金额为已确认部分的下界")
                     }
                 }

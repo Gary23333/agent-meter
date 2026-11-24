@@ -66,17 +66,17 @@ struct PetTabView: View {
                 if stage.previewID != nil {
                     Button { stage.endPreview() } label: {
                         Label("回到真实状态", systemImage: "arrow.uturn.backward")
-                            .font(theme.font(10.5, weight: .semibold))
+                            .font(theme.font(11, weight: .semibold))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(theme == .minimal ? Color.primary : theme.accent[0])
                 } else if let updated = feed.updatedAt {
-                    Text("更新于 " + Fmt.ago(updated, now: store.now)).font(theme.font(10.5)).themeForeground(.tertiary)
+                    Text("更新于 " + Fmt.ago(updated, now: store.now)).font(theme.font(11)).themeForeground(.tertiary)
                 }
             }
             stageSurface
             Text(stage.previewID != nil ? "这是试玩，真实的桌宠和数据没有变化。" : (status?.summaryLine(now: store.now) ?? "正在连接桌宠大脑…"))
-                .font(theme.font(11.5, weight: .medium))
+                .font(theme.font(12, weight: .medium))
                 .themeForeground(.secondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,10 +95,10 @@ struct PetTabView: View {
         let tone = info?.tone ?? .quiet
         return HStack(spacing: 6) {
             Circle().fill(color(tone)).frame(width: 8, height: 8).themeGlow(color(tone), radius: 4, theme: theme)
-            Text(info?.label ?? shownID).font(theme.font(12.5, weight: .semibold))
+            Text(info?.label ?? shownID).font(theme.font(13, weight: .semibold))
             if stage.previewID != nil {
                 Text("预览")
-                    .font(theme.font(9.5, weight: .semibold))
+                    .font(theme.font(10, weight: .semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(Color.primary.opacity(0.1)))
             }
@@ -152,7 +152,7 @@ struct PetTabView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("在桌面上陪着我").font(theme.font(13, weight: .semibold))
                     Text(prefs.enabled ? "已在桌面显示：可以拖动，空白处点击会穿透到下面的窗口。" : "打开后它会悬浮在所有窗口之上，不抢焦点。")
-                        .font(theme.font(10.5)).themeForeground(.secondary)
+                        .font(theme.font(11)).themeForeground(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
@@ -181,7 +181,7 @@ struct PetTabView: View {
                 .onChange(of: prefs.packID) { _, id in withAnimation { proxy.scrollTo(id, anchor: .center) } }
             }
             if let pack = packs.first(where: { $0.id == prefs.packID }) {
-                Text(packCaption(pack)).font(theme.font(10.5)).themeForeground(.tertiary)
+                Text(packCaption(pack)).font(theme.font(11)).themeForeground(.tertiary)
             }
             Text("把 .agentpet 形象包拖到这里即可安装（会先校验）。")
                 .font(theme.font(10)).themeForeground(.tertiary)
@@ -315,7 +315,7 @@ struct PetTabView: View {
                     InfoRow(symbol: "sparkles", title: "重置预测", value: forecast == "resetting" ? "快重置了" : "有戏")
                 }
             } else {
-                Text("还没连上桌宠大脑（本机后端）。").font(theme.font(11.5)).themeForeground(.secondary)
+                Text("还没连上桌宠大脑（本机后端）。").font(theme.font(12)).themeForeground(.secondary)
             }
             remindersBlock
             focusRow
@@ -338,8 +338,8 @@ struct PetTabView: View {
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(reminders.prefix(3)) { reminder in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: "bell.fill").font(.system(size: 10.5)).foregroundStyle(reminderColor(reminder.tone)).frame(width: 14)
-                        Text(reminder.text).font(theme.font(11.5)).themeForeground(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Image(systemName: "bell.fill").font(.system(size: 11)).foregroundStyle(reminderColor(reminder.tone)).frame(width: 14)
+                        Text(reminder.text).font(theme.font(12)).themeForeground(.secondary).fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 6)
                         if let tab = reminder.tab, Tab(rawValue: tab) != nil {
                             smallButton("查看") { UserDefaults.standard.set(tab, forKey: "panelTab") }
@@ -347,7 +347,7 @@ struct PetTabView: View {
                     }
                 }
                 if reminders.count > 3 {
-                    Text("还有 \(reminders.count - 3) 条").font(theme.font(10.5)).themeForeground(.tertiary).padding(.leading, 22)
+                    Text("还有 \(reminders.count - 3) 条").font(theme.font(11)).themeForeground(.tertiary).padding(.leading, 22)
                 }
             }
         }
@@ -438,11 +438,11 @@ struct PetTabView: View {
                 Text("Agent 事件（hooks）").font(theme.font(12)).themeForeground(.secondary)
                 if events.isEmpty {
                     Text("还没收到。接入后，Claude Code / Codex 开始、完成、等你确认、出错时它都会知道。")
-                        .font(theme.font(10.5)).themeForeground(.tertiary).fixedSize(horizontal: false, vertical: true)
+                        .font(theme.font(11)).themeForeground(.tertiary).fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(Array(events)) { event in
                         Text("\(PetTabView.eventText(event)) · \(Fmt.ago(event.at, now: store.now))")
-                            .font(theme.font(10.5)).themeForeground(.tertiary)
+                            .font(theme.font(11)).themeForeground(.tertiary)
                     }
                 }
             }
@@ -485,7 +485,7 @@ struct PetTabView: View {
                 withAnimation(.easeInOut(duration: 0.2)) { settingsOpen.toggle() }
             } label: {
                 HStack {
-                    Text("设置").font(theme.font(11.5, weight: .semibold)).themeForeground(.secondary)
+                    Text("设置").font(theme.font(12, weight: .semibold)).themeForeground(.secondary)
                     Spacer()
                     Image(systemName: settingsOpen ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold)).themeForeground(.tertiary)
                 }
@@ -543,7 +543,7 @@ struct PetTabView: View {
                     Spacer(minLength: 0)
                 }
                 Text("想做自己的形象？在 Claude Code 里用 agentmeter-pet-three（程序化 3D）或 agentmeter-pet-imagegen（生图 + 精灵图）技能，做好后放进形象文件夹即可。")
-                    .font(theme.font(10.5)).themeForeground(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    .font(theme.font(11)).themeForeground(.tertiary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }

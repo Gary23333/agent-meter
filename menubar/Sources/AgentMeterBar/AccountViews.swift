@@ -70,7 +70,7 @@ struct AccountsView: View {
                     Text("本机更新时优先本机")
                         .foregroundStyle(.tertiary)
                 }
-                .font(.system(size: 10.5))
+                .font(.system(size: 11))
                 .themeForeground(.secondary)
             }
             if snapshot.accountSources.isEmpty && unmatchedQuota.isEmpty && unmatchedAccounts.isEmpty {
@@ -272,13 +272,13 @@ private struct RemoteQuotaSection: View {
                     VStack(alignment: .leading, spacing: 9) {
                         HStack(spacing: 6) {
                             Text(title(entry))
-                                .font(.system(size: 11.5, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .themeForeground()
                             Spacer(minLength: 6)
                             Text(entry.account.flatMap { $0["device"].string }.map { remoteDeviceLabel($0, names: deviceNames) }
                                      ?? entry.quota.first?["device"].string.map { remoteDeviceLabel($0, names: deviceNames) }
                                      ?? "已同步")
-                                .font(.system(size: 9.5))
+                                .font(.system(size: 10))
                                 .themeForeground(.tertiary)
                         }
                         ForEach(Array(entry.quota.enumerated()), id: \.offset) { _, row in
@@ -302,7 +302,7 @@ struct InactiveRow: View {
             BrandBadge(brand: brand, size: 22, icon: AppLauncher.icon(for: source.baseID, in: snapshot)).saturation(0.35).opacity(0.85)
             VStack(alignment: .leading, spacing: 1) {
                 Text(source.displayName).font(.system(size: 12, weight: .medium))
-                Text(Catalog.reason(source.reason)).font(.system(size: 10.5)).themeForeground(.secondary)
+                Text(Catalog.reason(source.reason)).font(.system(size: 11)).themeForeground(.secondary)
             }
             Spacer()
             OpenAppButton(sourceID: source.baseID, snapshot: snapshot, compact: true)
@@ -414,7 +414,7 @@ struct AccountCard: View {
                 }
             }
             if let note = remoteQuotaNote {
-                Text(note).font(.system(size: 9.5)).themeForeground(.tertiary)
+                Text(note).font(.system(size: 10)).themeForeground(.tertiary)
             }
             details
             if let remoteAccount { remoteFacts(remoteAccount) }
@@ -445,9 +445,9 @@ struct AccountCard: View {
             let bars = webBars(cost)
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {
-                    Text("网页消耗").font(theme.font(11.5, weight: .semibold)).themeForeground(.secondary)
+                    Text("网页消耗").font(theme.font(12, weight: .semibold)).themeForeground(.secondary)
                     Spacer(minLength: 6)
-                    Text("网页端数据，不计入本机消耗").font(.system(size: 9.5)).themeForeground(.tertiary)
+                    Text("网页端数据，不计入本机消耗").font(.system(size: 10)).themeForeground(.tertiary)
                 }
                 HStack(spacing: 7) {
                     ForEach(windows) { w in
@@ -457,7 +457,7 @@ struct AccountCard: View {
                 }
                 if !bars.isEmpty {
                     HStack(spacing: 6) {
-                        Text("近 7 日金额").font(.system(size: 9.5)).themeForeground(.tertiary)
+                        Text("近 7 日金额").font(.system(size: 10)).themeForeground(.tertiary)
                         Spacer(minLength: 6)
                         Text(Fmt.amount(bars.reduce(0) { $0 + $1.amount }, unit: unit))
                             .font(.system(size: 10, weight: .semibold, design: theme.numberDesign))
@@ -547,7 +547,7 @@ struct AccountCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("近 \(points.count) 个活跃日 · 本机直读 Token")
-                        .font(.system(size: 10.5)).themeForeground(.secondary)
+                        .font(.system(size: 11)).themeForeground(.secondary)
                     Spacer()
                     Text(Fmt.tokens(points.reduce(0) { $0 + $1.tokens }))
                         .font(.system(size: 11, weight: .bold, design: theme.numberDesign)).foregroundStyle(tint)
@@ -588,7 +588,7 @@ struct AccountCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("近 \(points.count) 个活跃日 · 生图")
-                            .font(.system(size: 10.5)).themeForeground(.secondary)
+                            .font(.system(size: 11)).themeForeground(.secondary)
                         Spacer()
                         Text("\(Int(monthImages)) 张")
                             .font(.system(size: 11, weight: .bold, design: theme.numberDesign)).foregroundStyle(tint)
@@ -613,8 +613,8 @@ struct AccountCard: View {
         HStack(spacing: 10) {
             BrandBadge(brand: brand, size: 30, icon: AppLauncher.icon(for: source.baseID, in: snapshot))
             VStack(alignment: .leading, spacing: 1) {
-                Text(source.displayName).font(.system(size: 13.5, weight: theme == .minimal ? .semibold : .bold))
-                Text(subtitle).font(.system(size: 10.5)).themeForeground(.secondary).lineLimit(1)
+                Text(source.displayName).font(.system(size: 14, weight: theme == .minimal ? .semibold : .bold))
+                Text(subtitle).font(.system(size: 11)).themeForeground(.secondary).lineLimit(1)
             }
             Spacer()
             if source.status != "available" {
@@ -968,7 +968,7 @@ private struct DeepSeekPeakSection: View {
         if let split = split {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {
-                    Text("DeepSeek 峰谷定价").font(theme.font(11.5, weight: .semibold)).themeForeground(.secondary)
+                    Text("DeepSeek 峰谷定价").font(theme.font(12, weight: .semibold)).themeForeground(.secondary)
                     Spacer(minLength: 8)
                     Text(isOffPeak ? "谷时" : "峰时")
                         .font(.system(size: 10, weight: .semibold))
@@ -976,12 +976,12 @@ private struct DeepSeekPeakSection: View {
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(Capsule().fill(statusColor.opacity(0.13)))
                         .overlay(Capsule().strokeBorder(statusColor.opacity(0.30), lineWidth: 0.5))
-                    Text(hint).font(.system(size: 9.5)).themeForeground(.tertiary)
+                    Text(hint).font(.system(size: 10)).themeForeground(.tertiary)
                 }
                 PillTabs(items: Period.allCases, title: { $0.label },
                          selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
                 Text("\(windowNote)；DeepSeek 系模型峰时 ×2")
-                    .font(.system(size: 10.5)).themeForeground(.tertiary)
+                    .font(.system(size: 11)).themeForeground(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 splitRow("峰时", tokens: split.peakTokens, amounts: split.peakCosts)
                 splitRow("谷时", tokens: split.offpeakTokens, amounts: split.offpeakCosts)
@@ -995,15 +995,15 @@ private struct DeepSeekPeakSection: View {
                                 .font(.system(size: 10)).themeForeground(.tertiary).monospacedDigit()
                             Spacer(minLength: 6)
                             Text("已拆分 \(Fmt.tokens(splitTotal)) / \(Fmt.tokens(split.totalTokens))")
-                                .font(.system(size: 9.5)).themeForeground(.tertiary).monospacedDigit()
+                                .font(.system(size: 10)).themeForeground(.tertiary).monospacedDigit()
                         }
                     }
                 } else if split.totalTokens > 0 {
                     Text("该时间段没有可拆分的 DeepSeek 请求时刻")
-                        .font(.system(size: 10.5)).themeForeground(.tertiary)
+                        .font(.system(size: 11)).themeForeground(.tertiary)
                 } else {
                     Text("该时间段没有 DeepSeek 模型的本机记录")
-                        .font(.system(size: 10.5)).themeForeground(.tertiary)
+                        .font(.system(size: 11)).themeForeground(.tertiary)
                 }
                 if !split.unsplitSources.isEmpty {
                     Text("未拆分来源按谷价计入价格表估算：" + split.unsplitSources.joined(separator: "、"))
@@ -1016,20 +1016,20 @@ private struct DeepSeekPeakSection: View {
 
     private func splitRow(_ title: String, tokens: Double, amounts: [String: Double]) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(title).font(theme.font(11.5, weight: .medium)).themeForeground(.secondary)
+            Text(title).font(theme.font(12, weight: .medium)).themeForeground(.secondary)
                 .frame(width: theme == .minimal ? 34 : 40, alignment: .leading)
             Text(Fmt.tokens(tokens))
-                .font(.system(size: 12.5, weight: .semibold, design: theme.numberDesign))
+                .font(.system(size: 13, weight: .semibold, design: theme.numberDesign))
                 .monospacedDigit().themeForeground()
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 1) {
                 if amounts.isEmpty {
-                    Text("—").font(.system(size: 11.5, weight: .medium, design: theme.numberDesign))
+                    Text("—").font(.system(size: 12, weight: .medium, design: theme.numberDesign))
                         .themeForeground(.tertiary)
                 } else {
                     Group {
                         Text(Fmt.moneyLabel(amounts))
-                            .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
+                            .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
                             .monospacedDigit().themeForeground()
                     }
                 }
@@ -1050,12 +1050,12 @@ private struct WebUsageTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(theme.font(9.5, weight: .medium)).themeForeground(.secondary)
+            Text(title).font(theme.font(10, weight: .medium)).themeForeground(.secondary)
             Text(Fmt.amount(amount, unit: unit))
                 .font(.system(size: 15, weight: .semibold, design: theme.numberDesign))
                 .monospacedDigit().foregroundStyle(tint).lineLimit(1)
-            Text(Fmt.tokens(tokens) + " token").font(.system(size: 9.5)).themeForeground(.tertiary).lineLimit(1)
-            Text(Fmt.grouped(requests) + " 次请求").font(.system(size: 9.5)).themeForeground(.tertiary).lineLimit(1)
+            Text(Fmt.tokens(tokens) + " token").font(.system(size: 10)).themeForeground(.tertiary).lineLimit(1)
+            Text(Fmt.grouped(requests) + " 次请求").font(.system(size: 10)).themeForeground(.tertiary).lineLimit(1)
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1093,12 +1093,12 @@ struct QuotaBar: View {
                 if let used = quota["used"].double, let limit = quota["limit"].double {
                     let fmt: (Double) -> String = quota["unit"].string == "tokens" ? Fmt.tokens : Fmt.trim
                     let suffix = quota["unit"].string == "doubao_points" ? " 点" : ""
-                    Text("\(fmt(used))/\(fmt(limit))\(suffix)").font(theme.font(10.5)).themeForeground(.tertiary).monospacedDigit()
+                    Text("\(fmt(used))/\(fmt(limit))\(suffix)").font(theme.font(11)).themeForeground(.tertiary).monospacedDigit()
                 }
                 Spacer(minLength: 8)
                 if isClaude, let used = quota["used_percent"].double {
                     Text("已用 \(Fmt.percent(used.rounded()))")
-                        .font(theme.font(10.5)).themeForeground(.secondary).monospacedDigit()
+                        .font(theme.font(11)).themeForeground(.secondary).monospacedDigit()
                 }
                 Text("剩余 \(Fmt.percent(remaining.rounded()))")
                     .font(.system(size: 12, weight: .semibold, design: theme.numberDesign)).monospacedDigit()
@@ -1110,7 +1110,7 @@ struct QuotaBar: View {
                 // Claude reports boundaries just before the minute shown on its usage page.
                 let moment = Fmt.moment(reset, now: now, roundedToMinute: isClaude)
                 Text("\(resetStatus) · \(moment)")
-                    .font(theme.font(10.5)).themeForeground(.secondary).monospacedDigit()
+                    .font(theme.font(11)).themeForeground(.secondary).monospacedDigit()
             }
         }
     }
@@ -1131,12 +1131,12 @@ struct ResetCardStrip: View {
                 let days = exp.map { Int($0.timeIntervalSince(now) / 86400) }
                 let urgent = (days ?? 99) < 7
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("第 \(i + 1) 张").font(theme.font(9.5, weight: .medium)).themeForeground(.tertiary)
+                    Text("第 \(i + 1) 张").font(theme.font(10, weight: .medium)).themeForeground(.tertiary)
                     Text(exp.map { Fmt.day($0, now: now) } ?? "未知")
                         .font(.system(size: 11, weight: .semibold, design: theme.numberDesign))
                         .themeForeground().monospacedDigit()
                     Text(days.map { $0 >= 0 ? "\($0) 天后到期" : "已到期" } ?? "")
-                        .font(theme.font(9.5, weight: .medium))
+                        .font(theme.font(10, weight: .medium))
                         .foregroundStyle(urgent ? Color.orange : theme.textColor(.secondary, scheme: scheme))
                 }
                 .padding(.horizontal, 9).padding(.vertical, 7)

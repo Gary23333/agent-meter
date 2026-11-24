@@ -93,7 +93,7 @@ struct OpenAppButton: View {
         let base = HStack(spacing: 3) {
             Image(systemName: web ? "safari" : "arrow.up.forward.app")
                 .font(.system(size: 10, weight: .bold))
-            if !compact { Text("打开").font(.system(size: 10.5, weight: .semibold)) }
+            if !compact { Text("打开").font(.system(size: 11, weight: .semibold)) }
             if multiple { Image(systemName: "chevron.down").font(.system(size: 7, weight: .heavy)) }
         }
         .padding(.horizontal, compact ? 6 : 8)

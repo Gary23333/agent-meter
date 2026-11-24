@@ -148,11 +148,11 @@ struct SyncPairingView: View {
                     }
                 }
             }
-            .font(.system(size: 11.5))
+            .font(.system(size: 12))
 
             HStack(spacing: 8) {
                 Text("自动同步")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 Picker("", selection: Binding(get: { store.syncInterval },
                                               set: { store.syncInterval = $0 })) {
@@ -164,7 +164,7 @@ struct SyncPairingView: View {
                 Spacer(minLength: 8)
                 if let last = store.lastSyncAt {
                     Text("上次 \(Fmt.moment(last))")
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -192,7 +192,7 @@ struct SyncPairingView: View {
 
             Toggle("跟随其他设备的偏好设置", isOn: Binding(get: { store.syncPreferencesEnabled },
                                                           set: { store.syncPreferencesEnabled = $0 }))
-                .font(.system(size: 11.5))
+                .font(.system(size: 12))
                 .help("界面风格、额度不足阈值、提醒开关、卡片顺序、菜单栏显示与预算；哪台设备最后修改，就以哪台为准")
 
             deviceList
@@ -244,7 +244,7 @@ struct SyncPairingView: View {
         let rows = devices
         return VStack(alignment: .leading, spacing: 6) {
             Text("空间内的设备")
-                .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 2)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
@@ -274,10 +274,10 @@ struct SyncPairingView: View {
                             .background(Capsule().fill(Color.primary.opacity(0.08)))
                     }
                     if !row.appVersion.isEmpty {
-                        Text("v\(row.appVersion)").font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                        Text("v\(row.appVersion)").font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
-                Text(row.detail).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Text(row.detail).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
             Text(row.updated.map { "更新 " + Fmt.moment($0) } ?? (row.isLocal ? "尚未同步" : "尚未上传"))
@@ -362,7 +362,7 @@ struct SyncPairingView: View {
                 TimelineView(.periodic(from: Date(), by: 1.0)) { context -> Text in
                     let left = max(0, Int(expiresAt.timeIntervalSince(context.date)))
                     return Text(left > 0 ? "剩余 \(left / 60):\(String(format: "%02d", left % 60))" : "已过期，请重新生成")
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(left > 0 ? Color.secondary : Color.red)
                 }
             }
@@ -377,7 +377,7 @@ struct SyncPairingView: View {
                     .font(.system(size: 22, weight: .semibold, design: .monospaced))
                     .textSelection(.enabled)
                 Text("另一台 Mac 应显示相同的六位数字。核对一致后完成配对；不一致请取消并重新生成。")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("完成配对") { finishHosting() }
@@ -424,7 +424,7 @@ struct SyncPairingView: View {
                 .font(.system(size: 22, weight: .semibold, design: .monospaced))
                 .textSelection(.enabled)
             Text("确认另一台 Mac 显示相同的六位数字，然后就可以开始同步。")
-                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
             HStack {
                 Button("完成") {
                     showingPairing = false

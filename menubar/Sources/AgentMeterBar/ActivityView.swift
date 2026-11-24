@@ -15,7 +15,7 @@ struct ActivityView: View {
                 header(tracker)
                 if let message = tracker.errorMessage {
                     Text("活动读取失败：\(message)（将继续重试）")
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
                 rows(tracker, now: context.date)
@@ -47,7 +47,7 @@ struct ActivityView: View {
                 if let feed = tracker.feed {
                     let running = feed.runningCount
                     Text(running > 0 ? "\(running) 项进行中" : "未观测到进行中活动")
-                        .font(.system(size: 10.5, weight: running > 0 ? .semibold : .regular))
+                        .font(.system(size: 11, weight: running > 0 ? .semibold : .regular))
                         .foregroundStyle(running > 0 ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
                 }
             }
@@ -208,7 +208,7 @@ private struct ActivityRowView: View {
                     HStack(spacing: 6) {
                         Circle().fill(Self.color(row.status)).frame(width: 7, height: 7)
                         Text(row.displayName(aliases: aliases))
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                         if row.subagent {
                             tag("子代理", color: .secondary)
@@ -217,7 +217,7 @@ private struct ActivityRowView: View {
                         Spacer()
                         if let last = row.lastEventAt {
                             Text(Fmt.ago(last, now: now))
-                                .font(.system(size: 10.5))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
@@ -226,22 +226,22 @@ private struct ActivityRowView: View {
                     }
                     HStack(spacing: 6) {
                         Text(row.appLabel)
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                         if let model = row.lastModel {
                             Text(Catalog.modelLabel(model))
-                                .font(.system(size: 10.5, design: .monospaced))
+                                .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                         Spacer()
                         if let tokens = row.tokens {
                             Text(Fmt.tokens(tokens.total))
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                         }
                         if let cost = row.estimatedCostUSD {
                             Text("≈¥" + Fmt.grouped(cost * Fmt.usdToCNY, fraction: 2))
-                                .font(.system(size: 10.5))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -262,7 +262,7 @@ private struct ActivityRowView: View {
                         turnDetail(row)
                     }
                     Text(row.granularity.caveat)
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                 }
                 .padding(.leading, 13)
@@ -277,7 +277,7 @@ private struct ActivityRowView: View {
     private func detailLine(_ row: ActivityRow) -> some View {
         let parts = detailParts(row)
         Text(parts.joined(separator: " · "))
-            .font(.system(size: 10.5))
+            .font(.system(size: 11))
             .foregroundStyle(.secondary)
     }
 
@@ -356,7 +356,7 @@ private struct ActivityRowView: View {
 
     private func tag(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .medium))
+            .font(.system(size: 10, weight: .medium))
             .foregroundStyle(color)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)

@@ -395,7 +395,7 @@ struct InfoRow: View {
                     .foregroundStyle(theme.tint(valueTint))
                     .monospacedDigit()
                 if let detail {
-                    Text(detail).font(theme.font(10.5)).themeForeground(.tertiary).monospacedDigit()
+                    Text(detail).font(theme.font(11)).themeForeground(.tertiary).monospacedDigit()
                 }
             }
             .frame(minWidth: 72, alignment: .trailing)
@@ -414,12 +414,12 @@ struct SectionTitle: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(theme == .neon ? "// " + text : text)
-                .font(theme.font(11.5, weight: .semibold))
+                .font(theme.font(12, weight: .semibold))
                 .themeForeground(.secondary)
                 .kerning(theme == .minimal ? 1.0 : 0.25)
             Spacer(minLength: 8)
             if let trailing {
-                Text(trailing).font(theme.font(10.5, weight: .medium)).themeForeground(.tertiary).monospacedDigit()
+                Text(trailing).font(theme.font(11, weight: .medium)).themeForeground(.tertiary).monospacedDigit()
             }
         }
         .padding(.horizontal, 2)

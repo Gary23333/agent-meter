@@ -80,7 +80,7 @@ struct ProcessesView: View {
             ForEach(kinds, id: \.rawValue) { k in
                 HStack(spacing: 4) {
                     Circle().fill(k.color).frame(width: 6, height: 6)
-                    Text(k.label).font(theme.font(9.5)).themeForeground(.tertiary)
+                    Text(k.label).font(theme.font(10)).themeForeground(.tertiary)
                 }
             }
             Spacer(minLength: 0)
@@ -92,7 +92,7 @@ struct ProcessesView: View {
     private var emptyCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 6) {
-                Label("没有 harness 在运行", systemImage: "moon.zzz").font(theme.font(12.5, weight: .semibold)).themeForeground()
+                Label("没有 harness 在运行", systemImage: "moon.zzz").font(theme.font(13, weight: .semibold)).themeForeground()
                 Text("启动 Claude Code、Codex、Kimi Code 等之后，它们启动的 shell、构建、开发服务器和 MCP 服务会出现在这里。")
                     .font(theme.font(11)).themeForeground(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -103,7 +103,7 @@ struct ProcessesView: View {
         Card {
             VStack(alignment: .leading, spacing: 6) {
                 Label(feed.status == "unsupported_platform" ? "此系统暂不支持进程监控" : "无法读取进程表", systemImage: "exclamationmark.triangle")
-                    .font(theme.font(12.5, weight: .semibold)).themeForeground()
+                    .font(theme.font(13, weight: .semibold)).themeForeground()
                 Text(feed.status == "unsupported_platform" ? "进程监控目前支持 macOS 与 Linux。" : "原因：\(feed.reason ?? "未知")。")
                     .font(theme.font(11)).themeForeground(.secondary)
             }
@@ -112,7 +112,7 @@ struct ProcessesView: View {
 
     private var footnote: some View {
         Text("只读：只显示 harness 进程树里的进程，不读取环境变量、输出或文件，命令行已脱敏；这里不提供结束进程。后台遗留的进程只有在它还挂在 harness 下时被看到过，才会被认领。")
-            .font(theme.font(9.5)).themeForeground(.tertiary)
+            .font(theme.font(10)).themeForeground(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 2)
     }
@@ -154,8 +154,8 @@ private struct GroupCard: View {
                 .opacity(group.alive ? 1 : 0.55)
             VStack(alignment: .leading, spacing: 1) {
                 Text(group.alive ? group.label : group.label + " · 遗留进程")
-                    .font(.system(size: 13.5, weight: .bold))
-                Text(subtitle).font(.system(size: 10.5)).themeForeground(.secondary).lineLimit(1)
+                    .font(.system(size: 14, weight: .bold))
+                Text(subtitle).font(.system(size: 11)).themeForeground(.secondary).lineLimit(1)
             }
             Spacer(minLength: 6)
             if group.alive {
@@ -188,7 +188,7 @@ private struct GroupCard: View {
 
     private func metric(_ title: String, _ value: String, hot: Bool = false) -> some View {
         HStack(spacing: 5) {
-            Text(title).font(theme.font(10.5, weight: .medium)).themeForeground(.tertiary)
+            Text(title).font(theme.font(11, weight: .medium)).themeForeground(.tertiary)
             Text(value).font(.system(size: 12, weight: .semibold, design: theme.numberDesign)).monospacedDigit()
                 .foregroundStyle(hot ? AnyShapeStyle(Color.orange) : AnyShapeStyle(theme.textColor(.primary, scheme: scheme)))
         }
@@ -205,7 +205,7 @@ private struct ProcessRow: View {
         HStack(alignment: .top, spacing: 7) {
             Color.clear.frame(width: CGFloat(min(process.depth - 1, 5)) * 11, height: 1)
             Image(systemName: process.kind.symbol)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(process.kind.color)
                 .frame(width: 20, height: 20)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(process.kind.color.opacity(0.14)))
@@ -214,7 +214,7 @@ private struct ProcessRow: View {
                     Text(process.name).font(theme.font(12, weight: .semibold)).themeForeground().lineLimit(1)
                     ForEach(process.ports.prefix(3), id: \.self) { port in
                         Text(":" + String(port))
-                            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(ProcessKind.server.color)
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
                             .background(Capsule().fill(ProcessKind.server.color.opacity(0.14)))
@@ -231,14 +231,14 @@ private struct ProcessRow: View {
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(ProcessFormat.cpu(process.cpu))
-                    .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign)).monospacedDigit()
+                    .font(.system(size: 12, weight: .semibold, design: theme.numberDesign)).monospacedDigit()
                     .foregroundStyle(heat)
-                Text(ProcessFormat.memory(process.rss)).font(.system(size: 10.5, design: theme.numberDesign)).monospacedDigit()
+                Text(ProcessFormat.memory(process.rss)).font(.system(size: 11, design: theme.numberDesign)).monospacedDigit()
                     .themeForeground(.secondary)
             }
-            .frame(width: 62, alignment: .trailing)
+            .lineLimit(1).minimumScaleFactor(0.75).frame(width: 62, alignment: .trailing)
             Text(ProcessFormat.uptime(process.uptime)).font(theme.font(10)).monospacedDigit().themeForeground(.tertiary)
-                .frame(width: 54, alignment: .trailing)
+                .lineLimit(1).minimumScaleFactor(0.75).frame(width: 54, alignment: .trailing)
         }
         .help("\(process.kind.label) · \(ProcessFormat.state(process.state)) · PID \(process.pid)")
     }

@@ -278,12 +278,36 @@ struct ResetterMachine: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
+    @AppStorage("scene3D") private var scene3D = true
+
+    private var use3D: Bool { scene3D && Scene3D.isAvailable && theme != .minimal }
 
     var body: some View {
         let s = MachineStyle.make(theme, scheme)
         VStack(spacing: 0) {
-            top(s)
-            bodyBox(s)
+            if use3D {
+                VStack(spacing: 0) {
+                    HStack {
+                        Spacer()
+                        Text("RESET")
+                            .font(.system(size: 8, weight: .heavy, design: .rounded)).kerning(1)
+                            .foregroundStyle(s.label)
+                            .padding(.trailing, 14).padding(.bottom, 2)
+                    }
+                    .frame(height: Resetter3DRenderer.topHeight, alignment: .bottom)
+                    HStack(spacing: 8) {
+                        screen(s)
+                        Color.clear.frame(width: Resetter3DRenderer.knobColumn)
+                    }
+                    .padding(9)
+                }
+                .background {
+                    GeometryReader { geo in Resetter3DChassis(size: geo.size, pressed: pressed) }
+                }
+            } else {
+                top(s)
+                bodyBox(s)
+            }
             ticketStrip(s)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.72), value: pressed)
@@ -325,7 +349,7 @@ struct ResetterMachine: View {
             }
             Spacer()
             Text("RESET")
-                .font(.system(size: 7.5, weight: .heavy, design: .rounded)).kerning(1)
+                .font(.system(size: 8, weight: .heavy, design: .rounded)).kerning(1)
                 .foregroundStyle(s.label)
                 .padding(.trailing, 14).padding(.bottom, 2)
         }
@@ -362,7 +386,7 @@ struct ResetterMachine: View {
         let shape = RoundedRectangle(cornerRadius: theme.isLuminous ? 5 : 10, style: .continuous)
         return VStack(alignment: .leading, spacing: 4) {
             Text("\(horizon == "24h" ? "24" : "48") 小时内全员重置")
-                .font(.system(size: 9.5, weight: .medium, design: theme.isLuminous ? .monospaced : .rounded))
+                .font(.system(size: 10, weight: .medium, design: theme.isLuminous ? .monospaced : .rounded))
                 .foregroundStyle(s.screenDim)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(percent.map { Fmt.trim($0) + "%" } ?? "--%")
@@ -371,7 +395,7 @@ struct ResetterMachine: View {
                     .lineLimit(1).minimumScaleFactor(0.7)
                     .contentTransition(.numericText())
                 if let secondary {
-                    Text(secondary).font(.system(size: 9.5, design: theme.isLuminous ? .monospaced : .rounded))
+                    Text(secondary).font(.system(size: 10, design: theme.isLuminous ? .monospaced : .rounded))
                         .foregroundStyle(s.screenDim).lineLimit(1)
                 }
             }
@@ -408,8 +432,8 @@ struct ResetterMachine: View {
 
     private func ticketStrip(_ s: MachineStyle) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: "ticket").font(.system(size: 8.5, weight: .semibold))
-            Text(ticket).font(.system(size: 9.5, weight: .medium, design: theme == .neon ? .monospaced : .rounded))
+            Image(systemName: "ticket").font(.system(size: 9, weight: .semibold))
+            Text(ticket).font(.system(size: 10, weight: .medium, design: theme == .neon ? .monospaced : .rounded))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
         }
         .foregroundStyle(s.paperText)
@@ -537,7 +561,7 @@ struct SpeechBubble: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.system(size: 12, weight: .bold, design: theme == .neon ? .monospaced : .rounded))
                 .themeForeground()
-            Text(detail).font(theme.font(10.5, weight: .medium))
+            Text(detail).font(theme.font(11, weight: .medium))
                 .themeForeground(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

@@ -87,14 +87,14 @@ struct TickerCell: View {
                     .foregroundStyle(item.tint)
             }
             Text(item.name)
-                .font(.system(size: 11.5, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
             Text(item.value)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(item.valueTint)
             if let d = item.delta, d != 0 {
                 // Green ▲ = more left (reset, top-up); red ▼ = consumed.
                 Text((d > 0 ? "▲" : "▼") + (item.deltaIsPercent ? Fmt.trim(abs(d)) : Fmt.compact(abs(d))))
-                    .font(.system(size: 9.5, weight: .heavy, design: .rounded))
+                    .font(.system(size: 10, weight: .heavy, design: .rounded))
                     .foregroundStyle(d > 0 ? Color(red: 0.2, green: 0.85, blue: 0.5) : Color(red: 1, green: 0.32, blue: 0.36))
             }
             if let time = item.time {

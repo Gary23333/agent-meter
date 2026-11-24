@@ -59,7 +59,7 @@ struct ReportView: View {
                 VStack(spacing: 10) {
                     ProgressView()
                     Text(store.phase == .starting ? "正在启动本机后端…" : "正在读取用量…")
-                        .font(.system(size: 11.5)).themeForeground(.secondary)
+                        .font(.system(size: 12)).themeForeground(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -95,7 +95,7 @@ struct ReportView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("用量报告与分享").font(.system(size: 16, weight: .semibold))
                 Text("本机账本 · 金额统一人民币 · PNG")
-                    .font(.system(size: 10.5)).themeForeground(.tertiary)
+                    .font(.system(size: 11)).themeForeground(.tertiary)
                 Spacer()
                 PillTabs(items: Period.allCases, title: { $0.label },
                          selection: Binding(get: { period }, set: { periodRaw = $0.rawValue }), small: true)
@@ -141,7 +141,7 @@ struct ReportView: View {
 
     private func control<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 9.5)).themeForeground(.tertiary)
+            Text(title).font(.system(size: 10)).themeForeground(.tertiary)
             content()
         }
     }
@@ -245,7 +245,7 @@ struct ReportView: View {
             Card(tint: Color(red: 0.36, green: 0.52, blue: 1)) {
                 Text("自然周期对照").font(.system(size: 12, weight: .semibold))
                 Text("只比较已经结束的自然日；今天尚未结束，不计入。")
-                    .font(.system(size: 10.5)).themeForeground(.secondary)
+                    .font(.system(size: 11)).themeForeground(.secondary)
                 comparisonRow("本周", week)
                 comparisonRow("本月", month)
             }
@@ -275,11 +275,11 @@ struct ReportView: View {
             }
             if data.costParts.isEmpty {
                 Text("没有可用的价格条目，费用显示为 —。")
-                    .font(.system(size: 10.5)).themeForeground(.tertiary)
+                    .font(.system(size: 11)).themeForeground(.tertiary)
             }
             if !data.unpricedModels.isEmpty {
                 Text("未计价模型：" + data.unpricedModels.joined(separator: "、"))
-                    .font(.system(size: 10.5)).foregroundStyle(.orange)
+                    .font(.system(size: 11)).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -296,9 +296,9 @@ struct ReportView: View {
                         Spacer(minLength: 4)
                         Text(Fmt.tokens(app.tokens))
                             .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
-                            .monospacedDigit().themeForeground().frame(width: 62, alignment: .trailing)
-                        Text(app.cost).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary).monospacedDigit()
-                            .frame(width: 52, alignment: .trailing)
+                            .monospacedDigit().themeForeground().lineLimit(1).minimumScaleFactor(0.75).frame(width: 62, alignment: .trailing)
+                        Text(app.cost).font(theme.font(11, weight: .medium)).themeForeground(.secondary).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.75).frame(width: 52, alignment: .trailing)
                     }
                     Meter(fraction: app.fraction, tint: theme.tint(app.tint), height: 4)
                 }
@@ -314,7 +314,7 @@ struct ReportView: View {
             SectionTitle(text: "Top 模型", trailing: "\(data.models.count) 个")
             ForEach(data.models) { model in
                 HStack(spacing: 6) {
-                    Text(model.name).font(theme.font(11.5, weight: .medium)).themeForeground()
+                    Text(model.name).font(theme.font(12, weight: .medium)).themeForeground()
                         .lineLimit(1).truncationMode(.middle).layoutPriority(1)
                     Text(model.appLabel)
                         .font(theme.font(9, weight: .semibold))
@@ -322,11 +322,11 @@ struct ReportView: View {
                         .foregroundStyle(theme.tint(model.tint))
                         .background(Capsule().fill(theme.tint(model.tint).opacity(theme == .minimal ? 0.07 : 0.12)))
                     Spacer(minLength: 4)
-                    Text(model.cost).font(theme.font(10.5, weight: .medium)).themeForeground(.secondary)
-                        .monospacedDigit().frame(width: 54, alignment: .trailing)
+                    Text(model.cost).font(theme.font(11, weight: .medium)).themeForeground(.secondary)
+                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75).frame(width: 54, alignment: .trailing)
                     Text(Fmt.tokens(model.tokens))
-                        .font(.system(size: 11.5, weight: .semibold, design: theme.numberDesign))
-                        .monospacedDigit().themeForeground().frame(width: 60, alignment: .trailing)
+                        .font(.system(size: 12, weight: .semibold, design: theme.numberDesign))
+                        .monospacedDigit().themeForeground().lineLimit(1).minimumScaleFactor(0.75).frame(width: 60, alignment: .trailing)
                 }
                 .frame(minHeight: 21)
             }
@@ -339,12 +339,12 @@ struct ReportView: View {
     private func sourceCard(_ data: ReportData) -> some View {
         Card {
             Text("数据来源").font(.system(size: 12, weight: .semibold))
-            Text(data.sourceNote).font(.system(size: 10.5)).themeForeground(.secondary)
+            Text(data.sourceNote).font(.system(size: 11)).themeForeground(.secondary)
             Text("只读聚合本机账本，不读取对话内容；费用为 API 等价估算。")
-                .font(.system(size: 10.5)).themeForeground(.tertiary)
+                .font(.system(size: 11)).themeForeground(.tertiary)
             if data.periodStatus == "partial" {
                 Text("部分日期仅有日汇总，总量与费用可能偏小。")
-                    .font(.system(size: 10.5)).foregroundStyle(.orange)
+                    .font(.system(size: 11)).foregroundStyle(.orange)
             }
         }
     }

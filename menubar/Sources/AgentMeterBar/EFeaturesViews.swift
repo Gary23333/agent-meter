@@ -115,7 +115,7 @@ struct ProjectsSection: View {
                                 if !feed.unattributedApps.isEmpty {
                                     Text(feed.unattributedApps.prefix(4).map { "\(Catalog.appLabel($0.name)) \(countText($0.tokens))" }
                                         .joined(separator: " · "))
-                                        .font(.system(size: 10.5)).themeForeground(.secondary)
+                                        .font(.system(size: 11)).themeForeground(.secondary)
                                 }
                                 Text("没有明确项目路径的账本（如 Kimi、Claude、导入历史等）不做推测，统一进未归属。")
                                     .font(.system(size: 10)).themeForeground(.secondary)
@@ -155,15 +155,15 @@ private struct ProjectRowView: View {
         Card {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(display).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                    Text(display).font(.system(size: 13, weight: .medium)).lineLimit(1)
                     Spacer()
                     Text(countText(item.tokens)).font(.system(size: 12, weight: .semibold, design: .rounded))
                 }
                 HStack(spacing: 6) {
-                    Text("\(item.requests) 次请求").font(.system(size: 10.5)).themeForeground(.secondary)
+                    Text("\(item.requests) 次请求").font(.system(size: 11)).themeForeground(.secondary)
                     ForEach(item.apps.prefix(3), id: \.name) { app in
                         Text(Catalog.appLabel(app.name))
-                            .font(.system(size: 9.5))
+                            .font(.system(size: 10))
                             .padding(.horizontal, 5).padding(.vertical, 1.5)
                             .background(Catalog.appTint(app.name).opacity(0.14), in: Capsule())
                     }
@@ -268,7 +268,7 @@ struct PeriodCompareCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(scopePrefix + (kind == "week" ? "本周环比" : "本月环比"))
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                     Spacer()
                     Picker("", selection: $kind) {
                         Text("周").tag("week")
@@ -284,12 +284,12 @@ struct PeriodCompareCard: View {
                         Text(pct(report.tokensPct)).font(.system(size: 11, weight: .medium))
                             .themeForeground((report.tokensPct ?? 0) >= 0 ? .primary : .secondary)
                         Spacer()
-                        Text("上期 \(countText(report.previousTokens))").font(.system(size: 10.5)).themeForeground(.secondary)
+                        Text("上期 \(countText(report.previousTokens))").font(.system(size: 11)).themeForeground(.secondary)
                     }
                     Text("估算费用 \(Fmt.amount(report.currentCost, unit: "CNY"))  ·  \(pct(report.costPct))  ·  有效 \(report.currentDays) 天")
-                        .font(.system(size: 10.5)).themeForeground(.secondary)
+                        .font(.system(size: 11)).themeForeground(.secondary)
                     Text(comparisonText(report))
-                        .font(.system(size: 10.5)).themeForeground(report.comparableDays > 0 ? .primary : .secondary)
+                        .font(.system(size: 11)).themeForeground(report.comparableDays > 0 ? .primary : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if !report.movers.isEmpty {
                         Text("变动主要来自：" + report.movers.prefix(3).map {
@@ -299,9 +299,9 @@ struct PeriodCompareCard: View {
                     }
                     Text(report.basis == "daily_rollup_base_price_no_peak_split"
                          ? "按日汇总基准价估算，非账单；当期截至现在。" : "估算口径见后端说明。")
-                        .font(.system(size: 9.5)).themeForeground(.secondary)
+                        .font(.system(size: 10)).themeForeground(.secondary)
                     if !report.gaps.isEmpty {
-                        Text("无逐日分项来源：" + report.gaps.prefix(4).joined(separator: "、")).font(.system(size: 9.5)).themeForeground(.secondary)
+                        Text("无逐日分项来源：" + report.gaps.prefix(4).joined(separator: "、")).font(.system(size: 10)).themeForeground(.secondary)
                     }
                 } else {
                     ProgressView().controlSize(.small)
@@ -401,13 +401,13 @@ struct DataStatusView: View {
                 }
                 if let feed = store.statusFeed {
                     Text("快照 \(feed.snapshotAt ?? "未知")\(feed.fromCache ? " · 缓存命中" : "") · 缓存 TTL \(feed.ttl) 秒")
-                        .font(.system(size: 10.5)).themeForeground(.secondary)
+                        .font(.system(size: 11)).themeForeground(.secondary)
                     ForEach(feed.rows) { row in
                         HStack(spacing: 8) {
                             Circle().fill(Catalog.statusColor(row.status)).frame(width: 7, height: 7)
-                            Text(Catalog.brand(row.id).name).font(.system(size: 11.5)).lineLimit(1)
+                            Text(Catalog.brand(row.id).name).font(.system(size: 12)).lineLimit(1)
                             Spacer()
-                            Text(Catalog.statusLabel(row.status)).font(.system(size: 10.5))
+                            Text(Catalog.statusLabel(row.status)).font(.system(size: 11))
                                 .themeForeground(.secondary)
                             if let reason = row.reason, !reason.isEmpty {
                                 Text(Catalog.reason(reason)).font(.system(size: 10)).themeForeground(.secondary).lineLimit(1)
@@ -416,7 +416,7 @@ struct DataStatusView: View {
                     }
                     if !feed.unpriced.isEmpty {
                         Text("未计价模型：\(feed.unpriced.prefix(8).map(Catalog.modelLabel).joined(separator: "、"))")
-                            .font(.system(size: 10.5)).themeForeground(.secondary)
+                            .font(.system(size: 11)).themeForeground(.secondary)
                     }
                     Divider()
                     Toggle("省资源模式（刷新间隔变为 3 倍）", isOn: Binding(get: { store.lowResourceMode },
@@ -424,7 +424,7 @@ struct DataStatusView: View {
                         .font(.system(size: 12))
                     if store.lowResourceMode {
                         Text("跳过高开销账本（下载/解析量大的来源）：")
-                            .font(.system(size: 10.5)).themeForeground(.secondary)
+                            .font(.system(size: 11)).themeForeground(.secondary)
                         ForEach(Self.candidateLedgers, id: \.self) { id in
                             Toggle(Catalog.brand(id).name, isOn: Binding(
                                 get: { store.skipLedgersLowResource.contains(id) },
@@ -434,7 +434,7 @@ struct DataStatusView: View {
                                     else { list.removeAll { $0 == id } }
                                     store.skipLedgersLowResource = list
                                 }))
-                                .font(.system(size: 11.5))
+                                .font(.system(size: 12))
                         }
                     }
                 } else {

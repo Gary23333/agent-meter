@@ -135,7 +135,7 @@ struct PricesView: View {
                                 if row.synced { Label("目录", systemImage: "icloud") }
                                 if row.converted { Text("折算") }
                             }
-                            .font(.system(size: 8.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 9)).foregroundStyle(.secondary)
                         }
                         .frame(width: 205, alignment: .leading)
                         numField("输入", $row.input)
@@ -202,7 +202,7 @@ struct PricesView: View {
             Spacer()
             Text("每百万 tokens · 不是订阅账单").font(.system(size: 10)).foregroundStyle(.tertiary)
         }
-        .font(.system(size: 10.5))
+        .font(.system(size: 11))
         .frame(minHeight: 18)
     }
 

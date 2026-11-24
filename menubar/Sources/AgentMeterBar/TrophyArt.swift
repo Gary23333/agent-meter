@@ -38,8 +38,8 @@ struct QRBadge: View {
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .trailing, spacing: 3) {
-                Text(title).font(.system(size: 11.5, weight: .bold)).foregroundStyle(ink)
-                Text("开源 · 免费 · macOS 菜单栏").font(.system(size: 9.5)).foregroundStyle(muted)
+                Text(title).font(.system(size: 12, weight: .bold)).foregroundStyle(ink)
+                Text("开源 · 免费 · macOS 菜单栏").font(.system(size: 10)).foregroundStyle(muted)
                 Text(subtitle).font(.system(size: 9, design: .monospaced)).foregroundStyle(muted)
             }
             .lineLimit(1)
@@ -70,21 +70,27 @@ struct MedalView: View {
     @State private var shine = false
     @State private var sheen = false
     @Environment(\.tilt) private var tilt
+    @Environment(\.panelTheme) private var theme
+    @AppStorage("scene3D") private var scene3D = true
+
+    /// The minimal theme stays flat on purpose, like its gauges.
+    private var use3D: Bool { medal.earned && scene3D && Scene3D.isAvailable && theme != .minimal }
 
     var body: some View {
         VStack(spacing: 4) {
             disc
                 .frame(width: 52, height: 52)
-                .modifier(OptionalTilt(enabled: tilts, glare: medal.earned ? 0.8 : 0.25))
+                // The 3D coin turns itself; the view only adds a slight lean and no painted glare.
+                .modifier(OptionalTilt(enabled: tilts, maxAngle: use3D ? 5 : 24, glare: use3D ? 0.12 : (medal.earned ? 0.8 : 0.25)))
             if showsCaption {
-                Text(medal.name).font(.system(size: 9.5, weight: medal.earned ? .semibold : .regular))
+                Text(medal.name).font(.system(size: 10, weight: medal.earned ? .semibold : .regular))
                     .foregroundStyle(medal.earned ? .primary : .secondary).lineLimit(1).minimumScaleFactor(0.8)
                 Text(medal.earned ? (medal.earnedOn.map { String($0.dropFirst(5)) } ?? "") : "\(Int(medal.progress * 100))%")
-                    .font(.system(size: 8.5, design: .rounded)).foregroundStyle(.tertiary).monospacedDigit()
+                    .font(.system(size: 9, design: .rounded)).foregroundStyle(.tertiary).monospacedDigit()
             }
         }
         .onAppear {
-            guard medal.earned, !Motion.isStatic else { return }
+            guard medal.earned, !use3D, !Motion.isStatic else { return }
             if medal.tier == .gold || medal.tier == .platinum {
                 withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { shine = true }
             }
@@ -97,10 +103,17 @@ struct MedalView: View {
 
     private var disc: some View {
         ZStack {
-            if medal.earned { earnedDisc } else { lockedDisc }
+            if use3D {
+                if ornate { ribbons }
+                Medal3DDisc(tier: medal.tier, symbol: medal.symbol, ornate: ornate)
+            } else if medal.earned {
+                earnedDisc
+            } else {
+                lockedDisc
+            }
             if medal.earned && medal.count > 1 {
                 Text("×\(medal.count)")
-                    .font(.system(size: 8.5, weight: .heavy, design: .rounded))
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4).padding(.vertical, 1.5)
                     .background(Capsule().fill(LinearGradient(colors: [Color(red: 1, green: 0.35, blue: 0.5), Color(red: 0.9, green: 0.15, blue: 0.35)],
@@ -219,10 +232,11 @@ private struct RibbonTail: Shape {
 
 private struct OptionalTilt: ViewModifier {
     let enabled: Bool
+    var maxAngle: Double = 24
     let glare: Double
 
     func body(content: Content) -> some View {
-        if enabled { content.holoTilt(Circle(), maxAngle: 24, glare: glare) } else { content }
+        if enabled { content.holoTilt(Circle(), maxAngle: maxAngle, glare: glare) } else { content }
     }
 }
 
@@ -306,7 +320,7 @@ struct TradingCard: View {
                 .frame(maxHeight: .infinity)
                 // Name plate.
                 VStack(spacing: 1) {
-                    Text(def.name).font(.system(size: 9.5 * k, weight: .heavy)).foregroundStyle(.white)
+                    Text(def.name).font(.system(size: 10 * k, weight: .heavy)).foregroundStyle(.white)
                         .shadow(color: .black.opacity(0.45), radius: 1, y: 0.5)
                         .lineLimit(1).minimumScaleFactor(0.7)
                     HStack(spacing: 3) {
@@ -374,7 +388,7 @@ struct TradingCard: View {
             VStack(spacing: 4 * k) {
                 Image(systemName: def.symbol).font(.system(size: 16 * k, weight: .semibold)).foregroundStyle(Color.primary.opacity(0.15))
                 Text("?").font(.system(size: 13 * k, weight: .black, design: .rounded)).foregroundStyle(Color.primary.opacity(0.25))
-                Text(def.rarity.label).font(.system(size: 7.5 * k, weight: .semibold)).foregroundStyle(def.rarity.glow.opacity(0.7))
+                Text(def.rarity.label).font(.system(size: 8 * k, weight: .semibold)).foregroundStyle(def.rarity.glow.opacity(0.7))
             }
         }
     }

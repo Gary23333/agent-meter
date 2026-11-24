@@ -298,7 +298,7 @@ struct ShareCard: View {
                             .font(.system(size: rowSize, weight: .semibold, design: theme.numberDesign))
                             .monospacedDigit()
                             .foregroundStyle(ink)
-                            .frame(width: 88, alignment: .trailing)
+                            .lineLimit(1).minimumScaleFactor(0.75).frame(width: 88, alignment: .trailing)
                     }
                     fractionBar(app.fraction, tint: theme.tint(app.tint), height: 4)
                 }
@@ -339,7 +339,7 @@ struct ShareCard: View {
                         .font(.system(size: rowSize, weight: .semibold, design: theme.numberDesign))
                         .monospacedDigit()
                         .foregroundStyle(ink)
-                        .frame(width: 76, alignment: .trailing)
+                        .lineLimit(1).minimumScaleFactor(0.75).frame(width: 76, alignment: .trailing)
                 }
                 .frame(minHeight: 22)
             }

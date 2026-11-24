@@ -32,4 +32,5 @@ menubar/.build/debug/AgentMeterBar --panel-window --live-snapshot .runtime/readm
 ## 进度
 
 - 已完成：顶部仪表、徽标、进程页，七套主题的 3D 材质，信息行重叠修复。
-- 未完成：奖章与卡牌的真 3D、Tibo 重置器 3D、分享卡 3D、统一字号阶梯、各设置窗口、Windows 端。
+- 已完成：已获得奖章真 3D（含奖章分享图）、Tibo 重置器 3D、整数字号阶梯、预算窗口布局。
+- 未完成：卡牌真 3D、其余分享卡 3D、价格与同步设置窗口、Windows 端视觉。
