@@ -1,7 +1,7 @@
 <!-- WORKSPACE-STATUS-START -->
 ## 当前入口与目录约定
 
-2026-11-24 更新。当前源码版本 v0.13.0，两台设备的全部账户额度互相同步并去重：没有账号标识的来源按重置时间与用量走势判断是否同一账号；Windows 修复同步上传为空的问题，并在账户页显示其他设备的额度。真 3D 奖章与 Tibo 重置器，字号统一为整数。
+2026-11-24 更新。当前源码版本 v0.13.1，两台设备的额度合并展示，看起来像一台机器：同一账户只有一张卡、取最新读数，只在另一台登录的账户也是普通卡片，不再标注来源设备。v0.13.0 起全部额度互相同步并去重，Windows 修复同步上传为空的问题。
 
 - 目录导览：[STRUCTURE.md](STRUCTURE.md)。
 - AI 接手先读 [AGENTS.md](AGENTS.md)，再按任务阅读相应模块文档；共享知识入口在 [docs/agent-knowledge/README.md](docs/agent-knowledge/README.md)。
@@ -37,7 +37,7 @@ python3.14 -m agent_meter verify                 # 本机账本独立重算对�
   <img src="https://img.shields.io/badge/Backend-Python%203.9%2B%20(Stdlib%20Only)-blue?logo=python" alt="Backend: Python 3.9+ No Third-party Deps" />
   <img src="https://img.shields.io/badge/Schema-v6-success" alt="Schema: v6" />
   <img src="https://img.shields.io/badge/Security-Read--Only%20by%20Default-red" alt="Security: Read-Only by Default" />
-  <img src="https://img.shields.io/badge/Version-v0.13.0-blue" alt="Version v0.13.0" />
+  <img src="https://img.shields.io/badge/Version-v0.13.1-blue" alt="Version v0.13.1" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" /></a>
 </p>
 
@@ -326,7 +326,7 @@ flowchart TD
 
 ### 方式一：下载即用（推荐）
 
-1. 打开本机打包生成的 `AgentMeter-0.13.0-macos-arm64.dmg`，或从 [GitHub Releases](https://github.com/Gary23333/agent-meter/releases) 下载已公开的版本。
+1. 打开本机打包生成的 `AgentMeter-0.13.1-macos-arm64.dmg`，或从 [GitHub Releases](https://github.com/Gary23333/agent-meter/releases) 下载已公开的版本。
 2. 打开 DMG，把「Agent 用量.app」拖进「应用程序」文件夹；
 3. 双击启动。菜单栏会立即出现行情条。
    - *App 自带独立 Python 后端，**无需安装 Python、Xcode 或项目源码**。各来源仍需对应的客户端或登录态。*
@@ -448,10 +448,14 @@ CI 运行 Python 3.9、3.12、3.14 离线回归、源码包 / wheel 版本校验
 
 完整说明见 [docs/](docs/) 下的 `release-v*.md`。
 
+### v0.13.1 · 2026-11-24
+
+- **两台设备合并展示**：其他设备的额度直接并入本机账户卡片，同一账户只有一张卡、每个窗口取最新读数，并补上本机读不到的套餐、余额、重置卡与续费日期；只在另一台登录的账户移出「未接入」，作为普通卡片显示。不再标注来源设备，顶部圆环、菜单栏与滚动条使用同一份合并数据。另一台超过 1 小时未同步时卡片显示「采样于」。详见[版本说明](docs/release-v0.13.1.md)。
+
 ### v0.13.0 · 2026-11-24
 
 - **全部额度互相同步**：Claude、Kimi、WorkBuddy、MiniMax Code、ZCode、豆包等此前因缺少窗口名被丢弃的额度现在都会同步，同一账号同一窗口只显示最新一条。
-- **无标识账号去重**：没有账号标识的来源按重置时间与用量走势判断两台设备是否同一账号，同一账号合并，不同账号各自成卡并标明来源设备。
+- **无标识账号去重**：没有账号标识的来源按重置时间与用量走势判断两台设备是否同一账号，同一账号合并，不同账号各自成卡。
 - **Windows 同步修复**：修复上传内容为空的问题，补传需要密钥的账户额度（不传密钥），账户页显示仅其他设备可见的额度。
 - **真 3D 视觉**：已获得奖章与 Tibo 重置器改为 SceneKit 实时光照渲染；全部字号统一为整数。详见[版本说明](docs/release-v0.13.0.md)。
 

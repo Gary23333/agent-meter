@@ -1,5 +1,7 @@
 # Agent 用量菜单栏应用共享知识
 
+2026-11-24 v0.13.1：账户相关视图读 `UsageStore.displaySnapshot`，即 `SyncMerge.merged(snapshot, history:)` 把 `/v1/sync/history` 的 `remote_quota` 与 `accounts` 折进快照：同账户窗口取较新读数，事实只补本机缺的；仅远端可读的账户接管同服务的「未接入」来源或新增 `provider#N` 来源，超过 1 小时为 `stale`。账户页不再显示来源设备；低额度通知仍只看本机 `snapshot`。
+
 2026-11-24 v0.13.0：同步额度不再要求 `window` 字段——`sync_payload.window_id` 依次取窗口名、`{duration, unit}`、`window_minutes`，最后为 `all`，Swift `AccountsView.syncWindowID` 必须与之一致；额度行带 `provider`。无账号标识的账户由 `sync_store.resolve_accounts` 按重置时间（容差 10 分钟）与用量走势匹配同服务账户，匹配不上的改用 `provider~设备前缀` 独立成卡；两个不同的哈希账户永不合并。同一设备同一服务有多个无标识登录时不上传该服务额度。Windows 同步此前上传的是未投影的原始结果（空数据），已修复。
 
 2026-11-20 v0.12.3：同步服务地址内置为 https://sync.joycine.xyz；远端额度即使被本机更新观测覆盖，也会在账户卡片标注来源。消耗页合并全部设备——`/v1/sync/history` 新增 `usage` 投影，只汇总远端设备行，本机仍以实时快照为准，避免重复计数；费用按本机价格表谷时基价估算，未匹配模型列在页脚。额度匹配改用与后端一致的 `account_key ?? 来源 id`，Antigravity 等隐式账户的远端额度直接进入自己的账户卡片。测试 Python 897、Swift 128、同步服务 45、Node 28 与 7 个形象包全过。见[版本说明](../release-v0.12.3.md)。
