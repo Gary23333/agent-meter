@@ -13,11 +13,13 @@ import json
 import time
 from pathlib import Path
 
+from agent_meter.model import account_key
 from agent_meter.sync_crypto import (PairingCode, PairingCrypto, SyncCryptoError, SyncKeys,
                                      b64_standard_decode, b64_standard_encode, is_space_id)
-from agent_meter.sync_payload import build_payload, clean_settings, parse_payload
+from agent_meter.sync_payload import build_payload, clean_settings, parse_payload, quota_rows
 from agent_meter.sync_remote import SyncRemoteError, SyncService
-from agent_meter.sync_store import replace_device, reset, set_local_device
+from agent_meter.sync_store import (PROVIDER_ALIASES, device_names, load_store, remote_quota_history, replace_device,
+                                    reset, resolve_accounts, set_local_device)
 
 MAX_INPUT = 64 * 1024
 PAIR_POLL_SECONDS = 1.0
@@ -40,6 +42,14 @@ APP_IDS = {
     "MiniMax Code": "mcode",
     "MiMo Code": "mimo_code",
     "DevECo": "deveco",
+}
+# Account cards that have no local history entry of the same name.
+ACCOUNT_IDS = {
+    "DeepSeek API": "deepseek_api",
+    "Volcengine": "volcengine",
+    "MiMo": "mimo",
+    "Qoder CN": "qoder",
+    "TRAE CN": "trae_cn",
 }
 
 
@@ -302,26 +312,101 @@ def _decode_public(value):
 def _quota_sources(result):
     """Account quota rows, with a provider-level account key.
 
-    Windows currently has at most one signed-in account per provider; the Mac
-    hashes the real identity. A provider key is the honest fallback: it lets
-    the Mac show the same quota without inventing an account label.
+    Most Windows accounts expose no id; the Mac hashes the real identity. A
+    provider key is the honest fallback, and `sync_store.resolve_accounts`
+    matches it to the Mac's account by its quota. Saved MiniMax profiles are
+    told apart by a hash of their local label.
     """
     sources = []
     account = result.get("account")
     if isinstance(account, dict) and isinstance(account.get("quota"), dict):
-        sources.append(("codex", account["quota"]))
+        sources.append(("codex", account["quota"], None))
     for name, value in sorted((result.get("other_accounts") or {}).items()):
+        provider = ACCOUNT_IDS.get(name) or APP_IDS.get(name, name)
         if isinstance(value, dict) and isinstance(value.get("quota"), dict):
-            sources.append((APP_IDS.get(name, name), value["quota"]))
+            sources.append((provider, value["quota"], None))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                if isinstance(item, dict) and isinstance(item.get("quota"), dict):
+                    label = item.get("label")
+                    key = account_key(provider, label.casefold()) if isinstance(label, str) else None
+                    sources.append(("%s#%d" % (provider, index + 1), item["quota"], key))
     out = []
-    for name, quota in sources:
+    for name, quota, key in sources:
         if not isinstance(quota.get("value"), list):
             continue
         if quota.get("status") not in ("available", "partial"):
             continue
-        out.append({"id": name, "metrics": {"quota": {"status": quota["status"],
-                                                      "value": quota["value"]}}})
+        source = {"id": name, "metrics": {"quota": {"status": quota["status"], "value": quota["value"]}}}
+        if key:
+            source["account_key"] = key
+        out.append(source)
     return out
+
+
+def _has_quota(value):
+    if isinstance(value, list):
+        return any(_has_quota(item) for item in value)
+    quota = value.get("quota") if isinstance(value, dict) else None
+    return isinstance(quota, dict) and quota.get("status") in ("available", "partial") and bool(quota.get("value"))
+
+
+def with_latest_accounts(result, request):
+    """Fill the accounts a plain collect cannot read from the app's last refresh.
+
+    ZCode, WorkBuddy and the others need a credential only the C# shell holds.
+    The shell passes their quota rows, never the credential.
+    """
+    latest = request.get("latest_accounts")
+    if not isinstance(latest, dict):
+        return result
+    merged = dict(result)
+    if not _has_quota(merged.get("account")) and _has_quota(latest.get("account")):
+        merged["account"] = latest["account"]
+    others = dict(merged.get("other_accounts") or {})
+    incoming = latest.get("other_accounts")
+    for name, value in (incoming if isinstance(incoming, dict) else {}).items():
+        if not _has_quota(others.get(name)) and _has_quota(value):
+            others[name] = value
+    merged["other_accounts"] = others
+    return merged
+
+
+def quota_view(accounts, now=None):
+    """Quota only other devices can see, one card per account, newest per window."""
+    directory = runtime_dir()
+    if directory is None:
+        return {"status": "unavailable", "accounts": []}
+    now = time.time() if now is None else now
+    store = load_store(directory)
+    local = quota_rows(windows_snapshot(accounts), now)
+    known = {row["account"] for row in local}
+    names = device_names(store)
+    groups = {}
+    for row in remote_quota_history(resolve_accounts(store, local)):
+        account = row.get("account")
+        remaining = row.get("remaining_percent")
+        if account in known or isinstance(remaining, bool) or not isinstance(remaining, (int, float)):
+            continue
+        windows = groups.setdefault(account, {})
+        key = (row.get("bucket"), row.get("window"))
+        if key not in windows or (row.get("observed_at") or 0) >= (windows[key].get("observed_at") or 0):
+            windows[key] = row
+    out = []
+    for account in sorted(groups, key=str):
+        rows = [groups[account][key] for key in sorted(groups[account], key=str)]
+        newest = max(rows, key=lambda row: row.get("observed_at") or 0)
+        provider = newest.get("provider") or str(account).split("~", 1)[0]
+        out.append({"provider": PROVIDER_ALIASES.get(provider, provider),
+                    "device": names.get(newest.get("device")) or "",
+                    "observed_at": newest.get("observed_at"),
+                    "quota": {"status": "available", "value": [{
+                        "bucket": row.get("bucket"), "window": row.get("window"),
+                        "window_minutes": row.get("window_minutes"),
+                        "remaining_percent": row.get("remaining_percent"),
+                        "resets_at": {"epoch_seconds": row["resets_at"]} if row.get("resets_at") else None,
+                    } for row in rows]}})
+    return {"status": "available", "accounts": out}
 
 
 def windows_snapshot(result):

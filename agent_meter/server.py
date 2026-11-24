@@ -159,7 +159,7 @@ def make_server(service,token,port=8769):
                 try:
                     from .sync_store import (account_history, card_history, day_history, device_summaries, history,
                                              load_store, quota_history, quota_series, remote_quota_history,
-                                             reward_history)
+                                             resolve_accounts, reward_history)
                     from .sync_payload import card_tally, quota_rows, usage_rows
                     from .sync_quota import series as local_quota_series
                     from .sync_usage import usage_periods
@@ -170,14 +170,17 @@ def make_server(service,token,port=8769):
                     # The service's clock, never the wall clock: the same
                     # "now" as the snapshot the rows are projected from.
                     now=service.clock()
+                    local_quota=quota_rows(data,now)
+                    # Keyless accounts are matched by their quota for every account view.
+                    accounts=resolve_accounts(store,local_quota)
                     self.send_json(200,{"schema":1,"local_device":local,
                                         "rows":history(store,usage_rows(data,local)),
-                                        "quota":quota_history(store,quota_rows(data,now)),
-                                        "remote_quota":remote_quota_history(store),
+                                        "quota":quota_history(accounts,local_quota),
+                                        "remote_quota":remote_quota_history(accounts),
                                         # Every known day of every account window, this
                                         # device's own journal included.
-                                        "quota_series":quota_series(store,local_quota_series(runtime)),
-                                        "accounts":account_history(store),
+                                        "quota_series":quota_series(accounts,local_quota_series(runtime)),
+                                        "accounts":account_history(accounts),
                                         "rewards":reward_history(store),
                                         "images":day_history(store,"images"),
                                         "credits":day_history(store,"credits"),

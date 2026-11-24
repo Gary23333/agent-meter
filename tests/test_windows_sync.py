@@ -10,6 +10,7 @@ import unittest.mock
 from pathlib import Path
 
 from agent_meter.sync_crypto import SyncKeys, random_identifier, random_master_key
+from agent_meter.sync_payload import quota_rows
 from sync_server.app import Store, make_server
 from windows import sync_ops
 
@@ -182,6 +183,46 @@ class SnapshotTests(unittest.TestCase):
             "daily_models": [{"date": "2026-11-20", "model": "gpt-5", "total_tokens": 9}]}}}}
         rows = sync_ops.windows_snapshot(result)["sources"][0]["metrics"]["tokens"]["value"]["daily_models"]
         self.assertEqual(rows[0]["model"], "gpt-5")
+
+    def test_every_account_card_is_carried_without_its_label(self):
+        result = {"account": {"quota": {"status": "available", "value": [
+                      {"bucket": "codex", "window": "primary", "remaining_percent": 90}]}},
+                  "other_accounts": {
+                      "ZCode": {"quota": {"status": "available", "value": [
+                          {"bucket": "quota", "window_minutes": 300, "remaining_percent": 80}]}},
+                      "MiniMax Code": [
+                          {"label": "work", "quota": {"status": "available", "value": [{"bucket": "5h", "remaining_percent": 70}]}},
+                          {"label": "home", "quota": {"status": "available", "value": [{"bucket": "5h", "remaining_percent": 20}]}}]}}
+        rows = quota_rows(sync_ops.windows_snapshot(result), 1795157000)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual({row["provider"] for row in rows}, {"codex", "zcode", "mcode"})
+        self.assertNotIn("work", json.dumps(rows))
+
+    def test_latest_accounts_fill_only_what_collect_could_not_read(self):
+        fresh = {"quota": {"status": "available", "value": [{"bucket": "limit5h", "remaining_percent": 50}]}}
+        stale = {"quota": {"status": "available", "value": [{"bucket": "limit5h", "remaining_percent": 99}]}}
+        zcode = {"quota": {"status": "available", "value": [{"bucket": "quota", "remaining_percent": 30}]}}
+        merged = sync_ops.with_latest_accounts(
+            {"account": {"status": "disabled"}, "other_accounts": {"Kimi Code": fresh}},
+            {"latest_accounts": {"account": None, "other_accounts": {"Kimi Code": stale, "ZCode": zcode}}})
+        self.assertIs(merged["other_accounts"]["Kimi Code"], fresh)
+        self.assertIs(merged["other_accounts"]["ZCode"], zcode)
+
+    def test_quota_view_shows_only_accounts_this_device_cannot_read(self):
+        now = 1795157000
+        def row(account, provider, used):
+            return {"account": account, "provider": provider, "bucket": "5h", "window": "300m", "day": "2026-11-21",
+                    "observed_at": now, "used_percent": used, "remaining_percent": 100 - used,
+                    "window_minutes": 300, "resets_at": now + 3600}
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(sync_ops, "runtime_dir", return_value=Path(tmp)):
+            (Path(tmp) / "synced-history.json").write_text(json.dumps({"schema": 1, "local_device": "", "devices": {
+                "b" * 32: {"name": "Mac", "quota": [row("kimi", "kimi", 40), row("zcode", "zcode", 10)]}}}))
+            local = {"account": None, "other_accounts": {"Kimi Code": {"quota": {"status": "available", "value": [
+                {"bucket": "5h", "window_minutes": 300, "used_percent": 41, "remaining_percent": 59,
+                 "resets_at": {"epoch_seconds": now + 3600}}]}}}}
+            view = sync_ops.quota_view(local, now)
+        self.assertEqual([item["provider"] for item in view["accounts"]], ["zcode"])
+        self.assertEqual(view["accounts"][0]["device"], "Mac")
 
 
 if __name__ == "__main__":

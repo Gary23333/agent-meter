@@ -943,6 +943,7 @@ def main():
     parser.add_argument("--sync-devices", action="store_true", help="读取同步空间的设备列表")
     parser.add_argument("--sync-device-remove", action="store_true", help="从同步空间删除一台设备的密文")
     parser.add_argument("--sync-reset", action="store_true", help="断开本机同步并清空已拉取的远端记录")
+    parser.add_argument("--sync-quota-view", action="store_true", help="用标准输入中的本机额度合并其他设备额度")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
@@ -951,6 +952,21 @@ def main():
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.sync_quota_view:
+        if len(sys.argv) != 2:
+            raise SystemExit(2)
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+            raw = sys.stdin.read(65537)
+            if len(raw) > 65536:
+                raise ValueError("account snapshot too large")
+            accounts = json.loads(raw.lstrip("\ufeff"))
+            if not isinstance(accounts, dict) or set(accounts) != {"account", "other_accounts"}:
+                raise ValueError("invalid account snapshot")
+        except (ValueError, TypeError, RecursionError):
+            raise SystemExit(2) from None
+        print(json.dumps(guarded(lambda: windows_sync.quota_view(accounts)), ensure_ascii=False, separators=(",", ":")))
+        return
     if args.rewards_status or args.rewards_claim:
         others = [args.activity_only, args.trae_only, args.qoder_only, args.mimo_only, args.workbuddy_only,
                   args.deepseek_only, args.zcode_only, args.volcengine_only, args.cards_update, args.forecast_only,
@@ -1030,7 +1046,8 @@ def main():
                 elif args.sync_pull:
                     windows_sync.pull(request, emit)
                 else:
-                    windows_sync.push(request, emit, snapshot=collect(False, args.home))
+                    windows_sync.push(request, emit, snapshot=windows_sync.windows_snapshot(
+                        windows_sync.with_latest_accounts(collect(False, args.home), request)))
         except Exception as error:
             code = getattr(error, "code", None)
             if not isinstance(code, str):

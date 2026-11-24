@@ -356,6 +356,7 @@ internal sealed class SyncDialog : Form
         {
             var input = Connection();
             input["settings"] = JsonNode.Parse(owner.SyncSettingsJson());
+            if (owner.LatestAccountsJson is { } latest) input["latest_accounts"] = JsonNode.Parse(latest);
             string output = await SyncBackendClient.RunAsync("--sync-push", input.ToJsonString(), CancellationToken.None);
             var result = SyncRunResult.Read(output);
             if (result is null) { message.Text = "同步失败：" + Reason(output); return; }

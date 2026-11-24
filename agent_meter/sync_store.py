@@ -8,6 +8,7 @@ snapshot, never from this file.
 """
 
 import json
+import re
 from pathlib import Path
 
 STORE_NAME = "synced-history.json"
@@ -151,6 +152,143 @@ def history(store, local_rows=None):
 
 def _quota_key(row):
     return (row.get("account"), row.get("bucket"), row.get("window"), row.get("day"))
+
+
+# --- accounts without an id --------------------------------------------------
+#
+# Some providers expose no account id, so their rows carry only the provider
+# name. Two devices may hold the same login or two different ones; the quota
+# itself is the only evidence. Same window end and a usage curve one account
+# could have produced means one account. Anything else stays separate.
+
+RESET_TOLERANCE = 600
+# The same provider under the names the Mac and Windows collectors use.
+PROVIDER_ALIASES = {"mcode": "minimax_code", "minimax": "minimax_code"}
+_ACCOUNT_HASH = re.compile(r"^[0-9a-f]{24}$")
+
+
+def _keyless(account):
+    return not (isinstance(account, str) and _ACCOUNT_HASH.match(account))
+
+
+def _provider_name(name):
+    return PROVIDER_ALIASES.get(name, name) if isinstance(name, str) and name else None
+
+
+def _used(row):
+    used = row.get("used_percent")
+    if _is_number(used):
+        return used
+    remaining = row.get("remaining_percent")
+    return 100 - remaining if _is_number(remaining) else None
+
+
+def _same_window_usage(left, right):
+    """True or False when the two readings decide it, None when they cannot."""
+    older, newer = sorted((left, right), key=lambda row: row.get("observed_at") or 0)
+    elapsed = max(0, (newer.get("observed_at") or 0) - (older.get("observed_at") or 0)) / 3600
+    older_used, newer_used = _used(older), _used(newer)
+    older_reset, newer_reset = older.get("resets_at"), newer.get("resets_at")
+    timed = _is_number(older_reset) and _is_number(newer_reset)
+    if timed and older_reset <= (newer.get("observed_at") or 0):
+        return None  # the older reading's window has already ended
+    if older_used is None or newer_used is None or (older_used == 0 and newer_used == 0):
+        return None  # an unused window often reports a moving reset time
+    if timed and abs(older_reset - newer_reset) > RESET_TOLERANCE:
+        return False
+    if not timed and elapsed > 2:
+        return None
+    allowance = 5 + 20 * elapsed if timed else 3 + 10 * elapsed
+    return -2 <= newer_used - older_used <= allowance
+
+
+def similar_quota(left, right):
+    """Whether two {(bucket, window): row} groups read like one account."""
+    shared = set(left) & set(right)
+    if not shared:
+        return False
+    return all(_same_window_usage(left[key], right[key]) is not False for key in shared)
+
+
+def _latest_windows(rows):
+    latest = {}
+    for row in rows:
+        key = (row.get("bucket"), row.get("window"))
+        if key not in latest or (row.get("observed_at") or 0) >= (latest[key].get("observed_at") or 0):
+            latest[key] = row
+    return latest
+
+
+def resolve_accounts(store, local_quota=None):
+    """A read-only copy of the store with keyless accounts matched or told apart.
+
+    A keyless account joins a same-provider account whose quota looks like it.
+    Otherwise it keeps its own key, so it gets its own card and never overwrites
+    another account. Accounts that both have an id are never merged.
+    """
+    clusters = []
+
+    def add(key, provider, device, windows):
+        cluster = {"key": key, "provider": provider, "devices": {device}, "windows": dict(windows)}
+        clusters.append(cluster)
+        return cluster
+
+    def join(cluster, device, windows):
+        cluster["devices"].add(device)
+        for key, row in windows.items():
+            known = cluster["windows"].get(key)
+            if known is None or (row.get("observed_at") or 0) >= (known.get("observed_at") or 0):
+                cluster["windows"][key] = row
+
+    local_groups = {}
+    for row in local_quota or []:
+        if isinstance(row, dict):
+            local_groups.setdefault(row.get("account"), []).append(row)
+    for account, rows in sorted(local_groups.items(), key=lambda item: str(item[0])):
+        provider = _provider_name(rows[0].get("provider")) or (_provider_name(account) if _keyless(account) else None)
+        add(account, provider, None, _latest_windows(rows))
+
+    providers, groups = {}, {}
+    for device, row in remote_rows(store, "accounts"):
+        providers[(device, row.get("account"))] = row.get("provider")
+    for device, row in remote_rows(store, "quota"):
+        groups.setdefault((device, row.get("account")), []).append(row)
+
+    mapping = {}
+    # Accounts with an id go first, so a keyless one can join them.
+    for (device, account), rows in sorted(groups.items(), key=lambda item: (_keyless(item[0][1]), str(item[0]))):
+        keyless = _keyless(account)
+        provider = _provider_name(rows[0].get("provider") or providers.get((device, account))
+                                  or (account.split("~", 1)[0] if keyless and isinstance(account, str) else None))
+        windows = _latest_windows(rows)
+        exact = next((c for c in clusters if c["key"] == account and not keyless), None)
+        if exact is not None:
+            join(exact, device, windows)
+            continue
+        match = next((c for c in clusters
+                      if provider and c["provider"] == provider and device not in c["devices"]
+                      and (keyless or _keyless(c["key"])) and similar_quota(c["windows"], windows)), None)
+        if match is not None:
+            join(match, device, windows)
+            mapping[(device, account)] = match["key"]
+            continue
+        key = account
+        if keyless:
+            taken = {cluster["key"] for cluster in clusters}
+            base = provider or account
+            key = base if base not in taken else "%s~%s" % (base, device[:8])
+            mapping[(device, account)] = key
+        add(key, provider, device, windows)
+
+    devices = {}
+    for device, bucket in (store.get("devices") or {}).items():
+        copy = dict(bucket or {})
+        for name in ("quota", "quota_history", "accounts"):
+            copy[name] = [dict(row, account=mapping[(device, row.get("account"))])
+                          if isinstance(row, dict) and (device, row.get("account")) in mapping else row
+                          for row in section(bucket, name)]
+        devices[device] = copy
+    return dict(store, devices=devices)
 
 
 def quota_history(store, local_quota=None):

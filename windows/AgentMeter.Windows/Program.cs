@@ -1450,6 +1450,7 @@ internal sealed partial class MeterWindow : Form
                     ["local_medals"] = new JsonObject { ["status"] = "loading" }
                 };
                 if (profilesInvalid) combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
+                if (lastSyncedQuota is not null) combined["synced_quota"] = lastSyncedQuota.DeepClone();
                 ApplyAccountPreferences(combined);
                 using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement, accountDetailsPending: true);
                 var pending = new List<(string Name, Task<string> Task)> { ("accounts", accountTask), ("history", historyTask) };
@@ -1461,8 +1462,10 @@ internal sealed partial class MeterWindow : Form
                 if (qoderTask is not null) pending.Add(("Qoder CN", qoderTask));
                 if (traeTask is not null) pending.Add(("TRAE CN", traeTask));
                 if (forecastTask is not null) pending.Add(("forecast", forecastTask));
+                var refreshCancellation = accountCancellation.Token;
                 await ApplyRefreshPartsAsync(combined, pending, false, profilesInvalid, snapshot =>
-                    RunCollector("--cards-update", accountCancellation.Token, CardInput.Create(snapshot)));
+                    RunCollector("--cards-update", refreshCancellation, CardInput.Create(snapshot)),
+                    snapshot => StartSyncedQuota(snapshot, refreshCancellation));
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException or ObjectDisposedException)
@@ -1769,6 +1772,8 @@ internal sealed partial class MeterWindow : Form
         AddQoderAccount(GetValue(otherAccounts, "Qoder CN"));
         AddTraeAccount(GetValue(otherAccounts, "TRAE CN"));
         AddQoderLocalCredits(GetValue(root, "local_credits"));
+        foreach (var synced in SyncedQuota.Read(GetValue(root, "synced_quota")))
+            AddQuotaGroup(synced.Heading, synced.Windows.Select(item => new QuotaRow(item.Label, item.Remaining, item.ResetAt)).ToList());
         FinishAccountGauges(root);
         gauges.ResumeLayout();
         if (focusedGaugeName is not null)

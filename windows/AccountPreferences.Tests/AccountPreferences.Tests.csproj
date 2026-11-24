@@ -37,6 +37,7 @@
     <Compile Include="..\AgentMeter.Windows\RewardsReport.cs" Link="RewardsReport.cs" />
     <Compile Include="..\AgentMeter.Windows\SyncPreferences.cs" Link="SyncPreferences.cs" />
     <Compile Include="..\AgentMeter.Windows\SyncReport.cs" Link="SyncReport.cs" />
+    <Compile Include="..\AgentMeter.Windows\SyncedQuota.cs" Link="SyncedQuota.cs" />
     <Compile Include="..\AgentMeter.Windows\ForecastPresentation.cs" Link="ForecastPresentation.cs" />
     <Compile Include="..\AgentMeter.Windows\QuotaWindows.cs" Link="QuotaWindows.cs" />
     <Compile Include="..\AgentMeter.Windows\QuotaResetClock.cs" Link="QuotaResetClock.cs" />

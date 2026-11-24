@@ -5,7 +5,7 @@ namespace AgentMeter.Windows;
 /// <summary>向本地卡册进程只传额度与必要账户标识，不传钱包、重置卡或凭据。</summary>
 internal static class CardInput
 {
-    public static string Create(JsonObject snapshot)
+    public static string Create(JsonObject snapshot, bool allAccounts = false)
     {
         static JsonNode? Quota(JsonNode? node)
         {
@@ -39,7 +39,8 @@ internal static class CardInput
         }
         var source = snapshot["other_accounts"] as JsonObject;
         var others = new JsonObject();
-        foreach (var name in new[] { "Kimi Code", "Claude Code", "MiniMax Code" })
+        var names = allAccounts && source is not null ? source.Select(item => item.Key).ToArray() : new[] { "Kimi Code", "Claude Code", "MiniMax Code" };
+        foreach (var name in names)
             if (source is not null && source[name] is not null) others[name] = Project(source[name]);
         return new JsonObject { ["account"] = Project(snapshot["account"]), ["other_accounts"] = others }.ToJsonString();
     }

@@ -266,16 +266,33 @@ def provider_of(src):
     return source.split("#", 1)[0].split(":", 1)[0] if isinstance(source, str) else ""
 
 
+def window_id(raw):
+    """A stable name for a quota window; `AccountsView.syncWindowID` must match it.
+
+    Most providers name only the bucket, so the window falls back to its
+    length and then to the bucket's single window.
+    """
+    window = raw.get("window")
+    if isinstance(window, str) and window:
+        return window[:32]
+    if isinstance(window, dict):
+        duration, unit = window.get("duration"), window.get("unit")
+        if _is_number(duration) and duration > 0 and isinstance(unit, str) and unit:
+            return ("%g%s" % (duration, unit.lower()))[:32]
+    minutes = raw.get("window_minutes")
+    if _is_number(minutes) and minutes > 0:
+        return "%gm" % minutes
+    return "all"
+
+
 def quota_row(raw, account, day, now):
     """One quota observation, or None when the window is unusable."""
     if not isinstance(raw, dict):
         return None
     bucket = raw.get("bucket")
-    window = raw.get("window")
     if not isinstance(bucket, str) or not bucket or len(bucket) > 64:
         return None
-    if not isinstance(window, str) or not window or len(window) > 32:
-        return None
+    window = window_id(raw)
     row = {"account": account, "bucket": bucket, "window": window,
            "day": day, "observed_at": float(now)}
     for key in ("used_percent", "remaining_percent", "window_minutes"):
@@ -292,19 +309,33 @@ def quota_rows(snapshot, now):
     """One quota observation per account per window, dated to the local day."""
     day = _local_day(now)
     rows = []
-    for src in _sources(snapshot):
-        entry = (src.get("metrics") or {}).get("quota") or {}
-        if entry.get("status") not in QUOTA_STATUSES:
-            continue
-        value = entry.get("value")
+    seen = set()
+    usable = [src for src in _sources(snapshot)
+              if ((src.get("metrics") or {}).get("quota") or {}).get("status") in QUOTA_STATUSES]
+    keyless = {}
+    for src in usable:
+        if not src.get("account_key"):
+            provider = provider_of(src)
+            keyless[provider] = keyless.get(provider, 0) + 1
+    for src in usable:
+        value = src["metrics"]["quota"].get("value")
         if not isinstance(value, list):
+            continue
+        # Two logins with no account id would share one key and overwrite each other.
+        if not src.get("account_key") and keyless.get(provider_of(src), 0) > 1:
             continue
         account = account_of(src)
         if not account:
             continue
         for raw in value:
             row = quota_row(raw, account, day, now)
-            if row is not None:
+            if row is None:
+                continue
+            key = (row["account"], row["bucket"], row["window"])
+            if key not in seen:
+                seen.add(key)
+                # Lets a device compare a keyless account with this provider's other accounts.
+                row["provider"] = provider_of(src)
                 rows.append(row)
     return rows[:MAX_QUOTA_ROWS]
 
@@ -657,6 +688,8 @@ def _parse_quota(raw):
         number = raw.get(key)
         entry[key] = number if not isinstance(number, bool) and isinstance(number, (int, float)) else None
     entry["resets_at"] = _epoch(raw.get("resets_at"))
+    if _id(raw.get("provider"), 64):
+        entry["provider"] = raw["provider"]
     return entry
 
 

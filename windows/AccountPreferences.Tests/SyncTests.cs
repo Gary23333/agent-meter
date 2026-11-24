@@ -38,6 +38,14 @@ internal static class SyncTests
             throw new InvalidOperationException("设备列表解析错误");
         if (rows[0].Updated == "—" || rows[0].Updated.Length != 16)
             throw new InvalidOperationException("设备更新时间应格式化为本地时间：" + rows[0].Updated);
+        const string view = """{"status":"available","accounts":[{"provider":"zcode","device":"Office","quota":{"status":"available","value":[{"bucket":"quota","window":"300m","window_minutes":300,"remaining_percent":40,"resets_at":{"epoch_seconds":1795157000}}]}},{"provider":"kimi","device":"","quota":{"value":[{"bucket":"limit7d","remaining_percent":101}]}}]}""";
+        using (var parsed = System.Text.Json.JsonDocument.Parse(view))
+        {
+            var synced = SyncedQuota.Read(parsed.RootElement);
+            if (synced.Count != 1 || synced[0].Heading != "ZCODE · 来自 Office" || synced[0].Windows.Count != 1 ||
+                synced[0].Windows[0].Label != "5 小时" || synced[0].Windows[0].Remaining != 40 || synced[0].Windows[0].ResetAt != 1795157000)
+                throw new InvalidOperationException("其他设备额度解析错误");
+        }
         Console.WriteLine("多机同步设置与结果检查通过");
     }
 }

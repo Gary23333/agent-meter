@@ -106,6 +106,28 @@ struct AccountsView: View {
         return remoteQuota.filter { $0["account"].string == account }
     }
 
+    /// The provider named by a keyless account key ("kimi", "kimi~1a2b3c4d").
+    /// A hashed key names no provider.
+    static func syncProvider(accountKey: String) -> String? {
+        let hashed = accountKey.count == 24 && accountKey.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+        guard !hashed, let base = accountKey.split(separator: "~").first else { return nil }
+        return String(base)
+    }
+
+    /// The window name synced rows carry; must match `window_id` in sync_payload.py,
+    /// so a local bar and its synced copy collapse into one.
+    static func syncWindowID(_ row: JSON) -> String {
+        if let window = row["window"].string, !window.isEmpty { return String(window.prefix(32)) }
+        if let duration = row["window"]["duration"].double, duration > 0,
+           let unit = row["window"]["unit"].string, !unit.isEmpty {
+            return String((String(format: "%g", duration) + unit.lowercased()).prefix(32))
+        }
+        if let minutes = row["window_minutes"].double, minutes > 0 {
+            return String(format: "%gm", minutes)
+        }
+        return "all"
+    }
+
     /// Synced rows use a bare epoch for resets_at and carry no model-group
     /// label. Normalize both so the account card's bars read like local ones
     /// ("Gemini · 5 小时" instead of five identical "5 小时"/"7 天" rows).
@@ -238,7 +260,7 @@ private struct RemoteQuotaSection: View {
         var map: [String: Entry] = [:]
         for row in rows {
             let key = row["account"].string ?? ""
-            var entry = map[key] ?? Entry(id: key, provider: nil)
+            var entry = map[key] ?? Entry(id: key, provider: AccountsView.syncProvider(accountKey: key) ?? row["provider"].string)
             entry.quota.append(row)
             map[key] = entry
         }
@@ -255,6 +277,8 @@ private struct RemoteQuotaSection: View {
     private func title(_ entry: Entry) -> String {
         let handle = "账号 " + String(entry.id.prefix(8)) + "…"
         guard let provider = entry.provider else { return handle }
+        // A keyless account has no id worth showing; the device label tells them apart.
+        if AccountsView.syncProvider(accountKey: entry.id) != nil { return Catalog.brand(provider).name }
         return Catalog.brand(provider).name + " · " + handle
     }
 
@@ -371,7 +395,7 @@ struct AccountCard: View {
 
     private func sameWindow(_ lhs: JSON, _ rhs: JSON) -> Bool {
         lhs["bucket"].string == rhs["bucket"].string
-            && lhs["window"].string == rhs["window"].string
+            && AccountsView.syncWindowID(lhs) == AccountsView.syncWindowID(rhs)
     }
 
     /// Local rows win unless a synced observation for the same account/window

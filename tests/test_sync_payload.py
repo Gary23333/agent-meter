@@ -431,5 +431,103 @@ class SyncRouteTests(unittest.TestCase):
         self.assertEqual(len(snapshot["sources"]), 1)
 
 
+def quota_source(sid, rows, key=None):
+    out = {"id": sid, "scope": "account", "status": "available",
+           "metrics": {"quota": {"status": "available", "value": rows}}}
+    if key:
+        out["account_key"] = key
+    return out
+
+
+class QuotaWindowTests(unittest.TestCase):
+    def test_every_provider_window_shape_is_carried(self):
+        snapshot = {"sources": [
+            quota_source("codex", [{"bucket": "codex", "window": "primary", "window_minutes": 10080,
+                                    "remaining_percent": 80}], "k1"),
+            quota_source("claude", [{"bucket": "five_hour", "window_minutes": 300, "remaining_percent": 70},
+                                    {"bucket": "seven_day", "window_minutes": 10080, "remaining_percent": 60}], "k2"),
+            quota_source("kimi", [{"bucket": "limit5h", "window": {"duration": 5, "unit": "hour"},
+                                   "remaining_percent": 50}]),
+            quota_source("workbuddy", [{"bucket": "credits", "remaining_percent": 40}]),
+            quota_source("zcode", [{"bucket": "quota", "window_minutes": 300, "remaining_percent": 30},
+                                   {"bucket": "quota", "window_minutes": 10080, "remaining_percent": 20}]),
+        ]}
+        rows = sync_payload.quota_rows(snapshot, NOW)
+        self.assertEqual([(r["account"], r["bucket"], r["window"]) for r in rows], [
+            ("k1", "codex", "primary"), ("k2", "five_hour", "300m"), ("k2", "seven_day", "10080m"),
+            ("kimi", "limit5h", "5hour"), ("workbuddy", "credits", "all"),
+            ("zcode", "quota", "300m"), ("zcode", "quota", "10080m")])
+        parsed = parse_payload(build_payload(snapshot, DEVICE, now=NOW))
+        self.assertEqual(len(parsed["quota"]), 7)
+
+    def test_same_account_on_two_devices_is_one_row_with_the_newest_value(self):
+        day = sync_payload.quota_rows({"sources": [quota_source("kimi", [{"bucket": "5h", "remaining_percent": 90}])]},
+                                      NOW)[0]
+        older, newer = dict(day, remaining_percent=90, observed_at=NOW - 60), dict(day, remaining_percent=35, observed_at=NOW)
+        store = {"local_device": DEVICE, "devices": {"b" * 32: {"quota": [newer]}, "c" * 32: {"quota": [older]}}}
+        rows = sync_store.quota_history(store, [dict(day, remaining_percent=70, observed_at=NOW - 30)])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["remaining_percent"], 35)
+        self.assertEqual(rows[0]["device"], "b" * 32)
+
+    def test_different_accounts_stay_separate(self):
+        snapshot = {"sources": [quota_source("claude", [{"bucket": "five_hour", "window_minutes": 300}], "k1"),
+                                quota_source("claude#2", [{"bucket": "five_hour", "window_minutes": 300}], "k2")]}
+        self.assertEqual({r["account"] for r in sync_payload.quota_rows(snapshot, NOW)}, {"k1", "k2"})
+
+    def test_two_logins_without_an_account_id_are_not_merged(self):
+        snapshot = {"sources": [quota_source("kimi", [{"bucket": "limit5h", "remaining_percent": 90}]),
+                                quota_source("kimi#2", [{"bucket": "limit5h", "remaining_percent": 10}])]}
+        self.assertEqual(sync_payload.quota_rows(snapshot, NOW), [])
+
+
+def seen(account, used, reset=NOW + 3600, observed=NOW, provider="kimi", bucket="5h"):
+    return {"account": account, "provider": provider, "bucket": bucket, "window": "300m", "day": "2026-11-09",
+            "observed_at": observed, "used_percent": used, "remaining_percent": 100 - used,
+            "window_minutes": 300, "resets_at": reset}
+
+
+class KeylessAccountTests(unittest.TestCase):
+    def resolve(self, local, *remote):
+        store = {"local_device": DEVICE, "devices": {
+            chr(ord("b") + i) * 32: {"quota": rows} for i, rows in enumerate(remote)}}
+        view = sync_store.resolve_accounts(store, local)
+        return [row["account"] for device in sorted(view["devices"]) for row in view["devices"][device]["quota"]]
+
+    def test_matching_reset_and_usage_is_one_account(self):
+        self.assertEqual(self.resolve([seen("kimi", 40)], [seen("kimi", 37, NOW + 3650, NOW - 300)]), ["kimi"])
+
+    def test_different_reset_time_is_another_account(self):
+        self.assertEqual(self.resolve([seen("kimi", 40)], [seen("kimi", 40, NOW + 9000)]), ["kimi~" + "b" * 8])
+
+    def test_usage_one_account_could_not_produce_is_another_account(self):
+        self.assertEqual(self.resolve([seen("kimi", 80)], [seen("kimi", 20)]), ["kimi~" + "b" * 8])
+
+    def test_keyless_joins_the_keyed_account_of_its_provider(self):
+        key = "a" * 24
+        self.assertEqual(self.resolve([seen(key, 40, provider="claude")], [seen("claude", 41, provider="claude")]), [key])
+
+    def test_two_keyed_accounts_are_never_merged(self):
+        one, two = "a" * 24, "b" * 24
+        self.assertEqual(self.resolve([seen(one, 40, provider="claude")], [seen(two, 40, provider="claude")]), [two])
+
+    def test_windows_and_mac_names_of_one_provider_match(self):
+        self.assertEqual(self.resolve([seen("minimax_code", 40, provider="minimax_code")],
+                                      [seen("mcode", 40, provider="mcode")]), ["minimax_code"])
+
+    def test_a_finished_window_does_not_split_an_account(self):
+        old = seen("kimi", 90, NOW - 60, NOW - 7200)
+        self.assertEqual(self.resolve([seen("kimi", 5)], [old]), ["kimi"])
+
+    def test_no_shared_window_stays_separate(self):
+        self.assertEqual(self.resolve([seen("kimi", 40)], [seen("kimi", 40, bucket="week")]), ["kimi~" + "b" * 8])
+
+    def test_the_stored_rows_are_not_rewritten(self):
+        rows = [seen("kimi", 20)]
+        store = {"local_device": DEVICE, "devices": {"b" * 32: {"quota": rows}}}
+        sync_store.resolve_accounts(store, [seen("kimi", 80)])
+        self.assertEqual(rows[0]["account"], "kimi")
+
+
 if __name__ == "__main__":
     unittest.main()

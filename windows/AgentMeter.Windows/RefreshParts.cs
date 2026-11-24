@@ -5,11 +5,26 @@ namespace AgentMeter.Windows;
 
 internal sealed partial class MeterWindow
 {
+    /// <summary>最近一次刷新的本机额度（不含凭据），同步上传时补齐需要密钥才能读取的账户。</summary>
+    internal string? LatestAccountsJson { get; private set; }
+    JsonNode? lastSyncedQuota;
+
+    /// <summary>所有账户读完后才比较，否则尚未返回的本机账户会被当成仅其他设备可见。</summary>
+    Task<string> StartSyncedQuota(JsonObject snapshot, CancellationToken cancellation)
+    {
+        LatestAccountsJson = CardInput.Create(snapshot, allAccounts: true);
+        return SyncPreferences.Load(AccountPreferences.DefaultDirectory) is null
+            ? Task.FromResult("""{"status":"disabled","accounts":[]}""")
+            : RunCollector("--sync-quota-view", cancellation, LatestAccountsJson);
+    }
+
     /// <summary>每个来源完成后立即合并，避免慢来源挡住已完成的账户或本机数据。</summary>
     async Task ApplyRefreshPartsAsync(JsonObject snapshot, List<(string Name, Task<string> Task)> pending, bool partialFailure,
-        bool profilesInvalid = false, Func<JsonObject, Task<string>>? startCards = null)
+        bool profilesInvalid = false, Func<JsonObject, Task<string>>? startCards = null,
+        Func<JsonObject, Task<string>>? startSynced = null)
     {
         int finished = 0;
+        bool syncedStarted = false;
         while (pending.Count > 0)
         {
             var ready = await Task.WhenAny(pending.Select(part => part.Task));
@@ -38,11 +53,13 @@ internal sealed partial class MeterWindow
                     lastActivityAttempt = DateTimeOffset.UtcNow;
                 }
                 else if (name == "quota_cards" || name == "forecast") snapshot[name] = data;
+                else if (name == "synced_quota") { snapshot[name] = data; lastSyncedQuota = data.DeepClone(); }
                 else snapshot["other_accounts"]![name] = data;
             }
             catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
             {
-                partialFailure = true;
+                // 其他设备的额度只是补充，读取失败不影响本机数据的状态。
+                partialFailure |= name != "synced_quota";
                 if (name == "accounts")
                 {
                     snapshot["account"] = new JsonObject { ["status"] = "error", ["reason"] = "account_read_failed" };
@@ -56,7 +73,7 @@ internal sealed partial class MeterWindow
                     snapshot["local_medals"] = new JsonObject { ["status"] = "error", ["incomplete"] = true, ["medals"] = new JsonArray() };
                 }
                 else if (name == "quota_cards" || name == "forecast") snapshot[name] = new JsonObject { ["status"] = "error" };
-                else snapshot["other_accounts"]![name] = new JsonObject { ["status"] = "error" };
+                else if (name != "synced_quota") snapshot["other_accounts"]![name] = new JsonObject { ["status"] = "error" };
             }
             ApplyAccountPreferences(snapshot);
             if (!demo) BudgetState.Apply(snapshot, AccountPreferences.DefaultDirectory);
@@ -67,11 +84,16 @@ internal sealed partial class MeterWindow
             else if (name == "history" && snapshot["history"] is JsonObject histories)
                 partialFailure |= histories.Any(item => HasError(item.Value));
             else if (name is "quota_cards" or "forecast") partialFailure |= HasError(snapshot[name]);
-            else partialFailure |= HasError(snapshot["other_accounts"]![name]);
+            else if (name != "synced_quota") partialFailure |= HasError(snapshot["other_accounts"]![name]);
             if (name == "accounts" && startCards is not null) pending.Add(("quota_cards", startCards(snapshot)));
+            if (startSynced is not null && !syncedStarted && !pending.Any(part => part.Name is not ("forecast" or "quota_cards" or "history")))
+            {
+                syncedStarted = true;
+                pending.Add(("synced_quota", startSynced(snapshot)));
+            }
             using (var document = JsonDocument.Parse(snapshot.ToJsonString()))
             {
-                Render(document.RootElement, accountDetailsPending: pending.Any(part => part.Name is not ("forecast" or "quota_cards")));
+                Render(document.RootElement, accountDetailsPending: pending.Any(part => part.Name is not ("forecast" or "quota_cards" or "synced_quota")));
                 NotifyLowQuota(document.RootElement);
                 if (name == "history" && !demo && BudgetTriggered is not null)
                 {
