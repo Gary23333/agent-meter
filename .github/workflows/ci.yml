@@ -25,6 +25,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install compressed-fixture support
         run: sudo apt-get update && sudo apt-get install -y zstd
+      - name: Install sync-crypto test dependency
+        run: python -m pip install "cryptography==46.0.7"
       - name: Run isolated offline regression tests
         run: python scripts/test-offline.py
       - name: Build and validate Python distributions

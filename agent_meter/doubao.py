@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
+from .sqlite_ro import readonly_uri
 from .model import DISPLAY_ZONE, SourceError, account_key, decimal_string, metric, source, timestamp
 from .transport import MAX_BODY, post_json
 
@@ -268,7 +269,7 @@ def collect_doubao(session, now, timeout=15):
 
 
 def _read_cookie_rows(db_path):
-    db = sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=5)
+    db = sqlite3.connect(readonly_uri(db_path), uri=True, timeout=5)
     try:
         rows = db.execute("SELECT host_key, name, encrypted_value, expires_utc FROM cookies "
                           "WHERE host_key LIKE '%doubao.com' AND name <> ''").fetchall()

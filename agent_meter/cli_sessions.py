@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .sqlite_ro import readonly_uri
 from . import peak
 from . import daily as daily_mod
 from .model import SourceError, metric, period_bounds, source, timestamp
@@ -387,7 +388,7 @@ def _readonly_sqlite(path, missing_code, read_code):
         raise SourceError(missing_code)
     conn = None
     try:
-        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
+        conn = sqlite3.connect(readonly_uri(path), uri=True, timeout=3)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA query_only=ON")
         conn.execute("BEGIN")

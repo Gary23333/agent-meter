@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .sqlite_ro import readonly_uri
 from . import peak
 from . import daily as daily_mod
 from .opencode_tokens import _tokens
@@ -45,7 +46,7 @@ def readonly_database(path):
         raise SourceError("design_opencode_db_not_found")
     conn = None
     try:
-        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
+        conn = sqlite3.connect(readonly_uri(path), uri=True, timeout=3)
         conn.execute("PRAGMA query_only=ON")
         conn.execute("BEGIN")
         yield conn
@@ -74,7 +75,7 @@ def copied_session_ids(path):
     if not path.is_file():
         return set(), "opencode_absent"
     try:
-        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
+        conn = sqlite3.connect(readonly_uri(path), uri=True, timeout=3)
         try:
             conn.execute("PRAGMA query_only=ON")
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}

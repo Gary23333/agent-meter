@@ -677,11 +677,11 @@ enum LocalUsage {
                     "cache_read", "cache_write", "total_tokens", "peak_tokens", "offpeak_tokens"] {
             totals[key] = .number((totals[key]?.double ?? 0) + (window["totals"][key].double ?? 0))
         }
-        let denominator = (totals["fresh_input"]?.double ?? 0)
-            + (totals["cache_read"]?.double ?? 0)
-            + (totals["cache_write"]?.double ?? 0)
-        totals["cache_hit_rate"] = denominator > 0
-            ? .number((totals["cache_read"]?.double ?? 0) / denominator) : .null
+        let freshInput: Double = totals["fresh_input"]?.double ?? 0
+        let cacheRead: Double = totals["cache_read"]?.double ?? 0
+        let cacheWrite: Double = totals["cache_write"]?.double ?? 0
+        let denominator: Double = freshInput + cacheRead + cacheWrite
+        totals["cache_hit_rate"] = denominator > 0 ? JSON.number(cacheRead / denominator) : JSON.null
         out["totals"] = .object(totals)
 
         var groups = out["groups"]?.array ?? []

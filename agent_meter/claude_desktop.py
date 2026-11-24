@@ -30,6 +30,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
+from .sqlite_ro import readonly_uri
 from .claude_code import collect_claude_web
 from .model import SourceError
 from .transport import MAX_BODY
@@ -132,7 +133,7 @@ def cookie_rows(home):
     if not path.is_file():
         raise SourceError("claude_desktop_cookies_missing")
     try:
-        db = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5)
+        db = sqlite3.connect(readonly_uri(path), uri=True, timeout=5)
     except sqlite3.Error:
         raise SourceError("claude_desktop_cookies_unreadable") from None
     try:
