@@ -470,18 +470,6 @@ struct AccountCard: View {
                                 value: "\(Int(images)) 张",
                                 detail: detail.isEmpty ? nil : detail.joined(separator: " · ")))
         }
-        // Qoder CN local credits ledger (its logs carry credits, never token
-        // counts): account-card statistics only, never local consumption.
-        if let usage = source.metric("credits")?.value["usage"], !usage.isNull, !usage["periods"].isNull {
-            let periods = usage["periods"]
-            let today = periods["today"]["totals"], month = periods["30d"]["totals"], all = periods["all"]["totals"]
-            rows.append(InfoRow(symbol: "circle.hexagongrid.fill", title: "积分消耗 今日",
-                                value: Fmt.grouped(Fmt.credits(today["credits"])),
-                                detail: "\(Int(today["requests"].double ?? 0)) 次请求 · 计费 " + Fmt.grouped(Fmt.credits(today["billable_credits"]))))
-            rows.append(InfoRow(symbol: "calendar.badge.clock", title: "积分 近 30 天 / 全部",
-                                value: Fmt.grouped(Fmt.credits(month["credits"])),
-                                detail: "全部 " + Fmt.grouped(Fmt.credits(all["credits"])) + " · 本机记录，不计入本机消耗"))
-        }
         // Design media (image/video) credit estimate: reference-only, never
         // reconciled against the wallet; unpriced tasks stay visible.
         if let media = source.metric("media_credits") {

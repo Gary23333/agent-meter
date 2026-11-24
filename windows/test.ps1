@@ -7,7 +7,7 @@ $testCases = @(
     'tests.test_windows_port', 'tests.test_windows_cost_medals', 'tests.test_windows_codex_images', 'tests.test_windows_budget', 'tests.test_windows_rewards', 'tests.test_sync_crypto', 'tests.test_windows_sync', 'tests.test_sources', 'tests.test_dsh_tokens',
     'tests.test_cli_sessions.CodexTests', 'tests.test_cli_sessions.McodeTests.test_rows_as_is_and_schema_guard',
     'tests.test_local_tokens.ZCodeTests', 'tests.test_local_tokens.WorkBuddyTests',
-    'tests.test_local_tokens.OpenCodeTests', 'tests.test_local_tokens.QoderCreditsTests',
+    'tests.test_local_tokens.OpenCodeTests',
     'tests.test_kimi_tokens.KimiTokenTests', 'tests.test_mimocode_tokens', 'tests.test_claude_code',
     'tests.test_prices.PriceTableTests', 'tests.test_prices.PeakPriceTests',
     'tests.test_activity.CodexImageTests', 'tests.test_activity.KimiTests', 'tests.test_activity.OpencodeTests', 'tests.test_activity.CollectActivityTests',

@@ -48,7 +48,7 @@ internal sealed partial class MeterWindow
                 else if (name == "history")
                 {
                     if (data["history"] is not JsonObject) throw new JsonException("history_bundle_incomplete");
-                    foreach (string key in new[] { "history", "local_credits", "image_files", "daily_trend", "calendar_report", "local_medals", "activity", "price_status", "budget" })
+                    foreach (string key in new[] { "history", "image_files", "daily_trend", "calendar_report", "local_medals", "activity", "price_status", "budget" })
                         snapshot[key] = data[key]?.DeepClone();
                     lastActivityAttempt = DateTimeOffset.UtcNow;
                 }

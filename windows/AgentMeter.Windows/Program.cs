@@ -717,18 +717,7 @@ internal sealed partial class MeterWindow : Form
         content.AutoScrollPosition = P(0, 230); Application.DoEvents();
         if (content.AutoScrollPosition.Y == 0) throw new InvalidOperationException("account_local_scroll_failed");
         SavePreview("aurora-account-local-scrolled");
-        var qoderCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "qoder-local-credits");
-        if (!qoderCard.Controls.OfType<Label>().Any(label => label.Text.Contains("非账户余额")))
-            throw new InvalidOperationException("Qoder 本机积分需要标明不等于账户余额");
-        if (!qoderCard.Controls.OfType<Label>().Any(label => label.Text == "今日 12.5"))
-            throw new InvalidOperationException("Qoder 本机积分应显示今日记录");
-        content.ScrollControlIntoView(qoderCard); Application.DoEvents(); SavePreview("aurora-qoder-local");
         string qoderSnapshot = lastSnapshot!;
-        var noQoder = JsonNode.Parse(qoderSnapshot)!.AsObject(); noQoder.Remove("local_credits");
-        using (var snapshot = JsonDocument.Parse(noQoder.ToJsonString())) Render(snapshot.RootElement);
-        if (content.Controls.OfType<RoundedCard>().Any(card => card.Name == "qoder-local-credits"))
-            throw new InvalidOperationException("没有本机 Qoder 记录时不能显示零积分");
-        using (var snapshot = JsonDocument.Parse(qoderSnapshot)) Render(snapshot.RootElement);
         var qoderDemo = JsonNode.Parse(qoderSnapshot)!.AsObject();
         qoderDemo["other_accounts"]!["Qoder CN"] = JsonNode.Parse("""{"status":"available","quota":{"value":[{"bucket":"totalQuota","remaining_percent":80}]},"credits":{"value":[{"bucket":"totalQuota","remaining":"80"}]}}""");
         using (var snapshot = JsonDocument.Parse(qoderDemo.ToJsonString())) Render(snapshot.RootElement);
@@ -1774,7 +1763,6 @@ internal sealed partial class MeterWindow : Form
         AddMiMoAccount(GetValue(otherAccounts, "MiMo"));
         AddQoderAccount(GetValue(otherAccounts, "Qoder CN"));
         AddTraeAccount(GetValue(otherAccounts, "TRAE CN"));
-        AddQoderLocalCredits(GetValue(root, "local_credits"));
         foreach (var synced in SyncedQuota.Read(GetValue(root, "synced_quota")))
             AddQuotaGroup(synced.Heading, synced.Windows.Select(item => new QuotaRow(item.Label, item.Remaining, item.ResetAt)).ToList());
         FinishAccountGauges(root);
@@ -1833,28 +1821,6 @@ internal sealed partial class MeterWindow : Form
             if (visible == 0) AddCard("本机记录", "暂无数据", "未发现支持的会话记录", null);
         }
         AddCodexImageFiles(GetValue(root, "image_files"));
-        var creditsHistory = GetValue(root, "local_credits");
-        if (creditsHistory.ValueKind == JsonValueKind.Object)
-        {
-            bool headingShown = false;
-            foreach (var item in creditsHistory.EnumerateObject())
-            {
-                if (IsAbsent(item.Value) || GetString(item.Value, "reason", "") == "history_no_usage_records") continue;
-                if (!headingShown) { AddHeading("本机积分", "独立计量，不等于账户余额"); headingShown = true; }
-                var periods = GetValue(GetValue(item.Value, "value"), "periods");
-                var today = GetValue(GetValue(periods, usagePeriod), "totals");
-                var all = GetValue(GetValue(periods, "all"), "totals");
-                var week = GetValue(GetValue(periods, "7d"), "totals");
-                var month = GetValue(GetValue(periods, "30d"), "totals");
-                string todayCredits = GetString(today, "credits", "");
-                string allCredits = GetString(all, "credits", "");
-                string billed = GetString(all, "billable_credits", "");
-                string weekly = GetString(week, "credits", "—"), monthly = GetString(month, "credits", "—");
-                AddCard(item.Name + " · 本机积分消耗", todayCredits == "" ? "暂无数据" : todayCredits + " " + UsagePeriodLabel,
-                        allCredits == "" ? Reason(item.Value) : $"近 7 天 {weekly} · 近 30 天 {monthly}", null,
-                        allCredits == "" ? null : $"累计 {allCredits} · 计费 {billed}");
-            }
-        }
         }
         else if (view == View.Report) AddCalendarReport(GetValue(root, "calendar_report"));
         else if (view == View.Forecast) AddForecast(GetValue(root, "forecast"));
@@ -2481,7 +2447,7 @@ internal sealed partial class MeterWindow : Form
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(S(280), contentViewport.ClientSize.Width - S(28)); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}},"MiniMax Code":{"status":"available","quota":{"value":[{"bucket":"5h","remaining_percent":55,"resets_at":{"epoch_seconds":1794654000}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.3-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}},"estimate":{"amount_usd":"2.464","partial":false}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false},"calendar_report":{"periods":{"week":{"previous_start":"2026-11-02","current_start":"2026-11-09","current_end":"2026-11-14","previous_tokens":4200000,"current_tokens":6367000},"month":{"previous_start":"2026-10-01","current_start":"2026-11-01","current_end":"2026-11-14","previous_tokens":14200000,"current_tokens":8200000}},"sources":2,"incomplete":false,"timezone":"Asia/Shanghai"},"activity":{"status":"available","window_hours":24,"idle_minutes":15,"apps":[{"name":"Codex","sessions":5,"recent_updates":2,"last_updated":1794650400},{"name":"Claude Code","sessions":2,"recent_updates":0,"last_updated":1794643200}]}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}},"MiniMax Code":{"status":"available","quota":{"value":[{"bucket":"5h","remaining_percent":55,"resets_at":{"epoch_seconds":1794654000}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.3-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}},"estimate":{"amount_usd":"2.464","partial":false}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false},"calendar_report":{"periods":{"week":{"previous_start":"2026-11-02","current_start":"2026-11-09","current_end":"2026-11-14","previous_tokens":4200000,"current_tokens":6367000},"month":{"previous_start":"2026-10-01","current_start":"2026-11-01","current_end":"2026-11-14","previous_tokens":14200000,"current_tokens":8200000}},"sources":2,"incomplete":false,"timezone":"Asia/Shanghai"},"activity":{"status":"available","window_hours":24,"idle_minutes":15,"apps":[{"name":"Codex","sessions":5,"recent_updates":2,"last_updated":1794650400},{"name":"Claude Code","sessions":2,"recent_updates":0,"last_updated":1794643200}]}}
     """;
 }
 internal sealed class RoundedCard : Panel

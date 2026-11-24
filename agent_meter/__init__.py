@@ -1,3 +1,3 @@
 """Read-only local usage collection, independent of the menu bar UI."""
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"

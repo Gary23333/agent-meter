@@ -215,7 +215,7 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(failed['medals'], [])
 
     def test_medal_failure_does_not_hide_local_usage(self):
-        source = {'version': 1, 'observed_at': time.time(), 'account': {'status': 'disabled'}, 'history': {}, 'local_credits': {}}
+        source = {'version': 1, 'observed_at': time.time(), 'account': {'status': 'disabled'}, 'history': {}}
         with patch('windows.backend.local_medals', side_effect=ValueError('synthetic')):
             result = backend.compact_history(source)
         self.assertEqual(result['history'], {})
@@ -496,19 +496,6 @@ class WindowsBackendTests(unittest.TestCase):
                 result = backend.histories(Path(root), now)['OpenCode']()
             self.assertEqual((result['status'], result['reason']), ('partial', 'opencode_v2_partial'))
             self.assertEqual(result['value']['periods']['all']['totals']['total_tokens'], 14)
-
-    def test_qoder_credits_are_separate_and_keep_decimal_strings(self):
-        source = {'version': 1, 'observed_at': 1, 'account': {'status': 'disabled'}, 'history': {},
-                  'local_credits': {'Qoder CN': {'status': 'available', 'value': {'periods': {
-                      'today': {'totals': {'requests': 2, 'credits': '1.250', 'billable_credits': '0.500'}},
-                      'all': {'totals': {'requests': 2, 'credits': '1.250', 'billable_credits': '0.500'}}}}}}}
-        result = backend.compact_history(source)
-        self.assertEqual(result['history'], {})
-        self.assertEqual(result['local_credits']['Qoder CN']['value']['periods']['all']['totals'],
-                         {'credits': '1.250', 'billable_credits': '0.500'})
-        source['local_credits']['Qoder CN'] = {'status': 'error', 'reason': 'read_failed', 'value': None}
-        self.assertEqual(backend.compact_history(source)['local_credits']['Qoder CN'],
-                         {'status': 'error', 'reason': 'read_failed', 'value': None})
 
     def test_empty_history_directory_is_not_reported_as_zero_usage(self):
         metric = {'version': 1, 'observed_at': 1, 'account': {'status': 'disabled'}, 'history':

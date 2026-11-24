@@ -29,7 +29,6 @@ from .model import SCHEMA_VERSION, SourceError, failed_source, metric, source, t
 from .opencode_tokens import collect_opencode_tokens
 from .mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
 from .qoder import collect_qoder
-from .qoder_tokens import collect_qoder_credits, merge_credits_metric
 from .web_sources import as_account_lists, collect_qoder_web, collect_trae, collect_workbuddy
 from .minimax import collect_minimax
 from .deepseek import collect_deepseek
@@ -376,11 +375,6 @@ def collect(config=None,now=None):
                 lambda:codex_image_metric(config["codex_images_dir"],config["codex_history_db"],now,
                                           currency=table.currency,fx_rate=table.fx_rate,
                                           quality=config.get("codex_image_quality","high")))
-        # Qoder CN's local credits ledger is account-page statistics, never a
-        # tokens metric: it must not enter the local-consumption sum.
-        credits_futures={}
-        if not switched_off("qoder") and "qoder" not in skip_ledgers:
-            credits_futures["qoder"]=pool.submit(lambda:collect_qoder_credits(config["qoder_projects_dir"],now))
         # Design media credit estimate: local task ledgers + gateway price
         # table, reference-only; gated by the same source switch.
         media_futures={}
@@ -419,23 +413,6 @@ def collect(config=None,now=None):
         try:src["metrics"]["image_generation"]=future.result()
         except SourceError as e:src["metrics"]["image_generation"]=metric(status="not_connected",reason=e.code)
         except Exception:src["metrics"]["image_generation"]=metric(status="error",reason="codex_image_parse_failed")
-    # Qoder CN local credits: folded into the account source's credits metric
-    # (wallets stay under "rows"), never into tokens, so the local-consumption
-    # tab cannot sum credits as tokens. Attached even when the account query
-    # failed; a ledger error never discards web/SDK wallet rows.
-    for src in sources:
-        future=credits_futures.get(src["id"])
-        if future is None:
-            continue
-        try:ledger=future.result()
-        except SourceError as e:
-            src["diagnostics"]["credits_ledger_error"]=e.code
-            if src["metrics"]["credits"]["value"] is None:
-                src["metrics"]["credits"]=metric(status="not_connected",reason=e.code)
-        except Exception:
-            src["diagnostics"]["credits_ledger_error"]="local_credits_parse_failed"
-        else:
-            src["metrics"]["credits"]=merge_credits_metric(src["metrics"]["credits"],ledger)
     # Design media estimate attaches like the local ledgers: its failure never
     # touches the wallet rows, and it never enters the local-consumption sum.
     for src in sources:
@@ -743,13 +720,6 @@ class SnapshotService:
                     image=src["metrics"].get("image_generation") or {}
                     if src["id"]=="codex" and image:
                         cached["metrics"]["image_generation"]=image
-                    if src["id"]=="qoder":
-                        credits=src["metrics"]["credits"].get("value") or {}
-                        if isinstance(credits,dict) and "usage" in credits:
-                            recovered=merge_credits_metric(cached["metrics"]["credits"],credits["usage"])
-                            if recovered["value"]["rows"]:
-                                recovered["status"]="stale"
-                            cached["metrics"]["credits"]=recovered
                     fresh["sources"][index]=cached
                     replaced=True
             if replaced:

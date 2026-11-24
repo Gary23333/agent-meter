@@ -30,7 +30,6 @@ from agent_meter.kimi_legacy_tokens import collect_kimi_legacy_tokens
 from agent_meter.opencode_tokens import collect_opencode_tokens
 from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
 from agent_meter.minimax import collect_minimax, normalize_minimax
-from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, default_fetchers
 from windows import rewards as windows_rewards
 from windows import sync_ops as windows_sync
@@ -369,7 +368,6 @@ def collect(local_only=False, home=None, account_only=False, disabled_accounts=f
     jobs = histories(home, now)
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {name: executor.submit(guarded, fn) for name, fn in jobs.items()}
-        qoder = executor.submit(guarded, lambda: metric(collect_qoder_credits(home / ".qoder-cn" / "projects", now)))
         codex_root = Path(os.environ.get("CODEX_HOME") or home / ".codex")
         images = executor.submit(guarded, lambda: image_files(codex_root / "generated_images", now))
         account = None if local_only else executor.submit(account_sources, home, now, disabled_accounts, enable_minimax, saved_accounts)
@@ -378,7 +376,7 @@ def collect(local_only=False, home=None, account_only=False, disabled_accounts=f
                 "account": {"status": "disabled", "reason": "local_only"} if account is None else account_values[0],
                 "other_accounts": {} if account_values is None else account_values[1],
                 "history": {name: future.result() for name, future in futures.items()},
-                "local_credits": {"Qoder CN": qoder.result()}, "image_files": images.result()}
+                "image_files": images.result()}
 
 
 def recent_daily_trend(result):
@@ -868,22 +866,6 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
     except (TypeError, ValueError, OverflowError, KeyError, AttributeError):
         # 收集册属于附加展示，异常时不应阻断账户和本机用量页面。
         compact["local_medals"] = {"medals": [], "sources": 0, "incomplete": True}
-    compact["local_credits"] = {}
-    for name, item in result.get("local_credits", {}).items():
-        value = item.get("value")
-        periods = value.get("periods", {}) if isinstance(value, dict) else {}
-        all_totals = periods.get("all", {}).get("totals", {})
-        selected = {}
-        if all_totals.get("requests", 0) > 0:
-            for period in ("today", "7d", "30d", "all"):
-                totals = periods.get(period, {}).get("totals", {})
-                if isinstance(totals.get("credits"), str):
-                    selected[period] = {"totals": {"credits": totals["credits"],
-                                                   "billable_credits": totals.get("billable_credits")}}
-        status = item.get("status")
-        compact["local_credits"][name] = {"status": status if selected or status in {"error", "unavailable", "partial"} else "not_provided",
-                                          "reason": item.get("reason") or (None if selected else "history_no_usage_records"),
-                                          "value": {"periods": selected} if selected else None}
     return compact
 
 
