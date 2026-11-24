@@ -1,6 +1,8 @@
 using System.Drawing.Drawing2D;
 using System.Text.Json;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 internal sealed partial class MeterWindow
@@ -35,23 +37,23 @@ internal sealed partial class MeterWindow
     void AddPetPage(JsonElement root)
     {
         var mood = PetState.Select(root, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-        var preview = new PetHero(theme, pagePetPreferences.Pack, mood) { Height = 242, Margin = new Padding(0, 0, 0, 12) };
+        var preview = new PetHero(theme, pagePetPreferences.Pack, mood) { Height = S(242), Margin = Pad(0, 0, 0, 12) };
         content.Controls.Add(preview);
 
-        var switchCard = new RoundedCard(theme) { Height = 92, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        var heading = new Label { Text = "在桌面上陪着我", AutoSize = true, Location = new Point(17, 15), ForeColor = Primary,
+        var switchCard = new RoundedCard(theme) { Height = S(92), Margin = Pad(0, 0, 0, 12), BackColor = Card };
+        var heading = new Label { Text = "在桌面上陪着我", AutoSize = true, Location = P(17, 15), ForeColor = Primary,
             BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold) };
         var detail = new Label { Text = pagePetPreferences.Enabled ? "已显示 · 可拖动调整位置" : "默认隐藏，随时可以开启", AutoSize = true,
-            Location = new Point(18, 48), ForeColor = Muted, BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 8.5F) };
+            Location = P(18, 48), ForeColor = Muted, BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 8.5F) };
         var toggle = new RoundedActionButton(theme) { Name = "pet-toggle", Text = pagePetPreferences.Enabled ? "隐藏" : "显示",
-            Size = new Size(72, 34), Anchor = AnchorStyles.Top | AnchorStyles.Right, AccentText = true };
-        switchCard.Resize += (_, _) => toggle.Location = new Point(Math.Max(180, switchCard.Width - 88), 29);
+            Size = Sz(72, 34), Anchor = AnchorStyles.Top | AnchorStyles.Right, AccentText = true };
+        switchCard.Resize += (_, _) => toggle.Location = new Point(Math.Max(S(180), switchCard.Width - S(88)), S(29));
         toggle.Click += (_, _) => RequestPetChange(pagePetPreferences with { Enabled = !pagePetPreferences.Enabled });
         switchCard.Controls.AddRange([heading, detail, toggle]); content.Controls.Add(switchCard);
 
         AddHeading("选择形象", "内置形象 · 点击切换");
-        var grid = new TableLayoutPanel { Name = "pet-choices", ColumnCount = 3, RowCount = 3, Height = 352,
-            Margin = new Padding(0, 0, 0, 12), BackColor = Background };
+        var grid = new TableLayoutPanel { Name = "pet-choices", ColumnCount = 3, RowCount = 3, Height = S(352),
+            Margin = Pad(0, 0, 0, 12), BackColor = Background };
         for (int i = 0; i < 3; i++) { grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / 3)); grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F / 3)); }
         var packs = new[] { ("mochi", "麻薯"), ("bit", "比特"), ("gauge", "量量"), ("cat", "缓存猫"),
             ("bot", "码码"), ("tibo", "Tibo"), ("blob", "团团") };
@@ -59,20 +61,20 @@ internal sealed partial class MeterWindow
         {
             var (pack, name) = packs[i];
             var button = new PetChoiceButton(theme, pack, name, pagePetPreferences.Pack == pack)
-                { Name = "pet-choice-" + pack, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 8, 8) };
+                { Name = "pet-choice-" + pack, Dock = DockStyle.Fill, Margin = Pad(0, 0, 8, 8) };
             button.Click += (_, _) => RequestPetChange(pagePetPreferences with { Pack = pack });
             grid.Controls.Add(button, i % 3, i / 3);
         }
         content.Controls.Add(grid);
         bool isThree = pagePetPreferences.Pack is not ("mochi" or "bit");
-        var followCard = new RoundedCard(theme) { Height = 92, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        var followTitle = new Label { Text = "视线跟随光标", AutoSize = true, Location = new Point(17, 15), ForeColor = Primary,
+        var followCard = new RoundedCard(theme) { Height = S(92), Margin = Pad(0, 0, 0, 12), BackColor = Card };
+        var followTitle = new Label { Text = "视线跟随光标", AutoSize = true, Location = P(17, 15), ForeColor = Primary,
             BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold) };
         var followNote = new Label { Text = isThree ? "仅在显示桌宠时用于本地动画" : "切换到 3D 形象后可使用", AutoSize = true,
-            Location = new Point(18, 48), ForeColor = Muted, BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 8.5F) };
+            Location = P(18, 48), ForeColor = Muted, BackColor = Color.Transparent, Font = new Font(Font.FontFamily, 8.5F) };
         var followToggle = new RoundedActionButton(theme) { Name = "pet-follow-toggle", Text = !isThree ? "不支持" : pagePetPreferences.FollowCursor ? "已开启" : "已关闭",
-            Size = new Size(76, 34), Anchor = AnchorStyles.Top | AnchorStyles.Right, AccentText = true, Enabled = isThree };
-        followCard.Resize += (_, _) => followToggle.Location = new Point(Math.Max(180, followCard.Width - 92), 29);
+            Size = Sz(76, 34), Anchor = AnchorStyles.Top | AnchorStyles.Right, AccentText = true, Enabled = isThree };
+        followCard.Resize += (_, _) => followToggle.Location = new Point(Math.Max(S(180), followCard.Width - S(92)), S(29));
         followToggle.Click += (_, _) => RequestPetChange(pagePetPreferences with { FollowCursor = !pagePetPreferences.FollowCursor });
         followCard.Controls.AddRange([followTitle, followNote, followToggle]); content.Controls.Add(followCard);
         AddCard("状态依据", "近期额度与本机活动", "最低有效百分比用于提示，不比较各服务的绝对额度", null,
@@ -144,7 +146,7 @@ internal sealed class PetHero : Control
         using var baseFill = new SolidBrush(theme.Card);
         using var border = new Pen(theme.Border);
         e.Graphics.FillPath(baseFill, outside); e.Graphics.DrawPath(border, outside);
-        var stage = new Rectangle(14, 46, Width - 28, Height - 96);
+        var stage = new Rectangle(S(14), S(46), Width - S(28), Height - S(96));
         using var shape = PetArt.Round(stage, 20);
         using var fill = new LinearGradientBrush(stage, theme.CardEnd, theme.Background, 90F);
         e.Graphics.FillPath(fill, shape);
@@ -155,10 +157,10 @@ internal sealed class PetHero : Control
         if (pixelated) e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
         e.Graphics.DrawImage(shown, new Rectangle(stage.Left + (stage.Width - w) / 2, stage.Top + (stage.Height - h) / 2, w, h));
         using var titleFont = new Font(Font.FontFamily, 10F, FontStyle.Bold);
-        TextRenderer.DrawText(e.Graphics, mood.Description, titleFont, new Rectangle(17, 12, Width - 34, 26), theme.Primary,
+        TextRenderer.DrawText(e.Graphics, mood.Description, titleFont, new Rectangle(S(17), S(12), Width - S(34), S(26)), theme.Primary,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
         string info = mood.Remaining.HasValue ? $"最低有效额度 {mood.Remaining.Value:0.#}%" : "额度未知 · 等待数据";
-        TextRenderer.DrawText(e.Graphics, info + (IsLive ? " · 动态预览" : " · 静态预览"), Font, new Rectangle(17, Height - 39, Width - 34, 25), theme.Secondary,
+        TextRenderer.DrawText(e.Graphics, info + (IsLive ? " · 动态预览" : " · 静态预览"), Font, new Rectangle(S(17), Height - S(39), Width - S(34), S(25)), theme.Secondary,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
     }
     public void SetLiveFrame(Bitmap frame, PetMood value)
@@ -202,10 +204,10 @@ internal sealed class PetChoiceButton : Button
         e.Graphics.InterpolationMode = pixelated ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBicubic;
         if (pixelated) e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
         e.Graphics.DrawImage(art, new Rectangle((Width - w) / 2, 4, w, h));
-        TextRenderer.DrawText(e.Graphics, Text, Font, new Rectangle(4, h + 3, Width - 8, 21), theme.Primary,
+        TextRenderer.DrawText(e.Graphics, Text, Font, new Rectangle(S(4), h + S(3), Width - S(8), S(21)), theme.Primary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         using var small = new Font(Font.FontFamily, 7F);
-        TextRenderer.DrawText(e.Graphics, kind, small, new Rectangle(4, h + 24, Width - 8, 16), theme.Secondary,
+        TextRenderer.DrawText(e.Graphics, kind, small, new Rectangle(S(4), h + S(24), Width - S(8), S(16)), theme.Secondary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
         if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -6, -6));
     }

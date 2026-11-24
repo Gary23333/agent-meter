@@ -2,6 +2,8 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>独立 WebView2 资料：只在用户启用或登录时初始化，不读取现有浏览器资料。</summary>
@@ -68,7 +70,7 @@ internal sealed class QoderBrowser : IDisposable
 
     async Task<WebView2> CreateBackgroundAsync()
     {
-        host = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000), Size = new Size(1, 1) };
+        host = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000), Size = Sz(1, 1) };
         var view = new WebView2 { Dock = DockStyle.Fill };
         host.Controls.Add(view);
         _ = host.Handle; _ = view.Handle;

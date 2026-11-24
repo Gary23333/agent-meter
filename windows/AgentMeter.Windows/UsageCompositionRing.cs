@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>按已验证的互斥 Token 分类绘制圆环；缓存比例的分母仅包含已分类输入。</summary>
@@ -38,9 +40,9 @@ internal sealed class UsageCompositionRing : Control
             }
         using var number = new Font(Font.FontFamily, 13F, FontStyle.Bold);
         string rate = hitRate.HasValue ? $"{hitRate.Value * 100:0.#}%" : "—";
-        TextRenderer.DrawText(e.Graphics, rate, number, new Rectangle(0, Height / 2 - 24, Width, 27), theme.Primary,
+        TextRenderer.DrawText(e.Graphics, rate, number, new Rectangle(0, Height / 2 - S(24), Width, S(27)), theme.Primary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
-        TextRenderer.DrawText(e.Graphics, "缓存命中", Font, new Rectangle(0, Height / 2 + 3, Width, 21), theme.Secondary,
+        TextRenderer.DrawText(e.Graphics, "缓存命中", Font, new Rectangle(0, Height / 2 + S(3), Width, S(21)), theme.Secondary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
     }
 }

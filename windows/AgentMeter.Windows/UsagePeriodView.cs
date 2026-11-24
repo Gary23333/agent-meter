@@ -1,12 +1,14 @@
 using System.Text.Json;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 internal sealed partial class MeterWindow
 {
     void AddUsagePeriodSelector()
     {
-        var strip = new NavigationStrip { Name = "usage-period-selector", Height = 40, Margin = new Padding(0, 2, 0, 12), BackColor = Card };
+        var strip = new NavigationStrip { Name = "usage-period-selector", Height = S(40), Margin = Pad(0, 2, 0, 12), BackColor = Card };
         var buttons = new List<NavigationTab>();
         foreach (var (id, label) in new[] { ("today", "今日"), ("7d", "7 天"), ("30d", "30 天"), ("all", "全部") })
         {
@@ -25,8 +27,8 @@ internal sealed partial class MeterWindow
             buttons.Add(button); strip.Controls.Add(button);
         }
         strip.Resize += (_, _) => {
-            int width = Math.Max(1, (strip.ClientSize.Width - 6) / buttons.Count);
-            for (int index = 0; index < buttons.Count; index++) buttons[index].Bounds = new Rectangle(3 + width * index, 3, width, 34);
+            int width = Math.Max(1, (strip.ClientSize.Width - S(6)) / buttons.Count);
+            for (int index = 0; index < buttons.Count; index++) buttons[index].Bounds = new Rectangle(S(3) + width * index, S(3), width, S(34));
         };
         content.Controls.Add(strip);
     }

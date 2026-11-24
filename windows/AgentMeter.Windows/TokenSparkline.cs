@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>显示单个本机账本的逐日用量，不把走势解释为账户额度。</summary>

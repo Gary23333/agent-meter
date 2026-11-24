@@ -1,5 +1,7 @@
 using System.Text.Json;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>每日积分领取：只响应用户点击，不使用自动或定时触发。</summary>
@@ -7,8 +9,8 @@ internal sealed class RewardsDialog : Form
 {
     readonly MeterWindow owner;
     readonly ListView list = new() { Name = "rewards-status", View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false };
-    readonly Label message = new() { Name = "rewards-message", ForeColor = Color.DimGray, AutoSize = false, Height = 42, Dock = DockStyle.Bottom, Padding = new Padding(16, 2, 16, 0) };
-    readonly Label note = new() { Name = "rewards-note", ForeColor = Color.DimGray, AutoSize = false, Height = 34, Dock = DockStyle.Bottom, Padding = new Padding(16, 0, 16, 0) };
+    readonly Label message = new() { Name = "rewards-message", ForeColor = Color.DimGray, AutoSize = false, Height = S(42), Dock = DockStyle.Bottom, Padding = Pad(16, 2, 16, 0) };
+    readonly Label note = new() { Name = "rewards-note", ForeColor = Color.DimGray, AutoSize = false, Height = S(34), Dock = DockStyle.Bottom, Padding = Pad(16, 0, 16, 0) };
     readonly Button claim = new() { Name = "rewards-claim", Text = "立即领取", AutoSize = true };
     bool working;
 
@@ -17,10 +19,10 @@ internal sealed class RewardsDialog : Form
         this.owner = owner;
         Text = "每日积分领取"; StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false;
-        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = new Size(760, 500); MinimumSize = new Size(700, 440);
+        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = Sz(760, 500); MinimumSize = Sz(700, 440);
         var description = new Label
         {
-            Dock = DockStyle.Top, Height = 110, Padding = new Padding(16, 10, 16, 0),
+            Dock = DockStyle.Top, Height = S(110), Padding = Pad(16, 10, 16, 0),
             Text = "点「立即领取」时才会请求：TRAE 每日签到、WorkBuddy 已完成的成长任务。\n" +
                    "不会自动或定时领取，也不会因为打开窗口就请求账户。\n" +
                    "只使用本应用已登录的账户会话；会话只在内存中交给后台进程，不落盘、不进入日志。\n" +
@@ -31,10 +33,10 @@ internal sealed class RewardsDialog : Form
         list.Columns.Add("今日已领", 90);
         list.Columns.Add("上次检查", 150);
         list.Columns.Add("说明", 160);
-        var listHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 6, 16, 0) };
+        var listHost = new Panel { Dock = DockStyle.Fill, Padding = Pad(16, 6, 16, 0) };
         listHost.Controls.Add(list);
         note.Text = "状态优先读自本机账本；点「立即领取」才会请求账户。领取成功后会在 Windows 通知区提示。";
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 56, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(56), FlowDirection = FlowDirection.RightToLeft, Padding = Pad(8) };
         var cancel = new Button { Text = "关闭", AutoSize = true, DialogResult = DialogResult.Cancel };
         claim.Click += async (_, _) => await RefreshAsync(claimNow: true);
         buttons.Controls.AddRange([cancel, claim]);

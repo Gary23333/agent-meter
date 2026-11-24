@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 internal sealed partial class MeterWindow
@@ -34,15 +36,15 @@ internal sealed partial class MeterWindow
     }
     Label ForecastLabel(RoundedCard card, string text, int top, float size = 10, bool strong = false, Color? color = null)
     {
-        var label = new Label { Text = text, AutoEllipsis = true, Location = new Point(16, top), Height = (int)(size * 2.3),
+        var label = new Label { Text = text, AutoEllipsis = true, Location = P(16, top), Height = S((int)(size * 2.3)),
             ForeColor = color ?? Muted, Font = new Font(Font.FontFamily, size, strong ? FontStyle.Bold : FontStyle.Regular), BackColor = Color.Transparent };
         card.Controls.Add(label);
-        card.Resize += (_, _) => label.Width = Math.Max(0, card.ClientSize.Width - 32);
+        card.Resize += (_, _) => label.Width = Math.Max(S(0), card.ClientSize.Width - S(32));
         return label;
     }
     RoundedCard ForecastCard(int height)
     {
-        var card = new RoundedCard(theme) { Height = height, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var card = new RoundedCard(theme) { Height = S(height), Margin = Pad(0, 0, 0, 12), BackColor = Card };
         content.Controls.Add(card);
         return card;
     }
@@ -65,23 +67,23 @@ internal sealed partial class MeterWindow
         foreach (var (horizon, caption, index) in new[] { ("24h", "未来 24 小时", 0), ("48h", "未来 48 小时", 1) })
         {
             var range = ForecastRange.Read(GetValue(combined, horizon));
-            var column = new Panel { Top = 46, Height = 135, BackColor = Color.Transparent };
-            var title = new Label { Text = caption, Top = 0, Height = 22, Dock = DockStyle.None, ForeColor = Muted, BackColor = Color.Transparent };
-            var amount = new Label { Text = range is null ? "—" : $"{range.Median:0.#}%", Top = 23, Height = 48,
+            var column = new Panel { Top = S(46), Height = S(135), BackColor = Color.Transparent };
+            var title = new Label { Text = caption, Top = S(0), Height = S(22), Dock = DockStyle.None, ForeColor = Muted, BackColor = Color.Transparent };
+            var amount = new Label { Text = range is null ? "—" : $"{range.Median:0.#}%", Top = S(23), Height = S(48),
                 Font = new Font(Font.FontFamily, 27, FontStyle.Bold), ForeColor = Primary, BackColor = Color.Transparent };
-            var note = new Label { Text = range is null ? "无可合并的来源" : $"{range.Sources} 站 · {range.Minimum:0.#}–{range.Maximum:0.#}%", Top = 95,
-                Height = 24, ForeColor = Muted, BackColor = Color.Transparent, AutoEllipsis = true };
+            var note = new Label { Text = range is null ? "无可合并的来源" : $"{range.Sources} 站 · {range.Minimum:0.#}–{range.Maximum:0.#}%", Top = S(95),
+                Height = S(24), ForeColor = Muted, BackColor = Color.Transparent, AutoEllipsis = true };
             column.Controls.AddRange([title, amount, note]);
             if (range is not null)
             {
-                var band = new ForecastBand(theme, range) { Top = 75, Height = 14, BackColor = Card,
+                var band = new ForecastBand(theme, range) { Top = S(75), Height = S(14), BackColor = Card,
                     AccessibleName = $"{caption}加权中位数 {range.Median}%，站点范围 {range.Minimum}% 至 {range.Maximum}%" };
                 column.Controls.Add(band);
-                column.Resize += (_, _) => band.Width = column.Width - 8;
+                column.Resize += (_, _) => band.Width = column.Width - S(8);
             }
             column.Resize += (_, _) => title.Width = amount.Width = note.Width = column.Width;
             hero.Controls.Add(column);
-            hero.Resize += (_, _) => { column.Width = (hero.Width - 48) / 2; column.Left = 16 + index * (column.Width + 16); };
+            hero.Resize += (_, _) => { column.Width = (hero.Width - S(48)) / 2; column.Left = S(16) + index * (column.Width + S(16)); };
         }
         bool model = new[] { "24h", "48h" }.Any(key => ForecastRange.Read(GetValue(combined, key))?.HasModel == true);
         ForecastLabel(hero, model ? "加权中位数 · 含站点模型推算" : "加权中位数 · 采用站点公布值", 181, 9);
@@ -156,8 +158,8 @@ internal sealed partial class MeterWindow
         }
         if (events.Length > 3)
         {
-            var toggle = new RoundedActionButton(theme) { Name = "forecast-history-toggle", Text = allForecastHistory ? "收起历史事件" : $"查看全部 {events.Length} 条事件", Height = 34,
-                AccentText = true, Margin = new Padding(0, 0, 0, 12) };
+            var toggle = new RoundedActionButton(theme) { Name = "forecast-history-toggle", Text = allForecastHistory ? "收起历史事件" : $"查看全部 {events.Length} 条事件", Height = S(34),
+                AccentText = true, Margin = Pad(0, 0, 0, 12) };
             toggle.FlatAppearance.BorderColor = theme.Border;
             toggle.Click += (_, _) => { allForecastHistory = !allForecastHistory; using var snapshot = JsonDocument.Parse(lastSnapshot!); Render(snapshot.RootElement); };
             content.Controls.Add(toggle);

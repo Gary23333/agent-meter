@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>原生滚动仍由内容面板负责；细轨道提供拖动入口，避免浅色系统滚动条破坏深色弹层。</summary>
@@ -60,6 +62,6 @@ internal sealed class PopupScrollRail(FlowLayoutPanel content) : Control
         int track = Height - Thumb.Height;
         if (track <= 0) return;
         int offset = (int)(Math.Clamp((double)(y - dragOffset) / track, 0, 1) * Maximum);
-        content.AutoScrollPosition = new Point(0, offset); Invalidate();
+        content.AutoScrollPosition = P(0, offset); Invalidate();
     }
 }

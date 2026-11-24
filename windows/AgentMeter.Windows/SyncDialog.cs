@@ -1,14 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>多机同步：创建空间、短码配对、设备列表与手动同步。</summary>
 internal sealed class SyncDialog : Form
 {
     readonly MeterWindow owner;
-    readonly TextBox baseUrl = new() { Name = "sync-base-url", Width = 390 };
-    readonly TextBox code = new() { Name = "sync-pair-code", Width = 92, MaxLength = 9 };
+    readonly TextBox baseUrl = new() { Name = "sync-base-url", Width = S(390)};
+    readonly TextBox code = new() { Name = "sync-pair-code", Width = S(92), MaxLength = 9 };
     readonly Button create = new() { Name = "sync-create", Text = "创建新空间", AutoSize = true };
     readonly Button join = new() { Name = "sync-join", Text = "用短码加入", AutoSize = true };
     readonly Button pairNew = new() { Name = "sync-pair-new", Text = "配对另一台设备", AutoSize = true };
@@ -19,9 +21,9 @@ internal sealed class SyncDialog : Form
     readonly ListView list = new() { Name = "sync-devices", View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false };
     readonly Label spaceText = new() { AutoSize = true, ForeColor = Color.DimGray };
     readonly Label deviceText = new() { AutoSize = true, ForeColor = Color.DimGray };
-    readonly Label message = new() { Name = "sync-message", AutoSize = false, Height = 38, ForeColor = Color.DimGray, Dock = DockStyle.Fill, Padding = new Padding(2, 6, 0, 0) };
+    readonly Label message = new() { Name = "sync-message", AutoSize = false, Height = S(38), ForeColor = Color.DimGray, Dock = DockStyle.Fill, Padding = Pad(2, 6, 0, 0) };
     readonly Label pairCode = new() { Name = "sync-pair-display", AutoSize = true, Font = new Font("Consolas", 18F, FontStyle.Bold) };
-    readonly Label pairHint = new() { AutoSize = false, Height = 44, ForeColor = Color.DimGray };
+    readonly Label pairHint = new() { AutoSize = false, Height = S(44), ForeColor = Color.DimGray };
     readonly Label pairSas = new() { AutoSize = true, Font = new Font("Consolas", 14F, FontStyle.Bold) };
     readonly Button cancelPair = new() { Name = "sync-pair-cancel", Text = "取消", AutoSize = true };
     readonly Panel disconnected = new() { Dock = DockStyle.Fill };
@@ -38,33 +40,33 @@ internal sealed class SyncDialog : Form
         this.owner = owner;
         Text = "多机同步"; StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false;
-        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = new Size(820, 620);
-        MinimumSize = new Size(780, 580);
+        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = Sz(820, 620);
+        MinimumSize = Sz(780, 580);
 
         var description = new Label
         {
-            Dock = DockStyle.Fill, Padding = new Padding(2, 8, 0, 0),
+            Dock = DockStyle.Fill, Padding = Pad(2, 8, 0, 0),
             Text = "两台设备填同一个同步服务地址，用一次六位短码配对。\n" +
                    "上传的只有按日汇总的用量、额度和不随设备变化的设置；会话内容、路径与凭据不会离开本机。\n" +
                    "同步服务只保存密文，主密钥在 Windows 凭据管理器里。"
         };
 
         baseUrl.PlaceholderText = "https://sync.example.com 或 http://127.0.0.1:8899";
-        var urlRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, WrapContents = false, Padding = new Padding(0, 6, 0, 0) };
-        urlRow.Controls.Add(new Label { Text = "服务地址", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
+        var urlRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = S(42), WrapContents = false, Padding = Pad(0, 6, 0, 0) };
+        urlRow.Controls.Add(new Label { Text = "服务地址", AutoSize = true, Margin = Pad(0, 8, 8, 0) });
         urlRow.Controls.Add(baseUrl);
-        create.Margin = new Padding(10, 3, 4, 0); join.Margin = new Padding(4, 3, 4, 0);
+        create.Margin = Pad(10, 3, 4, 0); join.Margin = Pad(4, 3, 4, 0);
         urlRow.Controls.Add(create);
-        var joinRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, WrapContents = false, Padding = new Padding(0, 3, 0, 0) };
-        joinRow.Controls.Add(new Label { Text = "六位配对码", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
+        var joinRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = S(42), WrapContents = false, Padding = Pad(0, 3, 0, 0) };
+        joinRow.Controls.Add(new Label { Text = "六位配对码", AutoSize = true, Margin = Pad(0, 8, 8, 0) });
         joinRow.Controls.Add(code);
         joinRow.Controls.Add(join);
-        joinRow.Controls.Add(new Label { Text = "由已加入空间的那台设备生成", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(10, 8, 0, 0) });
+        joinRow.Controls.Add(new Label { Text = "由已加入空间的那台设备生成", AutoSize = true, ForeColor = Color.DimGray, Margin = Pad(10, 8, 0, 0) });
         disconnected.Controls.Add(joinRow); disconnected.Controls.Add(urlRow);
 
-        var connectedTop = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 38, WrapContents = false, Padding = new Padding(0, 5, 0, 0) };
+        var connectedTop = new FlowLayoutPanel { Dock = DockStyle.Top, Height = S(38), WrapContents = false, Padding = Pad(0, 5, 0, 0) };
         connectedTop.Controls.Add(spaceText); connectedTop.Controls.Add(deviceText);
-        var connectedButtons = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, WrapContents = false, Padding = new Padding(0, 3, 0, 0) };
+        var connectedButtons = new FlowLayoutPanel { Dock = DockStyle.Top, Height = S(42), WrapContents = false, Padding = Pad(0, 3, 0, 0) };
         connectedButtons.Controls.Add(pairNew); connectedButtons.Controls.Add(syncNow); connectedButtons.Controls.Add(refresh);
         connectedButtons.Controls.Add(disconnect);
         connected.Controls.Add(connectedButtons); connected.Controls.Add(connectedTop);
@@ -75,21 +77,21 @@ internal sealed class SyncDialog : Form
         list.Columns.Add("版本", 70);
         list.Columns.Add("更新时间", 150);
         list.DoubleClick += (_, _) => RemoveSelected();
-        var listHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 0, 0) };
+        var listHost = new Panel { Dock = DockStyle.Fill, Padding = Pad(0, 4, 0, 0) };
         listHost.Controls.Add(list);
-        var removeRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
+        var removeRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(38), FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
         removeRow.Controls.Add(remove);
 
-        var pairTop = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 50, WrapContents = false };
+        var pairTop = new FlowLayoutPanel { Dock = DockStyle.Top, Height = S(50), WrapContents = false };
         pairTop.Controls.Add(pairCode);
-        pairHint.Dock = DockStyle.Top; pairHint.Padding = new Padding(2, 2, 0, 0);
-        var pairBottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, WrapContents = false };
-        pairBottom.Controls.Add(pairSas); cancelPair.Margin = new Padding(18, 2, 0, 0); pairBottom.Controls.Add(cancelPair);
+        pairHint.Dock = DockStyle.Top; pairHint.Padding = Pad(2, 2, 0, 0);
+        var pairBottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(40), WrapContents = false };
+        pairBottom.Controls.Add(pairSas); cancelPair.Margin = Pad(18, 2, 0, 0); pairBottom.Controls.Add(cancelPair);
         var pairPanel = pairing;
-        pairPanel.Padding = new Padding(4, 6, 4, 0);
+        pairPanel.Padding = Pad(4, 6, 4, 0);
         pairPanel.Controls.Add(pairHint); pairPanel.Controls.Add(pairBottom); pairPanel.Controls.Add(pairTop);
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(16, 10, 16, 12) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = Pad(16, 10, 16, 12) };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));

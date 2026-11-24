@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>独立绘制页面入口，并提供键盘与辅助功能操作。</summary>

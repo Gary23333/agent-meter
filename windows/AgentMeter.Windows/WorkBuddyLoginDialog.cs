@@ -3,6 +3,8 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>在应用专用资料中由用户自行登录，不访问已有浏览器的资料。</summary>
@@ -22,11 +24,11 @@ internal sealed class WorkBuddyLoginDialog : Form
     {
         this.browser = browser; this.cancelReads = cancelReads;
         Text = "连接 WorkBuddy"; Font = new Font("Microsoft YaHei UI", 10F);
-        StartPosition = FormStartPosition.CenterParent; ClientSize = new Size(900, 680); MinimumSize = new Size(620, 480);
-        var instructions = new Label { Dock = DockStyle.Top, Height = 72, Padding = new Padding(14, 10, 14, 0),
+        StartPosition = FormStartPosition.CenterParent; ClientSize = Sz(900, 680); MinimumSize = Sz(620, 480);
+        var instructions = new Label { Dock = DockStyle.Top, Height = S(72), Padding = Pad(14, 10, 14, 0),
             Text = "请在应用内窗口登录 WorkBuddy，回到用量页面后点击「完成连接」。\n登录资料保存在本应用的独立浏览器目录；取消不会清除，可使用「清除本地登录」。" };
-        status.Dock = DockStyle.Top; status.Height = 28; status.Padding = new Padding(14, 2, 0, 0); status.Text = "正在准备独立登录窗口…";
-        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 58, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
+        status.Dock = DockStyle.Top; status.Height = S(28); status.Padding = Pad(S(14), S(2), S(0), S(0)); status.Text = "正在准备独立登录窗口…";
+        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(58), FlowDirection = FlowDirection.RightToLeft, Padding = Pad(8) };
         cancel.Text = "取消"; cancel.AutoSize = true; cancel.DialogResult = DialogResult.Cancel;
         clear.Text = "清除本地登录"; clear.AutoSize = true;
         finish.Text = "完成连接"; finish.AutoSize = true; finish.Enabled = false;
@@ -82,9 +84,9 @@ internal sealed class WorkBuddyLoginDialog : Form
             {
                 string requested = string.IsNullOrEmpty(e.Uri) ? "about:blank" : e.Uri;
                 if (!WorkBuddyNavigation.Allowed(requested)) { e.Handled = true; if (!IsDisposed) status.Text = "已阻止不受支持的登录窗口。"; return; }
-                popup = new Form { Text = "WorkBuddy 登录", Size = new Size(720, 620), StartPosition = FormStartPosition.CenterParent };
+                popup = new Form { Text = "WorkBuddy 登录", Size = Sz(720, 620), StartPosition = FormStartPosition.CenterParent };
                 var child = new WebView2 { Dock = DockStyle.Fill };
-                var address = new Label { Dock = DockStyle.Top, Height = 26, Padding = new Padding(8, 3, 0, 0), Text = "当前网站：等待跳转" };
+                var address = new Label { Dock = DockStyle.Top, Height = S(26), Padding = Pad(8, 3, 0, 0), Text = "当前网站：等待跳转" };
                 popup.Controls.Add(child); popup.Controls.Add(address); _ = popup.Handle; _ = child.Handle;
                 popups.Add(popup);
                 popup.FormClosed += (_, _) => { popups.Remove(popup); popup.Dispose(); };

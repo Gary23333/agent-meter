@@ -1,5 +1,7 @@
 using System.Globalization;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>日／周预算均为人民币 API 等价估算，不代表实际账单。</summary>
@@ -11,17 +13,17 @@ internal sealed class BudgetDialog : Form
     readonly TextBox daily = new() { Name = "budget-daily", PlaceholderText = "留空表示不设置" };
     readonly TextBox weekly = new() { Name = "budget-weekly", PlaceholderText = "留空表示不设置" };
     readonly TextBox multiplier = new() { Name = "budget-multiplier", Text = "2" };
-    readonly Label message = new() { Name = "budget-message", ForeColor = Color.Firebrick, AutoSize = false, Height = 52, Dock = DockStyle.Bottom, Padding = new Padding(16, 0, 16, 0) };
+    readonly Label message = new() { Name = "budget-message", ForeColor = Color.Firebrick, AutoSize = false, Height = S(52), Dock = DockStyle.Bottom, Padding = Pad(16, 0, 16, 0) };
     readonly Button save = new() { Name = "budget-save", Text = "保存", AutoSize = true };
 
     public BudgetDialog(string directory)
     {
         this.directory = directory;
         Text = "预算与异常提醒"; StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = new Size(540, 455); MinimumSize = new Size(500, 455);
-        var description = new Label { Dock = DockStyle.Top, Height = 110, Padding = new Padding(16, 10, 16, 0),
+        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = Sz(540, 455); MinimumSize = Sz(500, 455);
+        var description = new Label { Dock = DockStyle.Top, Height = S(110), Padding = Pad(16, 10, 16, 0),
             Text = "预算基于本机 Token 与价格表计算的 API 等价估算，并非实际账单。\n按北京时间自然日、自然周统计；美元按固定汇率 1:7.25 换算。\n异常速度与近期日均比较；当日不足 2 小时或数据不完整时不提醒。" };
-        var form = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6, Padding = new Padding(16, 0, 16, 0) };
+        var form = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6, Padding = Pad(16, 0, 16, 0) };
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145)); form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 5; i++) form.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
         form.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -36,7 +38,7 @@ internal sealed class BudgetDialog : Form
         note.Disposed += (_, _) => noteFont.Dispose();
         form.Controls.Add(note, 0, 5); form.SetColumnSpan(note, 2);
         daily.Dock = weekly.Dock = multiplier.Dock = DockStyle.Fill;
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 54, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(54), FlowDirection = FlowDirection.RightToLeft, Padding = Pad(8) };
         var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
         save.Click += (_, _) => SaveSettings(); buttons.Controls.AddRange([cancel, save]);
         Controls.Add(form); Controls.Add(message); Controls.Add(buttons); Controls.Add(description);

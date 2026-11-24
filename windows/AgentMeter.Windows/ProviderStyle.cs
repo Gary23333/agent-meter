@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>沿用原版的服务色与通用语义图形，保留账户别名。</summary>

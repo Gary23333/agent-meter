@@ -1,6 +1,8 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 internal sealed partial class MeterWindow
@@ -19,7 +21,7 @@ internal sealed partial class MeterWindow
 
     void InitializePopup()
     {
-        Padding = new Padding(1);
+        Padding = Pad(1);
         DoubleBuffered = true;
         if (popup)
         {
@@ -27,7 +29,7 @@ internal sealed partial class MeterWindow
             MaximizeBox = MinimizeBox = false;
             Deactivate += (_, _) => QueuePopupDismissal();
         }
-        appMark = new AgentBrandMark { Location = new Point(18, 18), Size = new Size(36, 36), BackColor = Background };
+        appMark = new AgentBrandMark { Location = P(18, 18), Size = Sz(36, 36), BackColor = Background };
         header.Controls.Add(appMark);
         pinAction.AccessibleName = "固定弹出面板"; menuAction.AccessibleName = "更多设置";
         refresh.AccessibleName = "刷新用量";
@@ -43,9 +45,9 @@ internal sealed partial class MeterWindow
     }
     void LayoutPopupActions()
     {
-        menuAction.Bounds = new Rectangle(header.Width - 46, 20, 30, 30);
-        pinAction.Bounds = new Rectangle(header.Width - 81, 20, 30, 30);
-        refresh.Bounds = new Rectangle(header.Width - 116, 20, 30, 30);
+        menuAction.Bounds = new Rectangle(header.Width - S(46), S(20), S(30), S(30));
+        pinAction.Bounds = new Rectangle(header.Width - S(81), S(20), S(30), S(30));
+        refresh.Bounds = new Rectangle(header.Width - S(116), S(20), S(30), S(30));
     }
     void ApplyPopupTheme()
     {
@@ -89,7 +91,7 @@ internal sealed partial class MeterWindow
             int position = -content.AutoScrollPosition.Y;
             position = keyData switch { Keys.Home => 0, Keys.End => content.VerticalScroll.Maximum,
                 Keys.PageDown => position + content.Height - 40, _ => Math.Max(0, position - content.Height + 40) };
-            content.AutoScrollPosition = new Point(0, position); scrollRail?.Invalidate(); return true;
+            content.AutoScrollPosition = P(0, position); scrollRail?.Invalidate(); return true;
         }
         return base.ProcessCmdKey(ref message, keyData);
     }
@@ -148,7 +150,7 @@ internal sealed partial class MeterWindow
         ProcessCmdKey(ref scrollMessage, Keys.Home);
         if (content.AutoScrollPosition.Y != 0 || content.Width <= contentViewport.Width)
             throw new InvalidOperationException("弹层滚动区域不正确");
-        using var other = new Form { StartPosition = FormStartPosition.Manual, Location = new Point(-31000, -31000), ShowInTaskbar = false };
+        using var other = new Form { StartPosition = FormStartPosition.Manual, Location = P(-31000, -31000), ShowInTaskbar = false };
         pinAction.PerformClick(); other.Show(); other.Activate(); await Task.Delay(150);
         if (!Visible || !popupPinned) throw new InvalidOperationException("固定面板被意外收起");
         Activate(); pinAction.PerformClick();
@@ -156,7 +158,7 @@ internal sealed partial class MeterWindow
         if (!Visible) throw new InvalidOperationException("菜单打开时面板被收起");
         popupMenuVisible = false;
         Activate(); await Task.Delay(100);
-        using (var owned = new Form { StartPosition = FormStartPosition.Manual, Location = new Point(-31000, -31000), ShowInTaskbar = false })
+        using (var owned = new Form { StartPosition = FormStartPosition.Manual, Location = P(-31000, -31000), ShowInTaskbar = false })
         {
             owned.Show(this); owned.Activate(); await Task.Delay(100);
             if (!Visible) throw new InvalidOperationException("子窗口打开时面板被收起");
@@ -182,7 +184,7 @@ internal sealed class AgentBrandMark : Control
         const int r = 13;
         shape.AddArc(0, 0, r, r, 180, 90); shape.AddArc(36 - r, 0, r, r, 270, 90);
         shape.AddArc(36 - r, 36 - r, r, r, 0, 90); shape.AddArc(0, 36 - r, r, r, 90, 90); shape.CloseFigure();
-        using var fill = new LinearGradientBrush(new Rectangle(0, 0, 36, 36), Color.FromArgb(91, 116, 255), Color.FromArgb(180, 92, 250), 45F);
+        using var fill = new LinearGradientBrush(Rect(0, 0, 36, 36), Color.FromArgb(91, 116, 255), Color.FromArgb(180, 92, 250), 45F);
         e.Graphics.FillPath(fill, shape);
         using var outer = new Pen(Color.White, 2.8F) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         using var inner = new Pen(Color.FromArgb(136, 255, 225), 2.3F) { StartCap = LineCap.Round, EndCap = LineCap.Round };
@@ -228,6 +230,6 @@ internal sealed class PopupAction(PopupActionKind kind) : Button
             using var brush = new SolidBrush(theme.Secondary);
             for (int i = -1; i <= 1; i++) e.Graphics.FillEllipse(brush, x - 1.5F + i * 6, y - 1.5F, 3, 3);
         }
-        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(3, 3, Width - 6, Height - 6));
+        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(S(3), S(3), Width - S(6), Height - S(6)));
     }
 }

@@ -1,5 +1,7 @@
 using System.ComponentModel;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 /// <summary>用户主动输入密钥；密钥由 Windows 凭据管理器保存。</summary>
@@ -16,12 +18,12 @@ internal sealed class MiniMaxAccountsDialog : Form
     {
         this.directory = directory;
         Text = "管理 MiniMax 账户"; StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = new Size(610, 410); MinimumSize = new Size(500, 340);
-        message.Dock = DockStyle.Top; message.Height = 76; message.Padding = new Padding(14, 10, 14, 0);
+        Font = new Font("Microsoft YaHei UI", 10F); ClientSize = Sz(610, 410); MinimumSize = Sz(500, 340);
+        message.Dock = DockStyle.Top; message.Height = S(76); message.Padding = Pad(S(14), S(10), S(14), S(0));
         message.Text = "最多添加 5 个账户。密钥保存在 Windows 凭据管理器，不写入账户列表。\n添加后请在托盘菜单开启 MiniMax 账户查询。";
         list.Dock = DockStyle.Fill; list.View = System.Windows.Forms.View.Details; list.FullRowSelect = true; list.MultiSelect = false;
         list.Columns.Add("账户名称", 290); list.Columns.Add("区域", 150);
-        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 58, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(8) };
+        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(58), FlowDirection = FlowDirection.LeftToRight, Padding = Pad(8) };
         add.Text = "添加账户"; update.Text = "更新密钥"; remove.Text = "删除账户";
         foreach (var button in new[] { add, update, remove }) { button.AutoSize = true; footer.Controls.Add(button); }
         var close = new Button { Text = "关闭", AutoSize = true, DialogResult = DialogResult.Cancel };
@@ -103,9 +105,9 @@ internal sealed class MiniMaxAccountEntry : Form
         this.secretOnly = secretOnly;
         Text = secretOnly ? "更新 MiniMax 密钥" : "添加 MiniMax 账户";
         Font = new Font("Microsoft YaHei UI", 10F); StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(470, secretOnly ? 205 : 310); FormBorderStyle = FormBorderStyle.FixedDialog;
+        ClientSize = Sz(470, secretOnly ? 205 : 310); FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false; ShowInTaskbar = false;
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = secretOnly ? 4 : 8 };
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = Pad(16), ColumnCount = 1, RowCount = secretOnly ? 4 : 8 };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         if (!secretOnly)
         {
@@ -115,7 +117,7 @@ internal sealed class MiniMaxAccountEntry : Form
         }
         panel.Controls.Add(new Label { Text = "订阅密钥", AutoSize = true }); secret.UseSystemPasswordChar = true; secret.MaxLength = 1280; secret.Dock = DockStyle.Top; panel.Controls.Add(secret);
         panel.Controls.Add(new Label { Text = "密钥仅用于向所选区域的 MiniMax 查询额度。", AutoSize = true });
-        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
+        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(52), FlowDirection = FlowDirection.RightToLeft, Padding = Pad(8) };
         var save = new Button { Text = "保存", AutoSize = true }; var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
         footer.Controls.Add(save); footer.Controls.Add(cancel); CancelButton = cancel;
         Controls.Add(panel); Controls.Add(footer);

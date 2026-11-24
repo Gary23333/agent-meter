@@ -1,6 +1,8 @@
 using System.Drawing.Drawing2D;
 using System.Text.Json;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 internal sealed partial class MeterWindow
@@ -19,25 +21,25 @@ internal sealed partial class MeterWindow
             double? value = GetNumber(total, "total_tokens");
             return state == "partial" || !value.HasValue || !double.IsFinite(value.Value) || value.Value < 0;
         });
-        var card = new RoundedCard(theme) { Name = "usage-sources", Height = 35 + rows.Count * 50,
-            Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var card = new RoundedCard(theme) { Name = "usage-sources", Height = S(35 + rows.Count * 50),
+            Margin = Pad(0, 0, 0, 12), BackColor = Card };
         var bold = new Font(Font.FontFamily, 9F, FontStyle.Bold);
         card.Disposed += (_, _) => bold.Dispose();
-        var title = new Label { Text = "按应用", Font = bold, AutoSize = true, ForeColor = Primary, Location = new Point(16, 12) };
+        var title = new Label { Text = "按应用", Font = bold, AutoSize = true, ForeColor = Primary, Location = P(16, 12) };
         var note = new Label { Text = partial ? "部分来源不完整" : "本机账本 · 可能重叠", ForeColor = Muted,
-            Font = tabCompact, AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = 20, Top = 11 };
+            Font = tabCompact, AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = S(20), Top = S(11)};
         card.Controls.AddRange([title, note]);
-        card.Resize += (_, _) => { note.Left = Math.Max(110, card.ClientSize.Width - 155); note.Width = Math.Max(0, card.ClientSize.Width - note.Left - 16); };
+        card.Resize += (_, _) => { note.Left = Math.Max(S(110), card.ClientSize.Width - S(155)); note.Width = Math.Max(S(0), card.ClientSize.Width - note.Left - S(16)); };
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i]; var identity = ProviderStyle.For(row.Name); int y = 39 + i * 50;
-            var dot = new Label { Text = "●", ForeColor = identity.Color, AutoSize = false, Size = new Size(16, 20), Location = new Point(16, y) };
+            var dot = new Label { Text = "●", ForeColor = identity.Color, AutoSize = false, Size = Sz(16, 20), Location = P(16, y) };
             var name = new Label { Name = "usage-source-name-" + i, Text = identity.DisplayName, ForeColor = Primary,
-                AutoSize = false, AutoEllipsis = true, Height = 22, Location = new Point(34, y) };
+                AutoSize = false, AutoEllipsis = true, Height = S(22), Location = P(34, y) };
             var tokens = new Label { Name = "usage-source-tokens-" + i, Text = FormatNumber(row.Tokens), Font = bold,
-                ForeColor = Primary, AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = 22, Top = y };
+                ForeColor = Primary, AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = S(22), Top = S(y)};
             var cost = new Label { Name = "usage-source-cost-" + i, Text = row.CostDisplay + (row.Partial && row.Cost.HasValue ? "*" : ""),
-                ForeColor = Muted, Font = tabCompact, AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = 22, Top = y };
+                ForeColor = Muted, Font = tabCompact, AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = S(22), Top = S(y)};
             int barY = y + 27;
             card.Paint += (_, e) => {
                 float width = Math.Max(0, card.ClientSize.Width - 32);
@@ -53,9 +55,9 @@ internal sealed partial class MeterWindow
                 e.Graphics.FillPath(fill, fillPath);
             };
             card.Resize += (_, _) => {
-                cost.Left = Math.Max(0, card.ClientSize.Width - 92); cost.Width = Math.Max(0, card.ClientSize.Width - cost.Left - 16);
-                tokens.Left = Math.Max(34, cost.Left - 75); tokens.Width = Math.Max(0, cost.Left - tokens.Left - 5);
-                name.Width = Math.Max(0, tokens.Left - name.Left - 6);
+                cost.Left = Math.Max(S(0), card.ClientSize.Width - S(92)); cost.Width = Math.Max(S(0), card.ClientSize.Width - cost.Left - S(16));
+                tokens.Left = Math.Max(S(34), cost.Left - S(75)); tokens.Width = Math.Max(S(0), cost.Left - tokens.Left - S(5));
+                name.Width = Math.Max(S(0), tokens.Left - name.Left - S(6));
             };
             popupTips.SetToolTip(name, identity.DisplayName + " · 本机账本，不按账户区分");
             popupTips.SetToolTip(tokens, row.Tokens.ToString("N0") + " Token");

@@ -2,6 +2,8 @@ using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Text.Json;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 internal sealed partial class MeterWindow
@@ -25,23 +27,23 @@ internal sealed partial class MeterWindow
             if (limit.HasValue) rows.Add((label, spent, limit.Value, GetValue(section, "partial").ValueKind == JsonValueKind.True));
         }
         if (rows.Count == 0) return;
-        var card = new RoundedCard(theme) { Name = "budget-progress", Height = 63 + rows.Count * 42, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var card = new RoundedCard(theme) { Name = "budget-progress", Height = S(63 + rows.Count * 42), Margin = Pad(0, 0, 0, 12), BackColor = Card };
         var bold = new Font(Font.FontFamily, 9F, FontStyle.Bold); card.Disposed += (_, _) => bold.Dispose();
-        var title = new Label { Text = "预算进度", Font = bold, AutoSize = true, ForeColor = Primary, Location = new Point(16, 10) };
+        var title = new Label { Text = "预算进度", Font = bold, AutoSize = true, ForeColor = Primary, Location = P(16, 10) };
         var hint = new Label { Text = "本机估算 · 非账单", Font = tabCompact, ForeColor = Muted, AutoSize = false,
-            AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = 20, Top = 9 };
+            AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, Height = S(20), Top = S(9)};
         card.Controls.AddRange([title, hint]);
-        card.Resize += (_, _) => { hint.Left = Math.Max(100, card.ClientSize.Width - 150); hint.Width = Math.Max(0, card.ClientSize.Width - hint.Left - 16); };
+        card.Resize += (_, _) => { hint.Left = Math.Max(S(100), card.ClientSize.Width - S(150)); hint.Width = Math.Max(S(0), card.ClientSize.Width - hint.Left - S(16)); };
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i]; int y = 34 + i * 42;
-            var name = new Label { Text = row.Label, ForeColor = Muted, AutoSize = true, Location = new Point(16, y) };
+            var name = new Label { Text = row.Label, ForeColor = Muted, AutoSize = true, Location = P(16, y) };
             string spent = row.Spent.HasValue ? BudgetMoney(row.Spent.Value) : "—";
             var value = new Label { Name = "budget-" + (i == 0 ? "first" : "second"),
                 Text = spent + " / " + BudgetMoney(row.Limit) + (row.Partial ? " · 部分" : ""),
                 AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight, ForeColor = row.Spent > row.Limit ? Color.Orange : Primary,
-                Height = 21, Top = y };
-            card.Resize += (_, _) => { value.Left = Math.Max(85, card.ClientSize.Width - 210); value.Width = Math.Max(0, card.ClientSize.Width - value.Left - 16); };
+                Height = S(21), Top = S(y)};
+            card.Resize += (_, _) => { value.Left = Math.Max(S(85), card.ClientSize.Width - S(210)); value.Width = Math.Max(S(0), card.ClientSize.Width - value.Left - S(16)); };
             card.Controls.AddRange([name, value]);
             int barY = y + 25;
             card.Paint += (_, e) => {
@@ -57,8 +59,8 @@ internal sealed partial class MeterWindow
             popupTips.SetToolTip(value, "北京时间自然日／周 · 本机价格表估算 · 美元按 1:7.25 换算" + (row.Partial ? " · 部分记录未计入" : ""));
         }
         var footnote = new Label { Text = "固定汇率 1:7.25 · 缺失来源不视为零", Font = tabCompact, ForeColor = Muted, AutoSize = false,
-            AutoEllipsis = true, Height = 20, Left = 16, Top = card.Height - 25 };
-        card.Resize += (_, _) => footnote.Width = Math.Max(0, card.ClientSize.Width - 32);
+            AutoEllipsis = true, Height = S(20), Left = S(16), Top = card.Height - 25 };
+        card.Resize += (_, _) => footnote.Width = Math.Max(S(0), card.ClientSize.Width - S(32));
         card.Controls.Add(footnote); StyleCard(card); content.Controls.Add(card);
     }
     static decimal? BudgetAmount(JsonElement value, string key)

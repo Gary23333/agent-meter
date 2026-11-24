@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using static AgentMeter.Windows.UiScale;
+
 namespace AgentMeter.Windows;
 
 internal static class Program
@@ -63,7 +65,7 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--isolated-refresh-smoke")
         {
             if (Environment.GetEnvironmentVariable("AGENT_METER_ISOLATED_SMOKE") != "1") { Environment.ExitCode = 1; return; }
-            using var testWindow = new MeterWindow(demo: false, windowed: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) };
+            using var testWindow = new MeterWindow(demo: false, windowed: true) { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) };
             testWindow.Shown += async (_, _) => {
                 try { await testWindow.SyntheticFullRefreshSmokeAsync(); }
                 catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
@@ -73,7 +75,7 @@ internal static class Program
         }
         if (args.Length == 1 && args[0] == "--popup-ui-smoke")
         {
-            using var popup = new MeterWindow(demo: true, windowed: false) { Location = new Point(-32000, -32000) };
+            using var popup = new MeterWindow(demo: true, windowed: false) { Location = P(-32000, -32000) };
             popup.Shown += async (_, _) => {
                 try { await popup.SyntheticPopupSmokeAsync(); }
                 catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
@@ -107,7 +109,7 @@ internal static class Program
     {
         string directory = Path.Combine(Path.GetTempPath(), "AgentMeterWebSmoke-" + Guid.NewGuid().ToString("N"));
         using var pump = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual,
-            Location = new Point(-32000, -32000), Size = new Size(1, 1) };
+            Location = P(-32000, -32000), Size = Sz(1, 1) };
         pump.Shown += async (_, _) =>
         {
             try
@@ -126,7 +128,7 @@ internal static class Program
 
     static void RunActivitySmoke()
     {
-        using var window = new MeterWindow(demo: true, windowed: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) };
+        using var window = new MeterWindow(demo: true, windowed: true) { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) };
         window.Shown += async (_, _) =>
         {
             try { await window.SyntheticActivitySmokeAsync(); await window.SyntheticRefreshPartsSmokeAsync(); }
@@ -384,17 +386,17 @@ internal sealed partial class MeterContext : ApplicationContext
             Point location;
             if (petPreferences.X.HasValue && petPreferences.Y.HasValue)
             {
-                var saved = new Rectangle(petPreferences.X.Value, petPreferences.Y.Value, 240, 240);
+                var saved = new Rectangle(petPreferences.X.Value, petPreferences.Y.Value, S(240), S(240));
                 var matching = Screen.AllScreens.FirstOrDefault(item => item.WorkingArea.IntersectsWith(saved));
                 if (matching is not null)
                 {
                     var area = matching.WorkingArea;
-                    location = new Point(Math.Clamp(saved.X, area.Left, Math.Max(area.Left, area.Right - 240)),
-                                         Math.Clamp(saved.Y, area.Top, Math.Max(area.Top, area.Bottom - 240)));
+                    location = new Point(Math.Clamp(saved.X, area.Left, Math.Max(area.Left, area.Right - S(240))),
+                                         Math.Clamp(saved.Y, area.Top, Math.Max(area.Top, area.Bottom - S(240))));
                 }
-                else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, new Size(240, 240), Point.Empty, false);
+                else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, Sz(240, 240), Point.Empty, false);
             }
-            else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, new Size(240, 240), Point.Empty, false);
+            else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, Sz(240, 240), Point.Empty, false);
             IPetWindow instance = petPreferences.Pack is "mochi" or "bit"
                 ? new PetWindow(petPreferences.Pack, location)
                 : new Pet3dWindow(petPreferences.Pack, location, AccountPreferences.DefaultDirectory, petPreferences.FollowCursor);
@@ -519,23 +521,24 @@ internal sealed partial class MeterWindow : Form
         forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
         theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
         Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Primary;
-        ClientSize = new Size(440, 680); MinimumSize = new Size(380, 420); StartPosition = FormStartPosition.Manual;
+        UiScale.SetFromDpi(DeviceDpi);
+        ClientSize = Sz(440, 680); MinimumSize = Sz(380, 420); StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = windowed; FormBorderStyle = windowed ? FormBorderStyle.Sizable : FormBorderStyle.None;
         preferredSize = Size;
         Resize += (_, _) => { if (!positioning && WindowState == FormWindowState.Normal) preferredSize = Size; };
-        header.Dock = DockStyle.Top; header.Height = 234; header.BackColor = Background;
-        title.Text = "Agent 用量"; title.Font = new Font(Font.FontFamily, 14F, FontStyle.Bold); title.AutoSize = true; title.Location = new Point(63, 14); title.ForeColor = Primary;
-        subtitle.Text = "账户额度与本机消耗"; subtitle.AutoSize = false; subtitle.Size = new Size(220, 20); subtitle.Font = new Font(Font.FontFamily, 8.5F); subtitle.Location = new Point(64, 42); subtitle.ForeColor = Muted;
-        refresh.Text = "刷新"; refresh.Size = new Size(66, 32); refresh.Location = new Point(0, 23);
+        header.Dock = DockStyle.Top; header.Height = S(234); header.BackColor = Background;
+        title.Text = "Agent 用量"; title.Font = new Font(Font.FontFamily, 14F, FontStyle.Bold); title.AutoSize = true; title.Location = P(63, 14); title.ForeColor = Primary;
+        subtitle.Text = "账户额度与本机消耗"; subtitle.AutoSize = false; subtitle.Size = Sz(220, 20); subtitle.Font = new Font(Font.FontFamily, 8.5F); subtitle.Location = P(64, 42); subtitle.ForeColor = Muted;
+        refresh.Text = "刷新"; refresh.Size = Sz(66, 32); refresh.Location = P(0, 23);
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = theme.Border; refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
-        header.Resize += (_, _) => { gauges.Width = Math.Max(0, header.ClientSize.Width - 32); LayoutTabs(); };
+        header.Resize += (_, _) => { gauges.Width = Math.Max(S(0), header.ClientSize.Width - S(32)); LayoutTabs(); };
         foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab })
         {
             tab.ForeColor = Primary;
-            tab.Font = tabRegular; tab.Size = new Size(86, 36);
+            tab.Font = tabRegular; tab.Size = Sz(86, 36);
         }
-        gauges.Location = new Point(16, 114); gauges.Size = new Size(406, 116);
+        gauges.Location = P(16, 114); gauges.Size = Sz(406, 116);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = false; gauges.BackColor = Background;
         gauges.Resize += (_, _) => LayoutGauges();
@@ -543,7 +546,7 @@ internal sealed partial class MeterWindow : Form
         foreach (var button in new[] { gaugePrevious, gaugeNext })
         {
             button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderSize = 0; button.BackColor = Background;
-            button.ForeColor = Muted; button.Size = new Size(20, 32);
+            button.ForeColor = Muted; button.Size = Sz(20, 32);
         }
         gaugePrevious.Text = "‹"; gaugePrevious.AccessibleName = "上一组账户额度";
         gaugeNext.Text = "›"; gaugeNext.AccessibleName = "下一组账户额度";
@@ -561,11 +564,11 @@ internal sealed partial class MeterWindow : Form
         collectionTab.Click += (_, _) => SetView(View.Collection);
         navigationStrip.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab, petTab, collectionTab]);
         header.Controls.Add(navigationStrip); LayoutTabs(); UpdateTabs();
-        status.Dock = DockStyle.Bottom; status.Height = 31; status.Font = new Font(Font.FontFamily, 8.5F); status.AutoEllipsis = true;
-        status.Padding = new Padding(17, 6, 8, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
+        status.Dock = DockStyle.Bottom; status.Height = S(31); status.Font = new Font(Font.FontFamily, 8.5F); status.AutoEllipsis = true;
+        status.Padding = Pad(17, 6, 8, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
         contentViewport.Dock = DockStyle.Fill; contentViewport.BackColor = Background;
         content.Dock = DockStyle.None; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
-        content.Padding = new Padding(14, 0, 14, 10); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
+        content.Padding = Pad(14, 0, 14, 10); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
         scrollRail = new PopupScrollRail(content) { AccessibleName = "页面滚动", AccessibleRole = AccessibleRole.ScrollBar, TabStop = false,
             BackColor = Background, ThumbColor = theme.Border };
         // 单独裁剪原生滚动区，为细轨道留出不重叠的空间，避免子控件重绘时覆盖轨道。
@@ -575,11 +578,11 @@ internal sealed partial class MeterWindow : Form
             int previousScroll = -content.AutoScrollPosition.Y;
             // 旧的滚动范围可能在窗口缩窄后残留，重新布局时保留纵向位置。
             content.SuspendLayout(); content.AutoScroll = false;
-            contentClip.Bounds = new Rectangle(0, 0, Math.Max(0, contentViewport.Width - 10), contentViewport.Height);
-            content.Bounds = new Rectangle(0, 0, contentClip.Width + Math.Max(32, 32 * DeviceDpi / 96), contentClip.Height);
-            scrollRail.Bounds = new Rectangle(contentViewport.Width - 9, 3, 5, Math.Max(0, contentViewport.Height - 6)); ResizeCards();
+            contentClip.Bounds = new Rectangle(S(0), S(0), Math.Max(S(0), contentViewport.Width - S(10)), contentViewport.Height);
+            content.Bounds = new Rectangle(S(0), S(0), contentClip.Width + Math.Max(S(32), 32 * DeviceDpi / 96), contentClip.Height);
+            scrollRail.Bounds = new Rectangle(contentViewport.Width - S(9), S(3), S(5), Math.Max(S(0), contentViewport.Height - S(6))); ResizeCards();
             content.AutoScroll = true; content.ResumeLayout(true);
-            content.AutoScrollPosition = new Point(0, previousScroll);
+            content.AutoScrollPosition = P(0, previousScroll);
         };
         content.Scroll += (_, _) => scrollRail.Invalidate(); content.Layout += (_, _) => scrollRail.Invalidate();
         content.MouseWheel += (_, _) => { if (IsHandleCreated) BeginInvoke(() => scrollRail.Invalidate()); };
@@ -613,7 +616,7 @@ internal sealed partial class MeterWindow : Form
         if (!demo) throw new InvalidOperationException("demo_required");
         Directory.CreateDirectory(directory);
         suppressPopupDismissal = true;
-        Location = new Point(-32000, -32000);
+        Location = P(-32000, -32000);
         Show();
         RefreshData().GetAwaiter().GetResult();
         using (var icons = TrayIndicatorIcon.Preview()) icons.Save(Path.Combine(directory, "tray-indicators.png"), System.Drawing.Imaging.ImageFormat.Png);
@@ -641,7 +644,7 @@ internal sealed partial class MeterWindow : Form
             previewMenu.Items.Add(new ToolStripMenuItem("重置卡到期提醒（3 天 / 1 天）"));
             previewMenu.Items.Add(new ToolStripSeparator()); previewMenu.Items.Add("退出");
             TrayMenuStyle.Apply(previewMenu, VisualThemes.Find(id));
-            previewMenu.Show(this, new Point(20, 60)); Application.DoEvents();
+            previewMenu.Show(this, P(20, 60)); Application.DoEvents();
             using var picture = new Bitmap(previewMenu.Width, previewMenu.Height);
             previewMenu.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
             picture.Save(Path.Combine(directory, id + "-menu.png"), System.Drawing.Imaging.ImageFormat.Png);
@@ -686,7 +689,7 @@ internal sealed partial class MeterWindow : Form
         content.ScrollControlIntoView(followCard); Application.DoEvents(); SavePreview("aurora-pet-follow");
         content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>()).Single(button => button.Name == "pet-toggle").PerformClick();
         if (!pagePetPreferences.Enabled) throw new InvalidOperationException("桌宠显示开关失败");
-        Size = new Size(380, 680); content.AutoScrollPosition = Point.Empty; Application.DoEvents();
+        Size = Sz(380, 680); content.AutoScrollPosition = Point.Empty; Application.DoEvents();
         using (var syntheticFrame = PetArt.Load("cat")) UpdatePetPreview(syntheticFrame, new PetMood("idle", "待机"));
         if (!content.Controls.OfType<PetHero>().Single().IsLive) throw new InvalidOperationException("显示中的桌宠没有同步到页面预览");
         SavePreview("aurora-pet-live");
@@ -695,23 +698,23 @@ internal sealed partial class MeterWindow : Form
             string children = string.Join(",", content.Controls.Cast<Control>().Select(item => $"{item.GetType().Name}:{item.Width}+{item.Margin.Horizontal}"));
             throw new InvalidOperationException($"桌宠页面出现横向滚动条：content={content.Width} viewport={contentViewport.Width} display={content.DisplayRectangle.Width} controls={children}");
         }
-        content.AutoScrollPosition = new Point(0, 80); Application.DoEvents();
+        content.AutoScrollPosition = P(0, 80); Application.DoEvents();
         int beforeResize = -content.AutoScrollPosition.Y;
-        Size = new Size(400, 680); Application.DoEvents();
+        Size = Sz(400, 680); Application.DoEvents();
         if (beforeResize < 30 || Math.Abs(-content.AutoScrollPosition.Y - beforeResize) > 2)
             throw new InvalidOperationException("窗口缩放后未保留纵向滚动位置");
-        Size = new Size(380, 680); content.AutoScrollPosition = Point.Empty; Application.DoEvents();
+        Size = Sz(380, 680); content.AutoScrollPosition = Point.Empty; Application.DoEvents();
         if (content.HorizontalScroll.Visible) throw new InvalidOperationException("反复缩放后出现横向滚动条");
         SavePreview("aurora-pet-narrow");
         SetPetPreferences(PetPreferences.Default);
         if (content.Controls.OfType<PetHero>().Single().IsLive) throw new InvalidOperationException("隐藏桌宠后未恢复静态预览");
-        Size = new Size(500, 1100);
+        Size = Sz(500, 1100);
         SetTheme(VisualThemes.Find("aurora")); SetView(View.Accounts);
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())
             .Any(label => label.Name == "account-local-today"))
             throw new InvalidOperationException("account_local_usage_missing");
         SavePreview("aurora-account-local-detail");
-        content.AutoScrollPosition = new Point(0, 230); Application.DoEvents();
+        content.AutoScrollPosition = P(0, 230); Application.DoEvents();
         if (content.AutoScrollPosition.Y == 0) throw new InvalidOperationException("account_local_scroll_failed");
         SavePreview("aurora-account-local-scrolled");
         var qoderCard = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "qoder-local-credits");
@@ -734,7 +737,7 @@ internal sealed partial class MeterWindow : Form
         if (!qoderAccountCard.Controls.OfType<Label>().Any(label => label.Text.Contains("80 积分")))
             throw new InvalidOperationException("Qoder 账户额度应显示网站余额");
         content.ScrollControlIntoView(qoderAccountCard); Application.DoEvents(); SavePreview("aurora-qoder-account");
-        using (var dialog = new QoderLoginDialog(qoderBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        using (var dialog = new QoderLoginDialog(qoderBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) })
         {
             dialog.Show(this); Application.DoEvents();
             using var picture = new Bitmap(dialog.Width, dialog.Height);
@@ -750,7 +753,7 @@ internal sealed partial class MeterWindow : Form
         if (!traeAccountCard.Controls.OfType<Label>().Any(label => label.Text.Contains("75 积分")))
             throw new InvalidOperationException("TRAE 账户额度应显示网站余额");
         content.ScrollControlIntoView(traeAccountCard); Application.DoEvents(); SavePreview("aurora-trae-account");
-        using (var dialog = new TraeLoginDialog(traeBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        using (var dialog = new TraeLoginDialog(traeBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) })
         {
             dialog.Show(this); Application.DoEvents();
             using var picture = new Bitmap(dialog.Width, dialog.Height);
@@ -765,19 +768,19 @@ internal sealed partial class MeterWindow : Form
             throw new InvalidOperationException("TRAE 未提供用量时不能显示满额");
         using (var snapshot = JsonDocument.Parse(qoderSnapshot)) Render(snapshot.RootElement);
         content.AutoScrollPosition = Point.Empty;
-        Size = new Size(420, 760);
+        Size = Sz(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Usage);
         var summaryRow = content.Controls.OfType<TableLayoutPanel>().Single(row => row.Name == "usage-summary");
         if (summaryRow.Controls.OfType<RoundedCard>().Count() != 2) throw new InvalidOperationException("用量总量与估算应分别显示");
-        Size = new Size(380, 680); Application.DoEvents();
+        Size = Sz(380, 680); Application.DoEvents();
         if (content.HorizontalScroll.Visible) throw new InvalidOperationException("窄用量页出现横向滚动条");
         var narrowBreakdown = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-breakdown");
         var outputLabel = narrowBreakdown.Controls.OfType<Label>().Single(label => label.Name == "usage-part-name-1");
         if (TextRenderer.MeasureText(outputLabel.Text, outputLabel.Font, Size.Empty, TextFormatFlags.NoPadding).Width > outputLabel.Width)
             throw new InvalidOperationException("窄用量页的输出含推理标签被截断");
         content.AutoScrollPosition = Point.Empty; SavePreview("aurora-usage-compact");
-        Size = new Size(420, 760); Application.DoEvents();
+        Size = Sz(420, 760); Application.DoEvents();
         var usageComposition = content.Controls.OfType<RoundedCard>().Single(card => card.Name == "usage-breakdown");
         if (!usageComposition.Controls.OfType<UsageCompositionRing>().Any(ring => ring.AccessibleName == "用量构成，缓存命中 75%") ||
             !usageComposition.Controls.OfType<Label>().Any(label => label.Name == "usage-part-0" && label.Text == "400K") ||
@@ -951,7 +954,7 @@ internal sealed partial class MeterWindow : Form
         deepseek["other_accounts"] = JsonNode.Parse("""{"DeepSeek API":{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}}""");
         using (var snapshot = JsonDocument.Parse(deepseek.ToJsonString())) Render(snapshot.RootElement);
         SetView(View.Accounts); SavePreview("aurora-deepseek-narrow");
-        using (var dialog = new DeepSeekKeyDialog { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        using (var dialog = new DeepSeekKeyDialog { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) })
         {
             dialog.Show(); Application.DoEvents();
             using var picture = new Bitmap(dialog.Width, dialog.Height);
@@ -963,7 +966,7 @@ internal sealed partial class MeterWindow : Form
         workbuddy["other_accounts"] = JsonNode.Parse("""{"WorkBuddy":{"status":"available","quota":{"value":[{"bucket":"credits","remaining_percent":25}]},"credits":{"value":{"balance":"25","total":"100","frozen":"0"}}}}""");
         using (var snapshot = JsonDocument.Parse(workbuddy.ToJsonString())) Render(snapshot.RootElement);
         SetView(View.Accounts); SavePreview("aurora-workbuddy-narrow");
-        using (var dialog = new WorkBuddyLoginDialog(workBuddyBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        using (var dialog = new WorkBuddyLoginDialog(workBuddyBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) })
         {
             dialog.Show(); Application.DoEvents();
             using var picture = new Bitmap(dialog.Width, dialog.Height);
@@ -977,7 +980,7 @@ internal sealed partial class MeterWindow : Form
         SetView(View.Accounts); SavePreview("aurora-zcode-narrow");
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "MCP 调用额度"))
             throw new InvalidOperationException("智谱额度卡片缺少 MCP 调用窗口");
-        using (var dialog = new ZCodeKeyDialog { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        using (var dialog = new ZCodeKeyDialog { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) })
         {
             dialog.Show(); Application.DoEvents();
             using var picture = new Bitmap(dialog.Width, dialog.Height);
@@ -991,7 +994,7 @@ internal sealed partial class MeterWindow : Form
         SetView(View.Accounts); SavePreview("aurora-volcengine-narrow");
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "月度额度"))
             throw new InvalidOperationException("火山方舟额度卡片缺少月度窗口");
-        using (var dialog = new VolcengineKeyDialog { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        using (var dialog = new VolcengineKeyDialog { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) })
         {
             dialog.Show(); Application.DoEvents();
             using var picture = new Bitmap(dialog.Width, dialog.Height);
@@ -1005,7 +1008,7 @@ internal sealed partial class MeterWindow : Form
         SetView(View.Accounts); SavePreview("aurora-mimo-narrow");
         if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == "Token Plan · 月度额度"))
             throw new InvalidOperationException("MiMo 账户卡片缺少月度额度");
-        using (var dialog = new MiMoLoginDialog(mimoBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        using (var dialog = new MiMoLoginDialog(mimoBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = P(-32000, -32000) })
         {
             dialog.Show(); Application.DoEvents();
             using var picture = new Bitmap(dialog.Width, dialog.Height);
@@ -1032,7 +1035,7 @@ internal sealed partial class MeterWindow : Form
             button.TabStop = view == tab;
         }
         gauges.Visible = view == View.Accounts;
-        header.Height = view == View.Accounts ? 234 : 118;
+        header.Height = S(view == View.Accounts ? S(234) : S(118));
         LayoutGauges();
         subtitle.Text = view switch { View.Accounts => "账户额度与本机消耗", View.Applications => "应用覆盖与近期活动",
             View.Usage => "本机账本 · Token 与模型", View.Report => "自然周与自然月 · 用量报告",
@@ -1045,14 +1048,14 @@ internal sealed partial class MeterWindow : Form
         string[] full = ["账户额度", "应用", "本机消耗", "用量报告", "重置预测", "桌宠", "收集"];
         string[] compact = ["账户", "应用", "用量", "报告", "预测", "桌宠", "收集"];
         // 七页共用同一排点击位置，账户额度环在导航下方单独展开。
-        navigationStrip.Bounds = new Rectangle(16, 76, Math.Max(1, header.ClientSize.Width - 32), 35);
-        int width = Math.Max(1, (navigationStrip.ClientSize.Width - 6) / tabs.Length);
+        navigationStrip.Bounds = new Rectangle(S(16), S(76), Math.Max(S(1), header.ClientSize.Width - S(32)), S(35));
+        int width = Math.Max(1, (navigationStrip.ClientSize.Width - S(6)) / tabs.Length);
         for (int index = 0; index < tabs.Length; index++)
         {
-            tabs[index].Size = new Size(width, 29);
-            tabs[index].Location = new Point(3 + index * width, 3);
-            tabs[index].Font = width < 62 ? tabCompact : tabRegular;
-            tabs[index].Text = width < 62 ? compact[index] : full[index];
+            tabs[index].Size = new Size(width, S(29));
+            tabs[index].Location = new Point(S(3) + index * width, S(3));
+            tabs[index].Font = width < S(62) ? tabCompact : tabRegular;
+            tabs[index].Text = width < S(62) ? compact[index] : full[index];
         }
     }
     public string ThemeId => theme.Id;
@@ -1791,8 +1794,8 @@ internal sealed partial class MeterWindow : Form
             AddUsageSources(history);
             AddModelRanking(history);
             AddDailyTrend(GetValue(root, "daily_trend"));
-            var exportData = new RoundedActionButton(theme) { Name = "usage-export-data", Text = "导出本机汇总 · JSON / CSV", Height = 42,
-                Margin = new Padding(0, 0, 0, 12), ForeColor = Primary };
+            var exportData = new RoundedActionButton(theme) { Name = "usage-export-data", Text = "导出本机汇总 · JSON / CSV", Height = S(42),
+                Margin = Pad(0, 0, 0, 12), ForeColor = Primary };
             exportData.FlatAppearance.BorderColor = theme.Border;
             exportData.Click += (_, _) => ExportUsageData(); content.Controls.Add(exportData);
             AddHeading("本机账本", GetString(root, "price_status", "") == "invalid"
@@ -1861,7 +1864,7 @@ internal sealed partial class MeterWindow : Form
         if (view == View.Accounts)
         {
             if (resetToggleFocused) content.Controls.Find("account-reset-toggle", true).FirstOrDefault()?.Focus();
-            content.AutoScrollPosition = new Point(0, previousTop);
+            content.AutoScrollPosition = P(0, previousTop);
         }
     }
     void AddCollection(JsonElement collection, JsonElement quotaCards)
@@ -1927,8 +1930,8 @@ internal sealed partial class MeterWindow : Form
         var distinct = GetNumber(collection, "distinct");
         AddCard("额度卡片", distinct.HasValue ? $"{distinct:0} / {cards.GetArrayLength()} 种已收集" : "本机卡册",
                 "额度窗口达到对应用量时掉落", null);
-        var toggle = new RoundedActionButton(theme) { Text = showAllQuotaCards ? "只看已收集卡片" : "查看全部额度卡片", Height = 38,
-            Margin = new Padding(0, 0, 0, 12), ForeColor = Primary };
+        var toggle = new RoundedActionButton(theme) { Text = showAllQuotaCards ? "只看已收集卡片" : "查看全部额度卡片", Height = S(38),
+            Margin = Pad(0, 0, 0, 12), ForeColor = Primary };
         toggle.FlatAppearance.BorderColor = theme.Border;
         toggle.Click += (_, _) =>
         {
@@ -1954,7 +1957,7 @@ internal sealed partial class MeterWindow : Form
         AddHeading("应用概览", "额度、本机用量与活动记录分别统计");
         var activity = GetValue(root, "activity");
         var apps = ApplicationOverview.Build(root);
-        var filters = new NavigationStrip { Name = "app-filter-selector", Height = 40, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var filters = new NavigationStrip { Name = "app-filter-selector", Height = S(40), Margin = Pad(0, 0, 0, 12), BackColor = Card };
         var buttons = new List<NavigationTab>();
         foreach (var (filter, label) in new[] { (ApplicationFilter.All, "全部"), (ApplicationFilter.Recent, "近期有更新"), (ApplicationFilter.Other, "其他") })
         {
@@ -1965,8 +1968,8 @@ internal sealed partial class MeterWindow : Form
         }
         filters.Resize += (_, _) =>
         {
-            int width = Math.Max(1, (filters.ClientSize.Width - 6) / 3);
-            for (int index = 0; index < buttons.Count; index++) buttons[index].Bounds = new Rectangle(3 + index * width, 3, width, 34);
+            int width = Math.Max(1, (filters.ClientSize.Width - S(6)) / 3);
+            for (int index = 0; index < buttons.Count; index++) buttons[index].Bounds = new Rectangle(S(3) + index * width, S(3), width, S(34));
         };
         content.Controls.Add(filters);
         AddHeading("数据覆盖", "近 15 分钟有记录更新 ≠ 应用正在运行");
@@ -1986,11 +1989,11 @@ internal sealed partial class MeterWindow : Form
     {
         bool expanded = expandedApplications.Contains(app.Name);
         var identity = ProviderStyle.For(app.Name);
-        var box = new RoundedCard(theme, identity.Color) { Height = expanded ? 196 : 88,
-            Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new ProviderMark(identity) { Location = new Point(16, 14), Size = new Size(34, 34) });
+        var box = new RoundedCard(theme, identity.Color) { Height = S(expanded ? 196 : 88),
+            Margin = Pad(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new ProviderMark(identity) { Location = P(16, 14), Size = Sz(34, 34) });
         var toggle = new Button { Name = "app-expand-" + app.Name, Text = app.Name + (expanded ? "  ▾" : "  ▸"),
-            AccessibleName = (expanded ? "收起 " : "展开 ") + app.Name, Height = 29, Location = new Point(58, 10),
+            AccessibleName = (expanded ? "收起 " : "展开 ") + app.Name, Height = S(29), Location = P(58, 10),
             FlatStyle = FlatStyle.Flat, BackColor = Color.Transparent, ForeColor = Primary, TextAlign = ContentAlignment.MiddleLeft,
             Font = new Font(Font.FontFamily, 10F, FontStyle.Bold) };
         toggle.FlatAppearance.BorderSize = 0;
@@ -2003,23 +2006,23 @@ internal sealed partial class MeterWindow : Form
         };
         string activityText = app.Activity.StartsWith("有记录", StringComparison.Ordinal) ? $"近 24 小时 {app.Sessions} 条 · 近 15 分钟更新 {app.RecentUpdates} 条" +
             (app.Activity.Contains("部分", StringComparison.Ordinal) ? " · 不完整" : "") : app.Activity;
-        var subtitle = new Label { Text = activityText, Location = new Point(60, 45), Height = 22, ForeColor = Muted, AutoEllipsis = true };
+        var subtitle = new Label { Text = activityText, Location = P(60, 45), Height = S(22), ForeColor = Muted, AutoEllipsis = true };
         var today = new Label { Text = app.Today.HasValue ? "今日 " + FormatNumber(app.Today.Value) : "今日未提供",
-            ForeColor = Accent, AutoSize = true, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), Location = new Point(0, 16) };
+            ForeColor = Accent, AutoSize = true, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), Location = P(0, 16) };
         box.Controls.AddRange([toggle, subtitle, today]);
         if (expanded)
         {
             string total = app.All.HasValue ? " · 累计 " + FormatNumber(app.All.Value) : "";
             string last = app.LastUpdated.HasValue ? " · 最后更新 " + DateTimeOffset.FromUnixTimeSeconds(app.LastUpdated.Value).LocalDateTime.ToString("MM-dd HH:mm") : "";
             box.Controls.Add(new Label { Name = "app-details-" + app.Name, Text = "账户额度：" + app.Quota + "\n本机 Token：" + app.Local + total + "\n活动记录：" + app.Activity + last + "\n本机记录不按登录账户区分", ForeColor = Muted,
-                Location = new Point(16, 82), Height = 102, AutoEllipsis = true });
+                Location = P(16, 82), Height = S(102), AutoEllipsis = true });
         }
         box.Resize += (_, _) =>
         {
-            today.Left = Math.Max(58, box.ClientSize.Width - today.Width - 16);
-            toggle.Width = Math.Max(0, today.Left - toggle.Left - 6);
-            subtitle.Width = Math.Max(0, box.ClientSize.Width - 76);
-            foreach (Control child in box.Controls) if (child.Name == "app-details-" + app.Name) child.Width = Math.Max(0, box.ClientSize.Width - 32);
+            today.Left = Math.Max(S(58), box.ClientSize.Width - today.Width - S(16));
+            toggle.Width = Math.Max(S(0), today.Left - toggle.Left - S(6));
+            subtitle.Width = Math.Max(S(0), box.ClientSize.Width - S(76));
+            foreach (Control child in box.Controls) if (child.Name == "app-details-" + app.Name) child.Width = Math.Max(S(0), box.ClientSize.Width - S(32));
         };
         StyleCard(box); content.Controls.Add(box);
     }
@@ -2114,12 +2117,12 @@ internal sealed partial class MeterWindow : Form
         }
         AddCard("统计说明", "自然周期比较", "当前周期尚未结束；上期为完整周期", null,
                 "仅覆盖本机可读取记录，不等于账户总量");
-        var export = new RoundedActionButton(theme) { Text = "导出 Markdown 报告", Height = 42, Margin = new Padding(0, 0, 0, 12),
+        var export = new RoundedActionButton(theme) { Text = "导出 Markdown 报告", Height = S(42), Margin = Pad(0, 0, 0, 12),
             ForeColor = Primary };
         export.FlatAppearance.BorderColor = theme.Border;
         export.Click += (_, _) => ExportCalendarReport();
         content.Controls.Add(export);
-        var imageExport = new RoundedActionButton(theme) { Text = "导出报告分享图", Height = 42, Margin = new Padding(0, 0, 0, 12),
+        var imageExport = new RoundedActionButton(theme) { Text = "导出报告分享图", Height = S(42), Margin = Pad(0, 0, 0, 12),
             ForeColor = Primary };
         imageExport.FlatAppearance.BorderColor = theme.Border;
         imageExport.Click += (_, _) => ExportShareImage();
@@ -2192,7 +2195,7 @@ internal sealed partial class MeterWindow : Form
             var others = GetValue(root, "other_accounts");
             bool loading = GetString(GetValue(root, "account"), "status", "") == "loading" ||
                 (others.ValueKind == JsonValueKind.Object && others.EnumerateObject().Any(item => GetString(item.Value, "status", "") == "loading"));
-            gauges.Controls.Add(new Label { Text = loading ? "正在读取账户额度…" : "暂无可用周期额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
+            gauges.Controls.Add(new Label { Text = loading ? "正在读取账户额度…" : "暂无可用周期额度", ForeColor = Muted, AutoSize = true, Margin = Pad(5, 32, 0, 0) });
         }
         LayoutGauges();
     }
@@ -2204,10 +2207,10 @@ internal sealed partial class MeterWindow : Form
         gaugePrevious.Visible = gaugeNext.Visible = view == View.Accounts && pages > 1;
         gaugePrevious.Enabled = gaugePage > 0; gaugeNext.Enabled = gaugePage + 1 < pages;
         int pageButtonTop = gauges.Top + 38;
-        gaugePrevious.Location = new Point(1, pageButtonTop); gaugeNext.Location = new Point(Math.Max(0, header.ClientSize.Width - 21), pageButtonTop);
+        gaugePrevious.Location = new Point(S(1), pageButtonTop); gaugeNext.Location = new Point(Math.Max(S(0), header.ClientSize.Width - S(21)), pageButtonTop);
         if (items.Length == 0) return;
         int shown = Math.Min(4, items.Length - gaugePage * 4);
-        int width = Math.Clamp(gauges.ClientSize.Width / Math.Max(1, shown) - 7, 70, 95);
+        int width = Math.Clamp(gauges.ClientSize.Width / Math.Max(1, shown) - S(7), S(70), S(95));
         for (int index = 0; index < items.Length; index++)
         {
             items[index].Visible = index / 4 == gaugePage;
@@ -2258,10 +2261,10 @@ internal sealed partial class MeterWindow : Form
     };
     void AddHeading(string title, string subtitle)
     {
-        var box = new Panel { Height = 52, Margin = new Padding(0, 3, 0, 1), BackColor = Background };
-        box.Controls.Add(new Label { Text = title, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), AutoSize = true, Location = new Point(3, 5), ForeColor = Primary });
-        var note = new Label { Text = subtitle, AutoSize = false, AutoEllipsis = true, Height = 19, Font = new Font(Font.FontFamily, 8.5F), Location = new Point(3, 29), ForeColor = Muted };
-        box.Controls.Add(note); box.Resize += (_, _) => note.Width = Math.Max(0, box.Width - 6); content.Controls.Add(box);
+        var box = new Panel { Height = S(52), Margin = Pad(0, 3, 0, 1), BackColor = Background };
+        box.Controls.Add(new Label { Text = title, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), AutoSize = true, Location = P(3, 5), ForeColor = Primary });
+        var note = new Label { Text = subtitle, AutoSize = false, AutoEllipsis = true, Height = S(19), Font = new Font(Font.FontFamily, 8.5F), Location = P(3, 29), ForeColor = Muted };
+        box.Controls.Add(note); box.Resize += (_, _) => note.Width = Math.Max(S(0), box.Width - S(6)); content.Controls.Add(box);
     }
     void AddUsageSummary(JsonElement history)
     {
@@ -2289,26 +2292,26 @@ internal sealed partial class MeterWindow : Form
             AddCard(UsagePeriodLabel + " Token 总量", "暂无数据", partial ? "部分来源读取失败或未提供该周期" : "没有可读取的本机用量汇总", null);
             return;
         }
-        var summary = new TableLayoutPanel { Name = "usage-summary", ColumnCount = 2, RowCount = 1, Height = 124,
-            Margin = new Padding(0, 0, 0, 12), BackColor = Background };
+        var summary = new TableLayoutPanel { Name = "usage-summary", ColumnCount = 2, RowCount = 1, Height = S(124),
+            Margin = Pad(0, 0, 0, 12), BackColor = Background };
         summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var totalBox = new RoundedCard(theme) { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 6, 0), BackColor = Card };
-        var costBox = new RoundedCard(theme, theme.Accent) { Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 0), BackColor = Card };
-        var totalTitle = new Label { Text = UsagePeriodLabel + " Token 总量", Height = 22, AutoEllipsis = true, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) };
-        var totalValue = new Label { Name = "usage-total", Text = FormatNumber(total), Height = 38, AutoEllipsis = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 34) };
-        var totalNote = new Label { Text = $"{sources} 个账本相加" + (partial ? " · 不完整" : ""), Height = 20, AutoEllipsis = true,
-            Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, Location = new Point(15, 91) };
+        var totalBox = new RoundedCard(theme) { Dock = DockStyle.Fill, Margin = Pad(0, 0, 6, 0), BackColor = Card };
+        var costBox = new RoundedCard(theme, theme.Accent) { Dock = DockStyle.Fill, Margin = Pad(6, 0, 0, 0), BackColor = Card };
+        var totalTitle = new Label { Text = UsagePeriodLabel + " Token 总量", Height = S(22), AutoEllipsis = true, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), ForeColor = Muted, Location = P(15, 11) };
+        var totalValue = new Label { Name = "usage-total", Text = FormatNumber(total), Height = S(38), AutoEllipsis = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = P(14, 34) };
+        var totalNote = new Label { Text = $"{sources} 个账本相加" + (partial ? " · 不完整" : ""), Height = S(20), AutoEllipsis = true,
+            Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, Location = P(15, 91) };
         totalBox.Controls.AddRange([totalTitle, totalValue, totalNote]);
         var cost = UsageCostSummary.Read(history, usagePeriod);
-        var costTitle = new Label { Text = "API 等价估算", Top = 11, Left = 15, Height = 21, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), ForeColor = Muted, AutoEllipsis = true };
-        var costValue = new Label { Name = "usage-cost-total", Text = cost.Display, Top = 36, Left = 14, Height = 32, Font = new Font(Font.FontFamily, 17F, FontStyle.Bold), ForeColor = Primary, AutoEllipsis = true };
-        var costNote = new Label { Text = cost.Amount is null ? "非账单 · 暂无金额" : cost.Partial ? "非账单 · 部分未计入" : "非账单 · 本机价格表", Top = 91, Left = 15, Height = 20, Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, AutoEllipsis = true };
+        var costTitle = new Label { Text = "API 等价估算", Top = S(11), Left = S(15), Height = S(21), Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), ForeColor = Muted, AutoEllipsis = true };
+        var costValue = new Label { Name = "usage-cost-total", Text = cost.Display, Top = S(36), Left = S(14), Height = S(32), Font = new Font(Font.FontFamily, 17F, FontStyle.Bold), ForeColor = Primary, AutoEllipsis = true };
+        var costNote = new Label { Text = cost.Amount is null ? "非账单 · 暂无金额" : cost.Partial ? "非账单 · 部分未计入" : "非账单 · 本机价格表", Top = S(91), Left = S(15), Height = S(20), Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, AutoEllipsis = true };
         costBox.Controls.AddRange([costTitle, costValue, costNote]);
         popupTips.SetToolTip(costValue, cost.Display); popupTips.SetToolTip(totalValue, total.ToString("N0") + " Token");
         popupTips.SetToolTip(totalNote, totalNote.Text); popupTips.SetToolTip(costNote, costNote.Text);
-        totalBox.Resize += (_, _) => totalTitle.Width = totalValue.Width = totalNote.Width = Math.Max(0, totalBox.ClientSize.Width - 30);
-        costBox.Resize += (_, _) => costTitle.Width = costValue.Width = costNote.Width = Math.Max(0, costBox.ClientSize.Width - 30);
+        totalBox.Resize += (_, _) => totalTitle.Width = totalValue.Width = totalNote.Width = Math.Max(S(0), totalBox.ClientSize.Width - S(30));
+        costBox.Resize += (_, _) => costTitle.Width = costValue.Width = costNote.Width = Math.Max(S(0), costBox.ClientSize.Width - S(30));
         StyleCard(totalBox); StyleCard(costBox); summary.Controls.Add(totalBox, 0, 0); summary.Controls.Add(costBox, 1, 0); content.Controls.Add(summary);
         if (complete && total > 0) AddUsageBreakdown(parts, partial);
         else if (complete && total == 0 && !partial) AddCard("用量构成", "本周期暂无 Token 消耗", "暂无可计算的构成比例", null);
@@ -2317,35 +2320,35 @@ internal sealed partial class MeterWindow : Form
     }
     void AddUsageBreakdown(double[] parts, bool partial)
     {
-        var box = new RoundedCard(theme) { Name = "usage-breakdown", Height = 216, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme) { Name = "usage-breakdown", Height = S(216), Margin = Pad(0, 0, 0, 12), BackColor = Card };
         var title = new Label { Text = "用量构成", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
-            ForeColor = Primary, Location = new Point(16, 12) };
+            ForeColor = Primary, Location = P(16, 12) };
         var note = new Label { Text = partial ? "部分来源不完整" : "已读取的本机账本", AutoSize = false, AutoEllipsis = true,
-            Height = 20, TextAlign = ContentAlignment.MiddleRight, ForeColor = Muted, Font = new Font(Font.FontFamily, 8F), Top = 13 };
-        var ring = new UsageCompositionRing(parts, theme) { Location = new Point(17, 51), Size = new Size(126, 126) };
+            Height = S(20), TextAlign = ContentAlignment.MiddleRight, ForeColor = Muted, Font = new Font(Font.FontFamily, 8F), Top = S(13)};
+        var ring = new UsageCompositionRing(parts, theme) { Location = P(17, 51), Size = Sz(126, 126) };
         box.Controls.AddRange([title, note, ring]);
         string[] labels = ["新输入", "输出含推理", "缓存读取", "缓存写入", "未拆分"];
         var colors = UsagePalette.ColorsFor(theme);
         for (int i = 0; i < labels.Length; i++)
         {
-            var dot = new Label { Text = "●", AutoSize = false, Size = new Size(16, 20), Location = new Point(157, 48 + i * 27), ForeColor = colors[i] };
-            var name = new Label { Name = "usage-part-name-" + i, Text = labels[i], AutoSize = false, AutoEllipsis = true, Height = 20,
-                Font = new Font(Font.FontFamily, 9F), Location = new Point(173, 48 + i * 27), ForeColor = Muted };
+            var dot = new Label { Text = "●", AutoSize = false, Size = Sz(16, 20), Location = P(157, 48 + i * 27), ForeColor = colors[i] };
+            var name = new Label { Name = "usage-part-name-" + i, Text = labels[i], AutoSize = false, AutoEllipsis = true, Height = S(20),
+                Font = new Font(Font.FontFamily, 9F), Location = P(173, 48 + i * 27), ForeColor = Muted };
             var value = new Label { Name = "usage-part-" + i, Text = FormatNumber(parts[i]), AutoSize = false, AutoEllipsis = true,
-                Height = 20, TextAlign = ContentAlignment.MiddleRight, Top = 48 + i * 27, ForeColor = Primary };
+                Height = S(20), TextAlign = ContentAlignment.MiddleRight, Top = S(48 + i * 27), ForeColor = Primary };
             popupTips.SetToolTip(value, labels[i] + " · " + parts[i].ToString("N0") + " Token");
             box.Resize += (_, _) => {
-                value.Left = Math.Max(230, box.ClientSize.Width - 82); value.Width = Math.Max(0, box.ClientSize.Width - value.Left - 16);
-                name.Width = Math.Max(0, value.Left - name.Left - 4);
+                value.Left = Math.Max(S(230), box.ClientSize.Width - S(82)); value.Width = Math.Max(S(0), box.ClientSize.Width - value.Left - S(16));
+                name.Width = Math.Max(S(0), value.Left - name.Left - S(4));
             };
             box.Controls.AddRange([dot, name, value]);
         }
-        box.Resize += (_, _) => { note.Left = Math.Max(145, box.ClientSize.Width - 160); note.Width = Math.Max(0, box.ClientSize.Width - note.Left - 16); };
+        box.Resize += (_, _) => { note.Left = Math.Max(S(145), box.ClientSize.Width - S(160)); note.Width = Math.Max(S(0), box.ClientSize.Width - note.Left - S(16)); };
         var formula = new Label { Text = parts[4] > 0 ? "存在未拆分 Token，缓存命中未知" : UsageBreakdown.CacheHitRate(parts).HasValue
                 ? "缓存命中 = 缓存读取 ÷ 已分类输入" : "没有可计算的输入，缓存命中未知",
-            AutoSize = false, AutoEllipsis = true, Height = 18, Location = new Point(17, 188), ForeColor = Muted,
+            AutoSize = false, AutoEllipsis = true, Height = S(18), Location = P(17, 188), ForeColor = Muted,
             Font = new Font(Font.FontFamily, 8F) };
-        box.Resize += (_, _) => formula.Width = Math.Max(0, box.ClientSize.Width - 34); box.Controls.Add(formula);
+        box.Resize += (_, _) => formula.Width = Math.Max(S(0), box.ClientSize.Width - S(34)); box.Controls.Add(formula);
         popupTips.SetToolTip(ring, "缓存命中 = 缓存读取 ÷（新输入 + 缓存读取 + 缓存写入）；未拆分数据存在时不计算");
         StyleCard(box); content.Controls.Add(box);
     }
@@ -2361,33 +2364,33 @@ internal sealed partial class MeterWindow : Form
             points.Add((date, tokens.Value));
         }
         if (points.Count != 7) return;
-        var box = new RoundedCard(theme) { Height = 218, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new Label { Text = "最近 7 个自然日", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Primary, Location = new Point(15, 10) });
+        var box = new RoundedCard(theme) { Height = S(218), Margin = Pad(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new Label { Text = "最近 7 个自然日", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Primary, Location = P(15, 10) });
         bool incomplete = GetValue(trend, "incomplete").ValueKind == JsonValueKind.True;
-        box.Controls.Add(new Label { Text = incomplete ? "北京时间 · 部分记录不完整" : "北京时间 · 本机账本相加", AutoSize = true, ForeColor = Muted, Location = new Point(16, 38) });
-        var chart = new DailyChart(points, theme) { Location = new Point(14, 70), Height = 132 };
-        box.Resize += (_, _) => chart.Width = Math.Max(0, box.ClientSize.Width - 28); box.Controls.Add(chart);
+        box.Controls.Add(new Label { Text = incomplete ? "北京时间 · 部分记录不完整" : "北京时间 · 本机账本相加", AutoSize = true, ForeColor = Muted, Location = P(16, 38) });
+        var chart = new DailyChart(points, theme) { Location = P(14, 70), Height = S(132)};
+        box.Resize += (_, _) => chart.Width = Math.Max(S(0), box.ClientSize.Width - S(28)); box.Controls.Add(chart);
         StyleCard(box); content.Controls.Add(box);
     }
     sealed record QuotaRow(string Name, double? Remaining, long? ResetEpoch);
 
     void AddMedalCard(string name, string tier, bool earned, string detail, string? date, double progress)
     {
-        var box = new RoundedCard(theme) { Height = date is null ? 112 : 136, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        var badge = new MedalBadge(theme, tier, earned) { Location = new Point(16, 20), Size = new Size(58, 58),
+        var box = new RoundedCard(theme) { Height = S(date is null ? 112 : 136), Margin = Pad(0, 0, 0, 12), BackColor = Card };
+        var badge = new MedalBadge(theme, tier, earned) { Location = P(16, 20), Size = Sz(58, 58),
             AccessibleName = name + (earned ? "，已获得" : "，待解锁") };
-        var title = new Label { Text = name, AutoEllipsis = true, Height = 21, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
-            ForeColor = Muted, Location = new Point(85, 11) };
+        var title = new Label { Text = name, AutoEllipsis = true, Height = S(21), Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
+            ForeColor = Muted, Location = P(85, 11) };
         var state = new Label { Text = earned ? "已获得" : "待解锁", AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold),
-            ForeColor = Primary, Location = new Point(84, 31) };
-        var note = new Label { Text = detail, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(85, 84) };
-        var bar = new MeterBar(theme) { Value = progress, Location = new Point(85, 70), Height = 5 };
+            ForeColor = Primary, Location = P(84, 31) };
+        var note = new Label { Text = detail, AutoEllipsis = true, Height = S(21), ForeColor = Muted, Location = P(85, 84) };
+        var bar = new MeterBar(theme) { Value = progress, Location = P(85, 70), Height = S(5)};
         box.Controls.AddRange([badge, title, state, note, bar]);
-        Label? dateLabel = date is null ? null : new Label { Text = date, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(85, 108) };
+        Label? dateLabel = date is null ? null : new Label { Text = date, AutoEllipsis = true, Height = S(21), ForeColor = Muted, Location = P(85, 108) };
         if (dateLabel is not null) box.Controls.Add(dateLabel);
         box.Resize += (_, _) =>
         {
-            title.Width = note.Width = bar.Width = Math.Max(0, box.ClientSize.Width - 101);
+            title.Width = note.Width = bar.Width = Math.Max(S(0), box.ClientSize.Width - S(101));
             if (dateLabel is not null) dateLabel.Width = note.Width;
         };
         StyleCard(box); content.Controls.Add(box);
@@ -2401,38 +2404,38 @@ internal sealed partial class MeterWindow : Form
         int headingHeight = details.Plan is null ? 49 : 63;
         const int rowHeight = 57;
         var identity = ProviderStyle.For(provider);
-        var box = new RoundedCard(theme, identity.Color) { Name = "account-" + provider, Height = headingHeight + shown * rowHeight, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new ProviderMark(identity) { Location = new Point(16, 13), Size = new Size(34, 34) });
-        var heading = new Label { Text = identity.DisplayName, AutoEllipsis = true, Height = 25,
-            Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = new Point(60, 19) };
+        var box = new RoundedCard(theme, identity.Color) { Name = "account-" + provider, Height = S(headingHeight + shown * rowHeight), Margin = Pad(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new ProviderMark(identity) { Location = P(16, 13), Size = Sz(34, 34) });
+        var heading = new Label { Text = identity.DisplayName, AutoEllipsis = true, Height = S(25),
+            Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = P(60, 19) };
         box.Controls.Add(heading);
         if (details.Plan is not null)
         {
-            heading.Top = 12;
-            var plan = new Label { Text = details.Plan + " · 账户套餐", Left = 60, Top = 37, Height = 21,
+            heading.Top = S(12);
+            var plan = new Label { Text = details.Plan + " · 账户套餐", Left = S(60), Top = S(37), Height = S(21),
                 Font = new Font(Font.FontFamily, 9), ForeColor = Muted, AutoEllipsis = true };
-            box.Controls.Add(plan); box.Resize += (_, _) => plan.Width = Math.Max(0, box.Width - 76);
+            box.Controls.Add(plan); box.Resize += (_, _) => plan.Width = Math.Max(S(0), box.Width - S(76));
         }
-        box.Resize += (_, _) => heading.Width = Math.Max(0, box.ClientSize.Width - heading.Left - 16);
+        box.Resize += (_, _) => heading.Width = Math.Max(S(0), box.ClientSize.Width - heading.Left - S(16));
         for (int index = 0; index < shown; index++)
         {
             var row = rows[index];
             int top = headingHeight + index * rowHeight;
             string label = new string(row.Name.Where(c => !char.IsControl(c)).Take(80).ToArray());
             if (label.Length == 0) label = "额度窗口";
-            var name = new Label { Text = label, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(16, top) };
+            var name = new Label { Text = label, AutoEllipsis = true, Height = S(21), ForeColor = Muted, Location = P(16, top) };
             double? remaining = row.Remaining is double number && double.IsFinite(number) && number >= 0 && number <= 100 ? number : null;
             var amount = new Label { Text = remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", AutoSize = true,
-                Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = remaining.HasValue ? MeterBar.ValueColor(theme, remaining.Value) : Muted, Location = new Point(0, top) };
-            var note = new Label { Text = QuotaResetClock.Detail(row.ResetEpoch, ForecastNow), AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 30) };
-            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 21), Height = 5 };
+                Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = remaining.HasValue ? MeterBar.ValueColor(theme, remaining.Value) : Muted, Location = P(0, top) };
+            var note = new Label { Text = QuotaResetClock.Detail(row.ResetEpoch, ForecastNow), AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = P(16, top + 30) };
+            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = P(16, top + 21), Height = S(5)};
             quotaResetLabels.Add((note, row.ResetEpoch));
             box.Controls.AddRange([name, amount, note, bar]);
             box.Resize += (_, _) =>
             {
-                amount.Left = Math.Max(16, box.ClientSize.Width - amount.Width - 16);
-                name.Width = Math.Max(0, amount.Left - name.Left - 8);
-                bar.Width = Math.Max(0, box.ClientSize.Width - 32);
+                amount.Left = Math.Max(S(16), box.ClientSize.Width - amount.Width - S(16));
+                name.Width = Math.Max(S(0), amount.Left - name.Left - S(8));
+                bar.Width = Math.Max(S(0), box.ClientSize.Width - S(32));
             };
         }
         var usage = AccountLocalUsage.Read(localHistory);
@@ -2457,16 +2460,16 @@ internal sealed partial class MeterWindow : Form
 
     void AddCard(string name, string value, string detail, double? progress, string? extra = null, string? cost = null)
     {
-        var box = new RoundedCard(theme) { Height = progress.HasValue ? 112 : cost is not null ? (extra is null ? 120 : 146) : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) });
-        box.Controls.Add(new Label { Text = value, AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) });
-        box.Controls.Add(new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = new Point(16, progress.HasValue ? 84 : 67) });
-        if (extra is not null) box.Controls.Add(new Label { Text = extra, AutoSize = true, ForeColor = Muted, Location = new Point(16, 91) });
-        if (cost is not null) box.Controls.Add(new Label { Text = cost, AutoSize = true, ForeColor = Accent, Location = new Point(16, extra is null ? 91 : 115) });
+        var box = new RoundedCard(theme) { Height = S(progress.HasValue ? 112 : cost is not null ? (extra is null ? 120 : 146) : extra is null ? 95 : 120), Margin = Pad(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = P(15, 11) });
+        box.Controls.Add(new Label { Text = value, AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), ForeColor = Primary, Location = P(14, 31) });
+        box.Controls.Add(new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = P(16, progress.HasValue ? 84 : 67) });
+        if (extra is not null) box.Controls.Add(new Label { Text = extra, AutoSize = true, ForeColor = Muted, Location = P(16, 91) });
+        if (cost is not null) box.Controls.Add(new Label { Text = cost, AutoSize = true, ForeColor = Accent, Location = P(16, extra is null ? 91 : 115) });
         if (progress.HasValue)
         {
-            var bar = new MeterBar(theme) { Value = Math.Clamp(progress.Value, 0, 100), Location = new Point(16, 70), Height = 5 };
-            box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32);
+            var bar = new MeterBar(theme) { Value = Math.Clamp(progress.Value, 0, 100), Location = P(16, 70), Height = S(5)};
+            box.Resize += (_, _) => bar.Width = Math.Max(S(0), box.ClientSize.Width - S(32));
             box.Controls.Add(bar);
         }
         StyleCard(box); content.Controls.Add(box);
@@ -2476,7 +2479,7 @@ internal sealed partial class MeterWindow : Form
         foreach (Control child in box.Controls)
             if (child is Label) child.BackColor = Color.Transparent;
     }
-    void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(280, contentViewport.ClientSize.Width - 28); }
+    void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(S(280), contentViewport.ClientSize.Width - S(28)); }
     const string DemoData = """
     {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}},"MiniMax Code":{"status":"available","quota":{"value":[{"bucket":"5h","remaining_percent":55,"resets_at":{"epoch_seconds":1794654000}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.3-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}},"estimate":{"amount_usd":"2.464","partial":false}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false},"calendar_report":{"periods":{"week":{"previous_start":"2026-11-02","current_start":"2026-11-09","current_end":"2026-11-14","previous_tokens":4200000,"current_tokens":6367000},"month":{"previous_start":"2026-10-01","current_start":"2026-11-01","current_end":"2026-11-14","previous_tokens":14200000,"current_tokens":8200000}},"sources":2,"incomplete":false,"timezone":"Asia/Shanghai"},"activity":{"status":"available","window_hours":24,"idle_minutes":15,"apps":[{"name":"Codex","sessions":5,"recent_updates":2,"last_updated":1794650400},{"name":"Claude Code","sessions":2,"recent_updates":0,"last_updated":1794643200}]}}
     """;
@@ -2596,7 +2599,7 @@ internal sealed class GaugePageButton(bool forward) : Button
         float direction = forward ? 1 : -1;
         e.Graphics.DrawLines(pen, [new PointF(center - direction * 3, middle - 5), new PointF(center + direction * 2, middle),
             new PointF(center - direction * 3, middle + 5)]);
-        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(2, 4, Width - 4, Height - 8));
+        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(S(2), S(4), Width - S(4), Height - S(8)));
     }
 }
 
@@ -2609,7 +2612,7 @@ internal sealed class QuotaGauge : Button
     public QuotaGauge(string provider, QuotaWindowPair windows, VisualTheme theme, DateTimeOffset? referenceNow = null)
     {
         this.provider = provider; this.windows = windows; this.theme = theme; this.referenceNow = referenceNow;
-        Size = new Size(95, 116); Margin = new Padding(0, 0, 7, 0);
+        Size = Sz(95, 116); Margin = Pad(0, 0, 7, 0);
         FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
         UseVisualStyleBackColor = false; BackColor = theme.Background; Cursor = Cursors.Hand;
         AccessibleDescription = "查看此账户的额度明细";
@@ -2642,9 +2645,9 @@ internal sealed class QuotaGauge : Button
             }
         }
         int left = Math.Max(0, (Width - 60) / 2);
-        var outer = new Rectangle(left, 4, 60, 60); Ring(outer, windows.Primary.Remaining, theme.Accent);
+        var outer = Rect(left, 4, 60, 60); Ring(outer, windows.Primary.Remaining, theme.Accent);
         if (windows.Secondary is not null)
-            Ring(new Rectangle(left + 8, 12, 44, 44), windows.Secondary.Remaining,
+            Ring(Rect(left + 8, 12, 44, 44), windows.Secondary.Remaining,
                 theme.Light ? Color.FromArgb(103, 75, 159) : Color.FromArgb(178, 145, 255));
         string valueText = $"{windows.Primary.Remaining:0.#}%";
         using var valueFont = new Font(Font.FontFamily, valueText.Length > 4 ? 8F : 9F, FontStyle.Bold);
@@ -2653,19 +2656,19 @@ internal sealed class QuotaGauge : Button
         const TextFormatFlags centered = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
             TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
         var secondary = windows.Secondary;
-        TextRenderer.DrawText(e.Graphics, valueText, valueFont, new Rectangle(left + 8, secondary is null ? 18 : 15, 44, secondary is null ? 32 : 23), theme.Primary, centered);
+        TextRenderer.DrawText(e.Graphics, valueText, valueFont, Rect(left + 8, secondary is null ? 18 : 15, 44, secondary is null ? 32 : 23), theme.Primary, centered);
         if (secondary is not null)
-            TextRenderer.DrawText(e.Graphics, windows.Primary.Label, small, new Rectangle(left + 8, 36, 44, 15), theme.Secondary, centered);
+            TextRenderer.DrawText(e.Graphics, windows.Primary.Label, small, Rect(left + 8, 36, 44, 15), theme.Secondary, centered);
         const string aliasPrefix = "MiniMax Code · ";
         string displayName = provider.StartsWith(aliasPrefix, StringComparison.Ordinal) ? provider[aliasPrefix.Length..] :
             provider switch { "MiniMax Code" => "MiniMax", "Kimi Code" => "Kimi", "Claude Code" => "Claude",
                 "Qoder CN · 账户额度" => "Qoder CN", "TRAE CN · 账户额度" => "TRAE CN", _ => provider };
         TextRenderer.DrawText(e.Graphics, displayName, displayName.Length > 9 ? accountNameFont : Font,
-            new Rectangle(0, 66, Width, 19), theme.Primary, centered | TextFormatFlags.EndEllipsis);
+            new Rectangle(0, S(66), Width, S(19)), theme.Primary, centered | TextFormatFlags.EndEllipsis);
         string period = secondary is null ? windows.Primary.Label : $"{secondary.Label} · {secondary.Remaining:0.#}%";
-        TextRenderer.DrawText(e.Graphics, period, small, new Rectangle(0, 84, Width, 16), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(e.Graphics, period, small, new Rectangle(0, S(84), Width, S(16)), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
         TextRenderer.DrawText(e.Graphics, QuotaResetClock.Short(windows.Primary.ResetAt, referenceNow ?? DateTimeOffset.UtcNow),
-            small, new Rectangle(0, 100, Width, 16), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
+            small, new Rectangle(0, S(100), Width, S(16)), theme.Secondary, centered | TextFormatFlags.EndEllipsis);
         if (Focused && ShowFocusCues)
             ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -2, -2), theme.Primary, BackColor);
     }
@@ -2690,14 +2693,14 @@ internal sealed class DailyChart : Control
         using var fill = new SolidBrush(theme.Accent);
         using var small = new Font(Font.FontFamily, 8F);
         string peak = maximum >= 1_000_000 ? $"{maximum / 1_000_000:0.##}M" : maximum >= 1_000 ? $"{maximum / 1_000:0.##}K" : $"{(points.Max(p => p.Tokens)):0}";
-        TextRenderer.DrawText(e.Graphics, "单日最高 " + peak, small, new Point(0, 0), theme.Secondary);
+        TextRenderer.DrawText(e.Graphics, "单日最高 " + peak, small, P(0, 0), theme.Secondary);
         e.Graphics.DrawLine(guide, 0, baseline, Width, baseline);
         for (int i = 0; i < points.Count; i++)
         {
             var point = points[i]; int barHeight = (int)Math.Round((baseline - top) * point.Tokens / maximum);
             int barWidth = Math.Max(4, Math.Min(24, slot / 2)), x = i * slot + (slot - barWidth) / 2;
             if (barHeight > 0) e.Graphics.FillRectangle(fill, x, baseline - barHeight, barWidth, barHeight);
-            var labelArea = new Rectangle(i * slot, baseline + 5, slot, 20);
+            var labelArea = Rect(i * slot, baseline + 5, slot, 20);
             TextRenderer.DrawText(e.Graphics, point.Date[5..].Replace('-', '/'), small, labelArea,
                 theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
         }
