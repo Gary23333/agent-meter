@@ -30,7 +30,7 @@ struct PanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if let snapshot = store.snapshot { CockpitStrip(snapshot: snapshot, now: store.now) }
+            if let snapshot = store.displaySnapshot { CockpitStrip(snapshot: snapshot, now: store.now) }
             PillTabs(items: Tab.allCases, title: { $0.label },
                      selection: Binding(get: { selectedTab }, set: { tabRaw = $0.rawValue }))
                 .padding(.horizontal, 14)
@@ -242,7 +242,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let error = store.errorMessage { ErrorBanner(message: error) }
             switch selectedTab {
-            case .accounts: AccountsView(snapshot: snapshot, now: store.now, syncHistory: store.syncHistory)
+            case .accounts: AccountsView(snapshot: snapshot, now: store.now)
             case .forecast: ForecastView(snapshot: snapshot, now: store.now)
             case .usage: UsageView(snapshot: snapshot, now: store.now, budget: store.budget,
                                    remoteUsage: store.syncHistory?["usage"],
@@ -269,7 +269,7 @@ struct PanelView: View {
     @ViewBuilder private var content: some View {
         if selectedTab == .pet {
             petContent
-        } else if let snapshot = store.snapshot {
+        } else if let snapshot = store.displaySnapshot {
             if Self.expandForPreview {
                 tabContent(snapshot)
             } else {

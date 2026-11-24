@@ -25,10 +25,10 @@ internal static class SyncedQuota
             if (account.ValueKind != JsonValueKind.Object) continue;
             var windows = QuotaWindows.All(account).ToList();
             if (windows.Count == 0) continue;
+            // 与本机账户卡片同样呈现，不标注来源设备，两台设备看起来像一台。
             string provider = Clean(account, "provider", 40);
-            string device = Clean(account, "device", 24);
             string name = Names.TryGetValue(provider, out var known) ? known : provider.ToUpperInvariant();
-            output.Add(new SyncedQuotaAccount(name + " · 来自 " + (device.Length > 0 ? device : "其他设备"), windows));
+            output.Add(new SyncedQuotaAccount(name, windows));
         }
         return output;
     }

@@ -42,7 +42,7 @@ internal static class SyncTests
         using (var parsed = System.Text.Json.JsonDocument.Parse(view))
         {
             var synced = SyncedQuota.Read(parsed.RootElement);
-            if (synced.Count != 1 || synced[0].Heading != "ZCODE · 来自 Office" || synced[0].Windows.Count != 1 ||
+            if (synced.Count != 1 || synced[0].Heading != "ZCODE" || synced[0].Windows.Count != 1 ||
                 synced[0].Windows[0].Label != "5 小时" || synced[0].Windows[0].Remaining != 40 || synced[0].Windows[0].ResetAt != 1795157000)
                 throw new InvalidOperationException("其他设备额度解析错误");
         }

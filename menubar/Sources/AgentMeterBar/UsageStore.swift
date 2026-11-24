@@ -44,7 +44,9 @@ enum Phase: Equatable {
 final class UsageStore {
     static let shared = UsageStore()
 
-    var snapshot: Snapshot?
+    var snapshot: Snapshot? { didSet { refreshDisplaySnapshot() } }
+    /// `snapshot` with other devices' accounts folded in: what every view shows.
+    private(set) var displaySnapshot: Snapshot?
     /// `--preview` renders a fixed snapshot and must never reach a real backend.
     /// Rendering every tab and theme takes minutes, well past the refresh
     /// interval, so without this the panel would quietly swap the demo data
@@ -134,7 +136,7 @@ final class UsageStore {
     var lastSyncAt: Date?
     /// Local + remote projection from GET /v1/sync/history. The account view
     /// uses its quota rows to show observations that came from another Mac.
-    var syncHistory: JSON?
+    var syncHistory: JSON? { didSet { refreshDisplaySnapshot() } }
     /// Device-local: whether the shared preferences (theme, alert threshold,
     /// card order, menu bar, budget) follow the other devices.
     var syncPreferencesEnabled: Bool {
@@ -670,8 +672,12 @@ final class UsageStore {
         catch { NSLog("AgentMeterBar status fetch: %@", String(describing: error)) }
     }
 
+    private func refreshDisplaySnapshot() {
+        displaySnapshot = snapshot.map { SyncMerge.merged($0, history: syncHistory) }
+    }
+
     private func updateTickerDeltas(_ snapshot: Snapshot) {
-        for item in snapshot.tickerItems(now: Date()) {
+        for item in (displaySnapshot ?? snapshot).tickerItems(now: Date()) {
             guard let value = item.numeric else { continue }
             if let old = tickerBaseline[item.id], old != value { tickerDelta[item.id] = value - old }
             tickerBaseline[item.id] = value
@@ -680,7 +686,7 @@ final class UsageStore {
 
     /// Ticker items with their change arrows.
     func tickerItems() -> [TickerItem] {
-        (snapshot?.tickerItems(now: now) ?? []).map { item in
+        (displaySnapshot?.tickerItems(now: now) ?? []).map { item in
             var item = item
             item.delta = tickerDelta[item.id]
             return item
@@ -825,7 +831,7 @@ final class UsageStore {
     // MARK: Menu bar label
 
     var menuBarText: String? {
-        guard let snapshot else { return nil }
+        guard let snapshot = displaySnapshot else { return nil }
         switch menuBarMode {
         case .iconOnly: return nil
         case .tightest, .ticker, .flip:
@@ -838,7 +844,7 @@ final class UsageStore {
 
     var menuBarSymbol: String {
         if errorMessage != nil && snapshot == nil { return "exclamationmark.triangle" }
-        guard let r = snapshot?.tightestQuota?.remaining else { return "gauge.with.dots.needle.33percent" }
+        guard let r = displaySnapshot?.tightestQuota?.remaining else { return "gauge.with.dots.needle.33percent" }
         if r < 20 { return "gauge.with.dots.needle.0percent" }
         if r < 50 { return "gauge.with.dots.needle.33percent" }
         if r < 80 { return "gauge.with.dots.needle.50percent" }
